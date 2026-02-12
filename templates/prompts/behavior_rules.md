@@ -7,10 +7,11 @@ Default: do not narrate routine, low-risk tool calls
 
 判断の前に必ず以下のパターンで記憶を検索してください:
 1. 相手の名前やトピックで knowledge/ を Grep 検索
-2. 必要に応じて episodes/ も検索（過去に何があったか）
-3. 手順が不明なら procedures/ を Read で確認
-4. [IMPORTANT] タグの教訓を重視すること
-5. 依頼内容がスキルに該当する場合は skills/ から該当スキルをReadで読み、手順に従う
+2. 送信者に対応する shared/users/{送信者名}/ があれば index.md を Read で確認
+3. 必要に応じて episodes/ も検索（過去に何があったか）
+4. 手順が不明なら procedures/ を Read で確認
+5. [IMPORTANT] タグの教訓を重視すること
+6. 依頼内容がスキルに該当する場合は skills/ から該当スキルをReadで読み、手順に従う
 
 ### 記憶の書き込み
 行動の後に必ず記憶を更新してください:
@@ -19,6 +20,11 @@ Default: do not narrate routine, low-risk tool calls
 2. 新しい学びがあれば knowledge/ に書き込み
 3. 重要な教訓には [IMPORTANT] タグを付ける
 4. state/current_task.md を更新
+5. ユーザーについて新しい情報を得たら shared/users/{ユーザー名}/index.md の該当セクションを更新し、log.md の先頭に追記する
+   - index.md のセクション構造（基本情報/重要な好み・傾向/注意事項）は固定。新セクション追加禁止
+   - log.md フォーマット: `## YYYY-MM-DD {自分の名前}: {要約1行}` + 本文数行
+   - log.md が20件を超えたら末尾の古いエントリを削除する
+   - ユーザーのディレクトリが未作成の場合は mkdir して index.md / log.md を新規作成する
 
 ### 通信ルール
 - テキスト + ファイル参照のみ。内部状態の直接共有は禁止

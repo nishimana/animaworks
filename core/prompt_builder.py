@@ -96,6 +96,8 @@ def build_system_prompt(memory: MemoryManager) -> str:
     ]
     skill_names = ", ".join(all_skill_names) or "(なし)"
 
+    shared_users_list = ", ".join(memory.list_shared_users()) or "(なし)"
+
     parts.append(load_prompt(
         "memory_guide",
         person_dir=pd,
@@ -103,6 +105,7 @@ def build_system_prompt(memory: MemoryManager) -> str:
         episode_list=episode_list,
         procedure_list=procedure_list,
         skill_names=skill_names,
+        shared_users_list=shared_users_list,
     ))
 
     # Personal skills

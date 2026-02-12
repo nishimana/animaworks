@@ -6,7 +6,7 @@ import re
 from datetime import date
 from pathlib import Path
 
-from core.paths import get_common_skills_dir, get_company_dir
+from core.paths import get_common_skills_dir, get_company_dir, get_shared_dir
 from core.schemas import ModelConfig
 
 logger = logging.getLogger("animaworks.memory")
@@ -182,6 +182,19 @@ class MemoryManager:
             (f.stem, self._extract_skill_summary(f))
             for f in sorted(self.common_skills_dir.glob("*.md"))
         ]
+
+    # ── Shared user memory ────────────────────────────────
+
+    @staticmethod
+    def _shared_users_dir() -> Path:
+        return get_shared_dir() / "users"
+
+    def list_shared_users(self) -> list[str]:
+        """List user subdirectories under shared/users/."""
+        d = self._shared_users_dir()
+        if not d.is_dir():
+            return []
+        return [p.name for p in sorted(d.iterdir()) if p.is_dir()]
 
     # ── Write ─────────────────────────────────────────────
 

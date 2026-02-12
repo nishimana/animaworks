@@ -98,6 +98,7 @@ def reset_runtime_dir(data_dir: Path) -> Path:
 def _ensure_runtime_only_dirs(data_dir: Path) -> None:
     """Create runtime-only directories that have no template counterpart."""
     (data_dir / "shared" / "inbox").mkdir(parents=True, exist_ok=True)
+    (data_dir / "shared" / "users").mkdir(parents=True, exist_ok=True)
     (data_dir / "tmp" / "attachments").mkdir(parents=True, exist_ok=True)
     (data_dir / "common_skills").mkdir(parents=True, exist_ok=True)
 
