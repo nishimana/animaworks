@@ -341,11 +341,18 @@ def create_router() -> APIRouter:
                     {"date": ep_file.stem, "preview": content[:200]}
                 )
 
+        # Transcripts (permanent message logs)
+        transcripts = [
+            {"date": date, "message_count": len(conv.load_transcript(date))}
+            for date in conv.list_transcript_dates()
+        ]
+
         return {
             "person": name,
             "active_conversation": active_conv,
             "archived_sessions": archived,
             "episodes": episodes,
+            "transcripts": transcripts,
         }
 
     @api.get("/persons/{name}/sessions/{session_id}")
@@ -380,6 +387,25 @@ def create_router() -> APIRouter:
             "session_id": session_id,
             "data": data,
             "markdown": markdown,
+        }
+
+    @api.get("/persons/{name}/transcripts/{date}")
+    async def get_transcript(name: str, date: str, request: Request):
+        """Get full conversation transcript for a specific date."""
+        person = request.app.state.persons.get(name)
+        if not person:
+            return {"error": "Person not found"}
+        from core.conversation_memory import ConversationMemory
+
+        conv = ConversationMemory(person.person_dir, person.model_config)
+        messages = conv.load_transcript(date)
+        return {
+            "person": name,
+            "date": date,
+            "has_summary": False,
+            "compressed_summary": "",
+            "compressed_turn_count": 0,
+            "turns": messages,
         }
 
     @api.delete("/persons/{name}/conversation")

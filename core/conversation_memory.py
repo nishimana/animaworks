@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -87,6 +88,7 @@ class ConversationMemory:
         self.model_config = model_config
         self._state_dir = person_dir / "state"
         self._state_path = self._state_dir / "conversation.json"
+        self._transcript_dir = person_dir / "transcripts"
         self._state: ConversationState | None = None
 
     # ── Load / Save ──────────────────────────────────────────
@@ -133,12 +135,66 @@ class ConversationMemory:
             encoding="utf-8",
         )
 
+    # ── Transcript ────────────────────────────────────────────
+
+    @staticmethod
+    def _valid_date(date: str) -> bool:
+        """Return True if *date* looks like YYYY-MM-DD."""
+        return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", date))
+
+    def _append_transcript(self, role: str, content: str, timestamp: str) -> None:
+        """Append a message to the permanent daily transcript (JSONL)."""
+        try:
+            self._transcript_dir.mkdir(parents=True, exist_ok=True)
+            date_str = timestamp[:10] if len(timestamp) >= 10 else datetime.now().strftime("%Y-%m-%d")
+            if not self._valid_date(date_str):
+                date_str = datetime.now().strftime("%Y-%m-%d")
+            path = self._transcript_dir / f"{date_str}.jsonl"
+            entry = json.dumps(
+                {"role": role, "content": content, "timestamp": timestamp},
+                ensure_ascii=False,
+            )
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(entry + "\n")
+        except Exception:
+            logger.exception("Failed to append transcript for %s", self.person_name)
+
+    def list_transcript_dates(self) -> list[str]:
+        """Return sorted list of dates that have transcript files (newest first)."""
+        if not self._transcript_dir.exists():
+            return []
+        return sorted(
+            [f.stem for f in self._transcript_dir.glob("*.jsonl")],
+            reverse=True,
+        )
+
+    def load_transcript(self, date: str) -> list[dict]:
+        """Load all messages from a specific date's transcript."""
+        if not self._valid_date(date):
+            logger.warning("Invalid transcript date format: %s", date)
+            return []
+        path = self._transcript_dir / f"{date}.jsonl"
+        if not path.exists():
+            return []
+        messages = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                messages.append(json.loads(line))
+            except json.JSONDecodeError:
+                logger.warning("Skipping malformed transcript line in %s", path)
+        return messages
+
     # ── Mutation ─────────────────────────────────────────────
 
     def append_turn(self, role: str, content: str) -> None:
         """Record a conversation turn."""
         state = self.load()
-        state.turns.append(ConversationTurn(role=role, content=content))
+        turn = ConversationTurn(role=role, content=content)
+        state.turns.append(turn)
+        self._append_transcript(role, content, turn.timestamp)
 
     def clear(self) -> None:
         """Clear all conversation history."""

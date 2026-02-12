@@ -526,6 +526,18 @@
       }
     }
 
+    // Transcripts (permanent conversation logs)
+    if (data.transcripts && data.transcripts.length > 0) {
+      html += '<div class="session-section-header">会話ログ</div>';
+      for (const t of data.transcripts) {
+        html += `
+          <div class="session-item" data-type="transcript" data-date="${escapeHtml(t.date)}">
+            <div class="session-item-title">${escapeHtml(t.date)}</div>
+            <div class="session-item-meta">${t.message_count}メッセージ</div>
+          </div>`;
+      }
+    }
+
     // Episodes
     if (data.episodes && data.episodes.length > 0) {
       html += '<div class="session-section-header">エピソードログ</div>';
@@ -550,6 +562,7 @@
         const type = item.dataset.type;
         if (type === "active") loadActiveConversation();
         else if (type === "archive") loadArchivedSession(item.dataset.id);
+        else if (type === "transcript") loadTranscriptInHistory(item.dataset.date);
         else if (type === "episode") loadEpisodeInHistory(item.dataset.date);
       });
     });
@@ -647,6 +660,21 @@
       dom.historyConversation.innerHTML = html;
     } else {
       dom.historyConversation.innerHTML = '<div class="loading-placeholder">データがありません</div>';
+    }
+  }
+
+  async function loadTranscriptInHistory(date) {
+    const name = state.selectedPerson;
+    if (!name) return;
+
+    showHistoryDetail(`会話ログ: ${date}`);
+    dom.historyConversation.innerHTML = '<div class="loading-placeholder">読み込み中...</div>';
+
+    try {
+      const data = await api(`/api/persons/${encodeURIComponent(name)}/transcripts/${encodeURIComponent(date)}`);
+      renderConversationDetail(data);
+    } catch (err) {
+      dom.historyConversation.innerHTML = '<div class="loading-placeholder">読み込み失敗</div>';
     }
   }
 
