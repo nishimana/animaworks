@@ -6,7 +6,7 @@ import re
 from datetime import date
 from pathlib import Path
 
-from core.paths import get_company_dir
+from core.paths import get_common_skills_dir, get_company_dir
 from core.schemas import ModelConfig
 
 logger = logging.getLogger("animaworks.memory")
@@ -22,6 +22,7 @@ class MemoryManager:
     def __init__(self, person_dir: Path, base_dir: Path | None = None) -> None:
         self.person_dir = person_dir
         self.company_dir = get_company_dir()
+        self.common_skills_dir = get_common_skills_dir()
         self.episodes_dir = person_dir / "episodes"
         self.knowledge_dir = person_dir / "knowledge"
         self.procedures_dir = person_dir / "procedures"
@@ -119,26 +120,38 @@ class MemoryManager:
     def list_skill_files(self) -> list[str]:
         return [f.stem for f in sorted(self.skills_dir.glob("*.md"))]
 
+    @staticmethod
+    def _extract_skill_summary(path: Path) -> str:
+        """Extract the first line of the 概要 section from a skill file."""
+        text = path.read_text(encoding="utf-8")
+        in_overview = False
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped == "## 概要":
+                in_overview = True
+                continue
+            if in_overview:
+                if stripped.startswith("#"):
+                    break
+                if stripped:
+                    return stripped
+        return ""
+
     def list_skill_summaries(self) -> list[tuple[str, str]]:
-        """Return (filename_stem, first_line_of_概要) for each skill."""
-        results: list[tuple[str, str]] = []
-        for f in sorted(self.skills_dir.glob("*.md")):
-            text = f.read_text(encoding="utf-8")
-            summary = ""
-            in_overview = False
-            for line in text.splitlines():
-                stripped = line.strip()
-                if stripped == "## 概要":
-                    in_overview = True
-                    continue
-                if in_overview:
-                    if stripped.startswith("#"):
-                        break
-                    if stripped:
-                        summary = stripped
-                        break
-            results.append((f.stem, summary))
-        return results
+        """Return (filename_stem, first_line_of_概要) for each personal skill."""
+        return [
+            (f.stem, self._extract_skill_summary(f))
+            for f in sorted(self.skills_dir.glob("*.md"))
+        ]
+
+    def list_common_skill_summaries(self) -> list[tuple[str, str]]:
+        """Return (filename_stem, first_line_of_概要) for each common skill."""
+        if not self.common_skills_dir.is_dir():
+            return []
+        return [
+            (f.stem, self._extract_skill_summary(f))
+            for f in sorted(self.common_skills_dir.glob("*.md"))
+        ]
 
     # ── Write ─────────────────────────────────────────────
 

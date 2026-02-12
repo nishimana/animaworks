@@ -42,6 +42,7 @@ def ensure_runtime_dir() -> Path:
     # Create runtime-only directories that have no template
     (data_dir / "shared" / "inbox").mkdir(parents=True, exist_ok=True)
     (data_dir / "tmp" / "attachments").mkdir(parents=True, exist_ok=True)
+    (data_dir / "common_skills").mkdir(parents=True, exist_ok=True)
 
     logger.info("Runtime directory initialized: %s", data_dir)
     return data_dir

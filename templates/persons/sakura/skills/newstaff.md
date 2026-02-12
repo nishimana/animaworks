@@ -42,7 +42,22 @@
 
 5. 作成したファイルの内容を依頼者に報告し、修正があれば対応する
 
-6. 自分の `episodes/` に「新社員{名前}を作成した」とログを残す
+6. Gateway の Supervisor API を呼び出してワーカーを起動する:
+
+   ```bash
+   curl -s -X POST http://localhost:18500/api/workers/spawn \
+     -H "Content-Type: application/json" \
+     -d '{"person_names": ["{英名}"]}'
+   ```
+
+   起動を確認する:
+   ```bash
+   curl -s http://localhost:18500/api/workers/worker-{英名} | python3 -m json.tool
+   ```
+
+   ※ Gateway が supervisor モードでない場合は、依頼者に「サーバーを再起動してください」と伝える
+
+7. 自分の `episodes/` に「新社員{名前}を作成した」とログを残す
 
 ## テンプレート
 
@@ -183,6 +198,6 @@ rm -rf, システム設定の変更
 
 ## 注意事項
 
-- ファイルを作成しただけでは新しい社員はまだ起動しない。サーバーの再起動が必要
-- 作成後、依頼者に「サーバーを再起動してください」と伝えること
+- Gateway が supervisor モードで起動中であれば、Spawn API で即時起動できる（手順6参照）
+- supervisor モードでない場合は、ファイルを作成しただけでは起動しない。依頼者に「サーバーを再起動してください」と伝えること
 - 社員の英名はディレクトリ名になるため、半角英数小文字のみを使用すること
