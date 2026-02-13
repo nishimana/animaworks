@@ -37,12 +37,8 @@ NOVELAI_API_URL = "https://image.novelai.net/ai/generate-image"
 NOVELAI_MODEL = "nai-diffusion-4-5-full"
 
 FAL_KONTEXT_SUBMIT_URL = "https://queue.fal.run/fal-ai/flux-pro/kontext"
-FAL_KONTEXT_STATUS_TPL = (
-    "https://queue.fal.run/fal-ai/flux-pro/kontext/requests/{request_id}/status"
-)
-FAL_KONTEXT_RESULT_TPL = (
-    "https://queue.fal.run/fal-ai/flux-pro/kontext/requests/{request_id}"
-)
+# Status/result URLs are extracted from the submit response
+# (they omit the /kontext subpath per fal.ai queue convention)
 
 MESHY_IMAGE_TO_3D_URL = "https://api.meshy.ai/openapi/v1/image-to-3d"
 MESHY_TASK_URL_TPL = "https://api.meshy.ai/openapi/v1/image-to-3d/{task_id}"
@@ -271,21 +267,27 @@ class FluxKontextClient:
         }
 
         # Submit task
-        def _submit() -> str:
+        def _submit() -> dict[str, str]:
             resp = httpx.post(
                 FAL_KONTEXT_SUBMIT_URL,
-                json={"input": payload},
+                json=payload,
                 headers=headers,
                 timeout=_HTTP_TIMEOUT,
             )
             resp.raise_for_status()
-            return resp.json()["request_id"]
+            data = resp.json()
+            return {
+                "request_id": data["request_id"],
+                "status_url": data["status_url"],
+                "response_url": data["response_url"],
+            }
 
-        request_id = _retry(_submit)
+        submit_data = _retry(_submit)
+        request_id = submit_data["request_id"]
 
-        # Poll for completion
-        result_url = FAL_KONTEXT_RESULT_TPL.format(request_id=request_id)
-        status_url = FAL_KONTEXT_STATUS_TPL.format(request_id=request_id)
+        # Poll for completion (use URLs from submit response)
+        result_url = submit_data["response_url"]
+        status_url = submit_data["status_url"]
         deadline = time.monotonic() + self.POLL_TIMEOUT
 
         while time.monotonic() < deadline:
