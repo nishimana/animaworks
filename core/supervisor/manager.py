@@ -103,7 +103,9 @@ class ProcessSupervisor:
             logger.warning(f"Process already exists: {person_name}")
             return
 
-        socket_path = self.run_dir / "sockets" / f"{person_name}.sock"
+        socket_dir = self.run_dir / "sockets"
+        socket_dir.mkdir(parents=True, exist_ok=True)
+        socket_path = socket_dir / f"{person_name}.sock"
 
         handle = ProcessHandle(
             person_name=person_name,
