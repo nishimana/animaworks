@@ -144,11 +144,11 @@ class HybridRetriever:
         person_name: str,
         memory_type: str,
         top_k: int,
-    ) -> list[tuple[str, float, dict]]:
+    ) -> list[tuple[str, str, float, dict]]:
         """Perform vector similarity search.
 
         Returns:
-            List of (doc_id, score, metadata) tuples
+            List of (doc_id, content, score, metadata) tuples
         """
         # Generate query embedding
         embedding = self.indexer._generate_embeddings([query])[0]
@@ -162,7 +162,7 @@ class HybridRetriever:
         )
 
         return [
-            (r.document.id, r.score, r.document.metadata)
+            (r.document.id, r.document.content, r.score, r.document.metadata)
             for r in results
         ]
 
@@ -171,11 +171,11 @@ class HybridRetriever:
         query: str,
         memory_type: str,
         top_k: int,
-    ) -> list[tuple[str, float, dict]]:
+    ) -> list[tuple[str, str, float, dict]]:
         """Perform BM25 keyword search using ripgrep.
 
         Returns:
-            List of (doc_id, score, metadata) tuples
+            List of (doc_id, content, score, metadata) tuples
         """
         if memory_type == "knowledge":
             search_dir = self.knowledge_dir
@@ -227,8 +227,8 @@ class HybridRetriever:
                     except ValueError:
                         pass
 
-            # Convert to (doc_id, score, metadata) format
-            results: list[tuple[str, float, dict]] = []
+            # Convert to (doc_id, content, score, metadata) format
+            results: list[tuple[str, str, float, dict]] = []
             for filename, count in file_scores.items():
                 # Normalize score (log scale for BM25-like behavior)
                 score = math.log1p(count)  # log(1 + count)
@@ -236,15 +236,19 @@ class HybridRetriever:
                 # Create pseudo doc_id (simplified - real implementation should use chunk IDs)
                 doc_id = f"{self.indexer.person_name}/{memory_type}/{Path(filename).name}#0"
 
+                # Read file content
+                file_path = Path(filename)
+                file_content = file_path.read_text(encoding="utf-8") if file_path.exists() else ""
+
                 metadata = {
                     "source_file": str(Path(filename).relative_to(search_dir)),
                     "bm25_match_count": count,
                 }
 
-                results.append((doc_id, score, metadata))
+                results.append((doc_id, file_content, score, metadata))
 
             # Sort by score and return top K
-            results.sort(key=lambda r: r[1], reverse=True)
+            results.sort(key=lambda r: r[2], reverse=True)
             return results[:top_k]
 
         except subprocess.TimeoutExpired:
@@ -261,8 +265,8 @@ class HybridRetriever:
 
     def _combine_with_rrf(
         self,
-        vector_results: list[tuple[str, float, dict]],
-        bm25_results: list[tuple[str, float, dict]],
+        vector_results: list[tuple[str, str, float, dict]],
+        bm25_results: list[tuple[str, str, float, dict]],
     ) -> list[RetrievalResult]:
         """Combine search results using Reciprocal Rank Fusion.
 
@@ -270,19 +274,27 @@ class HybridRetriever:
         where k = 60 (standard), rank_i = rank in search method i
         """
         # Build rank dictionaries
-        vector_ranks = {doc_id: i + 1 for i, (doc_id, _, _) in enumerate(vector_results)}
-        bm25_ranks = {doc_id: i + 1 for i, (doc_id, _, _) in enumerate(bm25_results)}
+        vector_ranks = {doc_id: i + 1 for i, (doc_id, _, _, _) in enumerate(vector_results)}
+        bm25_ranks = {doc_id: i + 1 for i, (doc_id, _, _, _) in enumerate(bm25_results)}
 
         # Collect all unique doc IDs
         all_doc_ids = set(vector_ranks.keys()) | set(bm25_ranks.keys())
 
         # Build metadata map (prefer vector metadata as it's more complete)
         metadata_map: dict[str, dict] = {}
-        for doc_id, _, meta in vector_results:
+        for doc_id, _, _, meta in vector_results:
             metadata_map[doc_id] = meta
-        for doc_id, _, meta in bm25_results:
+        for doc_id, _, _, meta in bm25_results:
             if doc_id not in metadata_map:
                 metadata_map[doc_id] = meta
+
+        # Build content map (prefer vector content as it's chunk-level)
+        content_map: dict[str, str] = {}
+        for doc_id, content, _, _ in vector_results:
+            content_map[doc_id] = content
+        for doc_id, content, _, _ in bm25_results:
+            if doc_id not in content_map:
+                content_map[doc_id] = content
 
         # Compute RRF scores
         results: list[RetrievalResult] = []
@@ -299,8 +311,7 @@ class HybridRetriever:
                 WEIGHT_VECTOR * vector_score + WEIGHT_BM25 * bm25_score
             )
 
-            # Get content (simplified - real implementation should fetch from store)
-            content = metadata_map.get(doc_id, {}).get("content", "")
+            content = content_map.get(doc_id, "")
 
             results.append(
                 RetrievalResult(

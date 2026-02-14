@@ -441,15 +441,15 @@ def test_rrf_combination(temp_person_dir, temp_vector_store):
     )
 
     vector_results = [
-        ("doc1", 0.9, {"content": "vector result 1"}),
-        ("doc2", 0.7, {"content": "vector result 2"}),
-        ("doc3", 0.5, {"content": "vector result 3"}),
+        ("doc1", "vector result 1", 0.9, {}),
+        ("doc2", "vector result 2", 0.7, {}),
+        ("doc3", "vector result 3", 0.5, {}),
     ]
 
     bm25_results = [
-        ("doc2", 5.0, {"content": "bm25 result 1"}),
-        ("doc1", 3.0, {"content": "bm25 result 2"}),
-        ("doc4", 2.0, {"content": "bm25 result 3"}),
+        ("doc2", "bm25 result 1", 5.0, {}),
+        ("doc1", "bm25 result 2", 3.0, {}),
+        ("doc4", "bm25 result 3", 2.0, {}),
     ]
 
     combined = retriever._combine_with_rrf(vector_results, bm25_results)

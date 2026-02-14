@@ -4,8 +4,8 @@ Memory Performance Evaluation - Phase 5: Experiment Execution
 
 Runs 4-condition comparison experiment on AnimaWorks memory system:
   - Condition A: BM25 only (ripgrep)
-  - Condition B: Vector search only (TF-IDF fallback when ChromaDB unavailable)
-  - Condition C: Hybrid search (BM25 + Vector + temporal decay + RRF)
+  - Condition B: TF-IDF similarity search (TF-IDF + cosine similarity)
+  - Condition C: Hybrid search (BM25 + TF-IDF + temporal decay + RRF)
   - Condition D: Hybrid + Priming (4-channel parallel retrieval)
 
 Each condition: N=30 trials, 50 scenarios per trial.
@@ -89,7 +89,7 @@ SIZE = "small"  # Primary experiment size
 # Condition names to directory names
 CONDITION_DIRS = {
     "A": "condition_a_bm25",
-    "B": "condition_b_vector",
+    "B": "condition_b_tfidf",
     "C": "condition_c_hybrid",
     "D": "condition_d_hybrid_priming",
 }
@@ -112,7 +112,8 @@ class TfIdfVectorSearch:
 
         self._vectorizer = TfidfVectorizer(
             max_features=5000,
-            ngram_range=(1, 2),
+            analyzer="char_wb",
+            ngram_range=(2, 4),
             sublinear_tf=True,
         )
         self._cosine_similarity = cosine_similarity
@@ -805,7 +806,7 @@ async def run_scalability_test(
 
     results: dict[str, list[dict[str, float]]] = {
         "bm25": [],
-        "vector": [],
+        "tfidf": [],
         "hybrid": [],
         "hybrid_priming": [],
     }
@@ -855,14 +856,14 @@ async def run_scalability_test(
         # Run each condition
         for cond_name, cond_key in [
             ("A", "bm25"),
-            ("B", "vector"),
+            ("B", "tfidf"),
             ("C", "hybrid"),
             ("D", "hybrid_priming"),
         ]:
             if cond_key == "bm25":
                 searcher = Bm25Search(search_dir)
                 searcher.index_documents(documents)
-            elif cond_key == "vector":
+            elif cond_key == "tfidf":
                 searcher = TfIdfVectorSearch()
                 searcher.index_documents(documents)
             elif cond_key == "hybrid":
@@ -927,6 +928,305 @@ async def run_scalability_test(
             )
 
     return results
+
+
+# ── H3: Consolidation Experiment (measurement-based) ─────────────────────────
+
+
+def _create_h3_episode_files(
+    base_dir: Path,
+    domain_facts: list[dict[str, str]],
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    """Create episode files containing embedded facts for H3 experiment.
+
+    Each episode embeds 2-3 facts within a realistic daily log format.
+    Returns the document list and a mapping of queries to relevant paths.
+
+    Args:
+        base_dir: Directory to write episode files
+        domain_facts: List of dicts with 'topic', 'fact', 'query' keys
+
+    Returns:
+        Tuple of (documents, query_relevance) where query_relevance maps
+        each query to its relevant file paths before and after consolidation
+    """
+    episodes_dir = base_dir / "episodes"
+    episodes_dir.mkdir(parents=True, exist_ok=True)
+
+    documents: list[dict[str, Any]] = []
+    query_map: list[dict[str, str]] = []
+
+    # Group facts into episodes (2-3 facts per episode)
+    episode_idx = 0
+    fact_idx = 0
+    while fact_idx < len(domain_facts):
+        n_facts = min(random.choice([2, 3]), len(domain_facts) - fact_idx)
+        episode_facts = domain_facts[fact_idx : fact_idx + n_facts]
+        fact_idx += n_facts
+
+        date_str = f"2026-02-{(episode_idx % 28) + 1:02d}"
+        filename = f"{date_str}.md"
+        filepath = episodes_dir / filename
+
+        # Build episode content with embedded facts
+        lines = [f"# {date_str} 行動ログ\n"]
+        for i, ef in enumerate(episode_facts):
+            hour = 9 + i * 2
+            lines.append(f"## {hour:02d}:00 — {ef['topic']}\n")
+            lines.append(f"{ef['fact']}\n")
+
+            # Track which queries map to this episode file
+            query_map.append(
+                {
+                    "query": ef["query"],
+                    "episode_path": str(filepath),
+                    "topic": ef["topic"],
+                    "fact": ef["fact"],
+                }
+            )
+
+        content = "\n".join(lines)
+        filepath.write_text(content, encoding="utf-8")
+        documents.append(
+            {
+                "id": str(filepath),
+                "content": content,
+                "path": filepath,
+                "metadata": {"date": date_str, "category": "episodes"},
+            }
+        )
+        episode_idx += 1
+
+    return documents, query_map
+
+
+def _consolidate_episodes_to_knowledge(
+    base_dir: Path,
+    query_map: list[dict[str, str]],
+) -> list[dict[str, Any]]:
+    """Rule-based consolidation: extract facts from episodes into knowledge files.
+
+    Simulates the LLM-based daily consolidation by extracting structured
+    facts from episodes using pattern matching on section headers.
+
+    Args:
+        base_dir: Directory to write knowledge files
+        query_map: Query-to-episode mapping from _create_h3_episode_files
+
+    Returns:
+        List of newly created knowledge documents
+    """
+    knowledge_dir = base_dir / "knowledge"
+    knowledge_dir.mkdir(parents=True, exist_ok=True)
+
+    knowledge_docs: list[dict[str, Any]] = []
+    topics_seen: dict[str, list[str]] = {}
+
+    # Group facts by topic for knowledge file creation
+    for qm in query_map:
+        topic = qm["topic"]
+        if topic not in topics_seen:
+            topics_seen[topic] = []
+        topics_seen[topic].append(qm["fact"])
+
+    # Create one knowledge file per topic
+    for topic, facts in topics_seen.items():
+        slug = topic.lower().replace(" ", "-").replace("　", "-")
+        slug = re.sub(r"[^\w\-]", "", slug)[:50]
+        filename = f"{slug}.md"
+        filepath = knowledge_dir / filename
+
+        lines = [f"# {topic}\n"]
+        lines.append("## 学んだこと\n")
+        for fact in facts:
+            lines.append(f"- {fact}\n")
+
+        content = "\n".join(lines)
+        filepath.write_text(content, encoding="utf-8")
+        knowledge_docs.append(
+            {
+                "id": str(filepath),
+                "content": content,
+                "path": filepath,
+                "metadata": {"category": "knowledge", "topic": topic},
+            }
+        )
+
+        # Update query_map to include knowledge paths
+        for qm in query_map:
+            if qm["topic"] == topic:
+                qm["knowledge_path"] = str(filepath)
+
+    return knowledge_docs
+
+
+# Domain-specific facts for H3 experiment
+_H3_DOMAIN_FACTS = [
+    # Business domain
+    {"topic": "プロジェクト管理方針", "fact": "スプリント期間を2週間から3週間に変更することが決定された。理由はチームの安定的なベロシティ確保のため。", "query": "スプリント期間の変更について教えて"},
+    {"topic": "人事決定", "fact": "田中さんがテックリードに昇進した。フロントエンドチームの技術統括を担当する。", "query": "田中さんの役職変更は"},
+    {"topic": "技術選定", "fact": "フロントエンドフレームワークをReactからSvelteに移行することが技術委員会で承認された。", "query": "フロントエンドフレームワークの移行先は"},
+    {"topic": "顧客対応方針", "fact": "エンタープライズ顧客への応答時間SLAを4時間から2時間に短縮することが決まった。", "query": "エンタープライズ顧客のSLA応答時間は"},
+    {"topic": "インフラ構成", "fact": "本番環境をAWSの東京リージョンから大阪リージョンにフェイルオーバー構成を追加した。", "query": "本番環境のフェイルオーバー構成について"},
+    {"topic": "セキュリティ対策", "fact": "二要素認証を全社員に必須化した。認証アプリとしてAuthenticatorを推奨する。", "query": "二要素認証の方針は"},
+    {"topic": "予算計画", "fact": "Q2のクラウドインフラ予算を月額50万円から80万円に増額することが承認された。", "query": "Q2のクラウド予算はいくら"},
+    {"topic": "採用計画", "fact": "バックエンドエンジニアを3名、MLエンジニアを1名、Q2中に採用する計画が確定した。", "query": "Q2の採用計画の人数は"},
+    {"topic": "品質基準", "fact": "コードカバレッジの最低基準を70%から80%に引き上げることが品質会議で決定された。", "query": "コードカバレッジの基準は何パーセント"},
+    {"topic": "リリース戦略", "fact": "月次リリースから隔週リリースに変更し、カナリアデプロイを必須とすることが決まった。", "query": "リリース頻度の変更について"},
+    # Tech support domain
+    {"topic": "障害対応手順", "fact": "データベース接続障害時はまずコネクションプールの状態確認、次にpg_stat_activityでアクティブ接続数を確認する手順に統一した。", "query": "データベース接続障害の対応手順は"},
+    {"topic": "モニタリング設定", "fact": "CPU使用率80%以上が5分継続した場合にPagerDutyアラートを発報する設定を追加した。", "query": "CPU使用率のアラート閾値は"},
+    {"topic": "バックアップ運用", "fact": "データベースの日次バックアップに加え、WALアーカイブによるポイントインタイムリカバリを有効化した。RPOは1時間。", "query": "データベースバックアップのRPOは"},
+    {"topic": "ネットワーク構成", "fact": "社内VPNをWireGuardに統一し、OpenVPNは2026年3月末で廃止することが決定された。", "query": "VPNの統一方針について"},
+    {"topic": "証明書管理", "fact": "SSL証明書の自動更新をLet's Encryptとcertbotで運用し、有効期限30日前に自動更新する設定とした。", "query": "SSL証明書の更新方法は"},
+    # Education domain
+    {"topic": "カリキュラム改訂", "fact": "Python入門コースにデータ分析基礎モジュール（pandas, matplotlib）を追加することが教育委員会で承認された。", "query": "Python入門コースの改訂内容は"},
+    {"topic": "評価基準", "fact": "最終プロジェクトの評価をコード品質40%、ドキュメント30%、プレゼンテーション30%の配分に変更した。", "query": "最終プロジェクトの評価配分は"},
+    {"topic": "メンター制度", "fact": "新入社員には入社後3ヶ月間、週1回30分のメンタリングセッションを実施することが制度化された。", "query": "メンタリングセッションの頻度と時間は"},
+    {"topic": "学習環境", "fact": "開発環境としてGitHub Codespacesを全受講者に提供し、ローカル環境構築の負担を排除する方針とした。", "query": "開発環境の提供方法は"},
+    {"topic": "資格取得支援", "fact": "AWS認定ソリューションアーキテクト試験の受験費用を全額会社負担とすることが決定した。", "query": "AWS認定試験の費用補助について"},
+]
+
+
+def _run_h3_consolidation_experiment(
+    analyzer: Any,
+) -> dict[str, Any]:
+    """Run H3 consolidation experiment with actual measurement.
+
+    Measures search precision before and after rule-based consolidation
+    (episode -> knowledge extraction), then uses paired t-test.
+
+    Args:
+        analyzer: StatisticalAnalyzer instance
+
+    Returns:
+        H3 hypothesis test results
+    """
+    from tests.evaluation.framework.analysis import StatisticalAnalyzer
+
+    logger.info("Running H3 consolidation experiment (measurement-based)...")
+
+    random.seed(RANDOM_SEED)
+    np.random.seed(RANDOM_SEED)
+
+    h3_base_dir = PROJECT_ROOT / "tests" / "evaluation" / "_h3_experiment"
+
+    # Clean previous run
+    import shutil
+    if h3_base_dir.exists():
+        shutil.rmtree(h3_base_dir)
+    h3_base_dir.mkdir(parents=True, exist_ok=True)
+
+    # Also add some distractor files (noise)
+    distractors_dir = h3_base_dir / "episodes"
+    distractors_dir.mkdir(parents=True, exist_ok=True)
+    for i in range(10):
+        distractor_path = distractors_dir / f"distractor_{i:03d}.md"
+        distractor_path.write_text(
+            f"# 2026-01-{i + 1:02d} 行動ログ\n\n## 10:00 — 日常業務\n"
+            f"特に大きな出来事はなかった。通常のルーチンワークを実施。\n"
+            f"メールの返信とドキュメントの整理を行った。\n",
+            encoding="utf-8",
+        )
+
+    # Step 1: Create episode files with embedded facts
+    episode_docs, query_map = _create_h3_episode_files(h3_base_dir, _H3_DOMAIN_FACTS)
+
+    # Add distractor documents
+    all_episode_docs = list(episode_docs)
+    for i in range(10):
+        distractor_path = distractors_dir / f"distractor_{i:03d}.md"
+        content = distractor_path.read_text(encoding="utf-8")
+        all_episode_docs.append(
+            {
+                "id": str(distractor_path),
+                "content": content,
+                "path": distractor_path,
+                "metadata": {"category": "episodes"},
+            }
+        )
+
+    # Step 2: Search BEFORE consolidation (episodes only)
+    logger.info("  H3: Measuring precision before consolidation...")
+    tfidf_before = TfIdfVectorSearch()
+    tfidf_before.index_documents(all_episode_docs)
+
+    precision_before_list: list[float] = []
+    recall_before_list: list[float] = []
+
+    for qm in query_map:
+        results = tfidf_before.search(qm["query"], top_k=TOP_K)
+        retrieved_ids = {str(r.get("path", r.get("id", ""))) for r in results}
+        relevant_ids = {qm["episode_path"]}
+
+        tp = len(retrieved_ids & relevant_ids)
+        precision = tp / len(retrieved_ids) if retrieved_ids else 0.0
+        recall = tp / len(relevant_ids) if relevant_ids else 0.0
+
+        precision_before_list.append(precision)
+        recall_before_list.append(recall)
+
+    # Step 3: Rule-based consolidation
+    logger.info("  H3: Running rule-based consolidation...")
+    knowledge_docs = _consolidate_episodes_to_knowledge(h3_base_dir, query_map)
+
+    # Step 4: Search AFTER consolidation (episodes + knowledge)
+    logger.info("  H3: Measuring precision after consolidation...")
+    all_docs_after = all_episode_docs + knowledge_docs
+    tfidf_after = TfIdfVectorSearch()
+    tfidf_after.index_documents(all_docs_after)
+
+    precision_after_list: list[float] = []
+    recall_after_list: list[float] = []
+
+    for qm in query_map:
+        results = tfidf_after.search(qm["query"], top_k=TOP_K)
+        retrieved_ids = {str(r.get("path", r.get("id", ""))) for r in results}
+
+        # After consolidation, both episode and knowledge files are relevant
+        relevant_ids = {qm["episode_path"]}
+        if "knowledge_path" in qm:
+            relevant_ids.add(qm["knowledge_path"])
+
+        tp = len(retrieved_ids & relevant_ids)
+        precision = tp / len(retrieved_ids) if retrieved_ids else 0.0
+        recall = tp / len(relevant_ids) if relevant_ids else 0.0
+
+        precision_after_list.append(precision)
+        recall_after_list.append(recall)
+
+    logger.info(
+        "  H3: Before - mean P@%d=%.3f, R@%d=%.3f",
+        TOP_K,
+        float(np.mean(precision_before_list)),
+        TOP_K,
+        float(np.mean(recall_before_list)),
+    )
+    logger.info(
+        "  H3: After  - mean P@%d=%.3f, R@%d=%.3f",
+        TOP_K,
+        float(np.mean(precision_after_list)),
+        TOP_K,
+        float(np.mean(recall_after_list)),
+    )
+
+    # Step 5: Paired t-test
+    h3_result: dict[str, Any] = {}
+    try:
+        h3_result = analyzer.hypothesis_h3_consolidation(
+            precision_before=precision_before_list,
+            precision_after=precision_after_list,
+            recall_before=recall_before_list,
+            recall_after=recall_after_list,
+        )
+    except Exception as e:
+        logger.warning("H3 test failed: %s", e)
+        h3_result = {"error": str(e)}
+
+    # Clean up experiment data
+    shutil.rmtree(h3_base_dir, ignore_errors=True)
+
+    return h3_result
 
 
 # ── Analysis & Visualization ──────────────────────────────────────────────────
@@ -1087,37 +1387,14 @@ def generate_processed_results(
     with open(PROCESSED_DIR / "hypothesis_h2_results.json", "w", encoding="utf-8") as f:
         json.dump(h2_result, f, indent=2, ensure_ascii=False)
 
-    # ── Hypothesis H3: Consolidation effect (simulated) ──────────────
-    # Generate synthetic retention data since actual consolidation requires LLM
-    random.seed(RANDOM_SEED)
-    np.random.seed(RANDOM_SEED)
-
-    n_samples = 200
-    retention_data = pd.DataFrame(
-        {
-            "recalled": np.concatenate(
-                [
-                    np.random.binomial(1, 0.65, n_samples // 2),  # without consolidation
-                    np.random.binomial(1, 0.82, n_samples // 2),  # with consolidation
-                ]
-            ),
-            "auto_consolidation": np.concatenate(
-                [np.zeros(n_samples // 2), np.ones(n_samples // 2)]
-            ).astype(int),
-            "days_elapsed": np.random.choice([7, 30], n_samples),
-            "importance": np.random.randint(1, 6, n_samples),
-            "memory_type": np.random.choice(
-                ["episodic", "semantic", "procedural"], n_samples
-            ),
-        }
-    )
-
-    h3_result = {}
-    try:
-        h3_result = analyzer.hypothesis_h3_consolidation(retention_data)
-    except Exception as e:
-        logger.warning("H3 test failed: %s", e)
-        h3_result = {"error": str(e)}
+    # ── Hypothesis H3: Consolidation effect (measurement-based) ──────
+    # Measure actual search precision before/after consolidation.
+    # 1. Create episode files with embedded facts
+    # 2. Search before consolidation (episodes only)
+    # 3. Rule-based consolidation: extract facts into knowledge files
+    # 4. Search after consolidation (episodes + knowledge)
+    # 5. Paired t-test on precision differences
+    h3_result = _run_h3_consolidation_experiment(analyzer)
 
     with open(PROCESSED_DIR / "hypothesis_h3_results.json", "w", encoding="utf-8") as f:
         json.dump(h3_result, f, indent=2, ensure_ascii=False)
@@ -1167,7 +1444,7 @@ def generate_figures(
     }
     condition_labels = {
         "A": "BM25",
-        "B": "Vector",
+        "B": "TF-IDF",
         "C": "Hybrid",
         "D": "Hybrid+Priming",
     }
@@ -1283,7 +1560,7 @@ def generate_figures(
 
         cond_key_map = {
             "bm25": ("A", "BM25"),
-            "vector": ("B", "Vector"),
+            "tfidf": ("B", "TF-IDF"),
             "hybrid": ("C", "Hybrid"),
             "hybrid_priming": ("D", "Hybrid+Priming"),
         }
@@ -1433,8 +1710,8 @@ def generate_figures(
     if h2 and "mean_precision" in h2:
         precs = h2["mean_precision"]
         bars = ax2.bar(
-            ["BM25", "Vector", "Hybrid"],
-            [precs["bm25"], precs["vector"], precs["hybrid"]],
+            ["BM25", "TF-IDF", "Hybrid"],
+            [precs["bm25"], precs["tfidf"], precs["hybrid"]],
             color=[condition_colors["A"], condition_colors["B"], condition_colors["C"]],
         )
         p_text = f"p={h2['p_value']:.4f}" if "p_value" in h2 else ""
@@ -1448,23 +1725,26 @@ def generate_figures(
 
     ax2.grid(True, axis="y", alpha=0.3)
 
-    # H3: Consolidation effect
+    # H3: Consolidation effect (before vs after precision)
     ax3 = axes[1, 0]
-    if h3 and "odds_ratios" in h3:
-        or_val = h3["odds_ratios"].get("auto_consolidation", 1.0)
-        coef_val = h3["coefficients"].get("auto_consolidation", 0.0)
-        ax3.barh(
-            ["Coefficient", "Odds Ratio"],
-            [coef_val, or_val],
-            color=[condition_colors["D"], condition_colors["C"]],
+    if h3 and "mean_precision_before" in h3:
+        bars = ax3.bar(
+            ["Before", "After"],
+            [h3["mean_precision_before"], h3["mean_precision_after"]],
+            color=[condition_colors["A"], condition_colors["C"]],
         )
-        p_val = h3["p_values"].get("auto_consolidation", 1.0)
-        ax3.set_title(f"H3: Auto-Consolidation Effect\n(p={p_val:.4f})")
-        ax3.axvline(x=1.0, color="red", linestyle="--", alpha=0.5, label="OR=1 (no effect)")
-        ax3.legend(fontsize=8)
+        p_text = f"p={h3['p_value']:.4f}" if "p_value" in h3 else ""
+        d_text = f"d={h3['effect_size']:.2f}" if "effect_size" in h3 else ""
+        ax3.set_title(f"H3: Consolidation Effect on Precision\n({p_text}, {d_text})")
+        ax3.set_ylabel("Precision@3")
+        ax3.set_ylim([0, 1.0])
+        if h3.get("significant"):
+            y_max = max(h3["mean_precision_before"], h3["mean_precision_after"]) * 1.15
+            ax3.plot([0, 1], [y_max, y_max], "k-", linewidth=1)
+            ax3.text(0.5, y_max * 1.01, "*", ha="center", fontsize=14)
     else:
         ax3.text(0.5, 0.5, "No H3 data", ha="center", va="center", transform=ax3.transAxes)
-        ax3.set_title("H3: Auto-Consolidation Effect")
+        ax3.set_title("H3: Consolidation Effect")
 
     ax3.grid(True, axis="x", alpha=0.3)
 
@@ -1482,9 +1762,9 @@ def generate_figures(
         effect_names.append(f"H2: Hybrid\n(eta-sq)")
         effect_values.append(h2["eta_squared"])
         effect_colors_list.append(condition_colors["C"])
-    if h3 and "odds_ratios" in h3:
-        effect_names.append(f"H3: Consolidation\n(OR)")
-        effect_values.append(h3["odds_ratios"].get("auto_consolidation", 1.0))
+    if h3 and "effect_size" in h3:
+        effect_names.append(f"H3: Consolidation\n(Cohen's d)")
+        effect_values.append(h3["effect_size"])
         effect_colors_list.append(condition_colors["B"])
 
     if effect_names:
@@ -1606,8 +1886,8 @@ async def main() -> None:
 
     conditions = [
         ("A", "BM25 Only"),
-        ("B", "Vector Only (TF-IDF fallback)"),
-        ("C", "Hybrid Search (BM25 + Vector + Temporal Decay + RRF)"),
+        ("B", "TF-IDF Similarity"),
+        ("C", "Hybrid Search (BM25 + TF-IDF + Temporal Decay + RRF)"),
         ("D", "Hybrid + Priming (4-channel parallel)"),
     ]
 

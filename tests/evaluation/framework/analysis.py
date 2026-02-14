@@ -12,7 +12,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from scipy import stats
-from sklearn.linear_model import LogisticRegression
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
 from statsmodels.stats.power import TTestIndPower
 
@@ -152,7 +151,7 @@ class StatisticalAnalyzer:
         all_values = list(precision_bm25) + list(precision_vector) + list(precision_hybrid)
         all_labels = (
             ["bm25"] * len(precision_bm25)
-            + ["vector"] * len(precision_vector)
+            + ["tfidf"] * len(precision_vector)
             + ["hybrid"] * len(precision_hybrid)
         )
 
@@ -198,114 +197,106 @@ class StatisticalAnalyzer:
             "significant": bool(p_value < self.alpha),
             "mean_precision": {
                 "bm25": float(np.mean(precision_bm25)),
-                "vector": float(np.mean(precision_vector)),
+                "tfidf": float(np.mean(precision_vector)),
                 "hybrid": float(np.mean(precision_hybrid)),
             },
             "sample_sizes": {
                 "bm25": len(precision_bm25),
-                "vector": len(precision_vector),
+                "tfidf": len(precision_vector),
                 "hybrid": len(precision_hybrid),
             },
         }
 
     def hypothesis_h3_consolidation(
-        self, retention_data: pd.DataFrame
+        self,
+        precision_before: list[float],
+        precision_after: list[float],
+        recall_before: list[float] | None = None,
+        recall_after: list[float] | None = None,
     ) -> dict[str, Any]:
-        """Test H3: Automatic consolidation effect on retention.
+        """Test H3: Consolidation effect on search precision.
 
-        Uses logistic regression to predict memory retention success.
+        Uses paired t-test to compare search precision before and after
+        consolidation (episode -> knowledge extraction).
 
-        H0: No difference in retention rate with/without auto-consolidation
-        H1: Auto-consolidation improves retention rate
+        H0: No difference in precision before/after consolidation
+        H1: Consolidation improves search precision
 
         Args:
-            retention_data: DataFrame with columns:
-                - recalled: bool (1=recalled, 0=forgotten)
-                - auto_consolidation: bool (1=enabled, 0=disabled)
-                - days_elapsed: int (7 or 30)
-                - importance: int (1-5 scale)
-                - memory_type: str ('episodic', 'semantic', 'procedural')
+            precision_before: Precision@k per query before consolidation
+            precision_after: Precision@k per query after consolidation
+            recall_before: Optional recall@k per query before consolidation
+            recall_after: Optional recall@k per query after consolidation
 
         Returns:
-            Dictionary with regression results:
-                - coefficients: Regression coefficients
-                - odds_ratios: Exp(coefficients)
-                - p_values: P-values for each coefficient
-                - aic: Akaike Information Criterion
-                - bic: Bayesian Information Criterion
-                - accuracy: Model accuracy on training data
-                - significant_predictors: List of significant variables
+            Dictionary with paired t-test results
         """
-        # Input validation
-        required_cols = ["recalled", "auto_consolidation", "days_elapsed", "importance"]
-        for col in required_cols:
-            if col not in retention_data.columns:
-                raise ValueError(f"Missing required column: {col}")
+        if len(precision_before) != len(precision_after):
+            raise ValueError("Paired t-test requires equal sample sizes")
 
-        # Prepare features
-        X = retention_data[["auto_consolidation", "days_elapsed", "importance"]].copy()
+        if len(precision_before) < 2:
+            raise ValueError("Need at least 2 samples for t-test")
 
-        # Add memory_type dummies if present
-        if "memory_type" in retention_data.columns:
-            memory_dummies = pd.get_dummies(
-                retention_data["memory_type"], prefix="type", drop_first=True
-            )
-            X = pd.concat([X, memory_dummies], axis=1)
+        before = np.array(precision_before)
+        after = np.array(precision_after)
 
-        y = retention_data["recalled"].astype(int)
+        # Paired t-test
+        t_stat, p_value = stats.ttest_rel(after, before)
 
-        # Logistic regression
-        model = LogisticRegression(max_iter=1000, random_state=42)
-        model.fit(X, y)
+        # Cohen's d (paired samples)
+        differences = after - before
+        pooled_std = np.std(differences, ddof=1)
+        effect_size = float(np.mean(differences) / pooled_std) if pooled_std > 0 else 0.0
 
-        # Get coefficients and odds ratios
-        coef_names = X.columns.tolist()
-        coefficients = dict(zip(coef_names, model.coef_[0], strict=False))
-        odds_ratios = {k: float(np.exp(v)) for k, v in coefficients.items()}
+        # Effect size interpretation (Cohen, 1988)
+        abs_d = abs(effect_size)
+        if abs_d < 0.2:
+            interpretation = "negligible"
+        elif abs_d < 0.5:
+            interpretation = "small"
+        elif abs_d < 0.8:
+            interpretation = "medium"
+        else:
+            interpretation = "large"
 
-        # Calculate p-values using Wald test approximation
-        # Note: sklearn doesn't provide p-values directly, so we use statsmodels approach
-        predictions = model.predict_proba(X)[:, 1]
-        residuals = y - predictions
-
-        # Calculate standard errors (simplified)
-        n = len(y)
-        p = X.shape[1]
-        variance = np.var(residuals)
-        se = np.sqrt(variance / n)
-        z_scores = model.coef_[0] / se
-        p_values = {
-            name: float(2 * (1 - stats.norm.cdf(abs(z))))
-            for name, z in zip(coef_names, z_scores, strict=False)
-        }
-
-        # Calculate AIC and BIC
-        log_likelihood = -np.sum(
-            y * np.log(predictions + 1e-10) + (1 - y) * np.log(1 - predictions + 1e-10)
+        # Mean improvement
+        mean_before = float(np.mean(before))
+        mean_after = float(np.mean(after))
+        improvement_pct = (
+            ((mean_after - mean_before) / mean_before) * 100
+            if mean_before > 0
+            else 0.0
         )
-        aic = 2 * p - 2 * log_likelihood
-        bic = np.log(n) * p - 2 * log_likelihood
 
-        # Model accuracy
-        predictions_binary = model.predict(X)
-        accuracy = float(np.mean(predictions_binary == y))
+        # 95% Confidence interval for mean difference
+        se_diff = stats.sem(differences)
+        df = len(differences) - 1
+        ci = stats.t.interval(0.95, df, loc=np.mean(differences), scale=se_diff)
 
-        # Identify significant predictors
-        significant_predictors = [
-            name for name, pval in p_values.items() if pval < self.alpha
-        ]
-
-        return {
-            "coefficients": {k: float(v) for k, v in coefficients.items()},
-            "odds_ratios": odds_ratios,
-            "p_values": p_values,
-            "aic": float(aic),
-            "bic": float(bic),
-            "accuracy": accuracy,
-            "significant_predictors": significant_predictors,
-            "sample_size": n,
-            "n_features": p,
+        result: dict[str, Any] = {
+            "t_statistic": float(t_stat),
+            "p_value": float(p_value),
+            "effect_size": float(effect_size),
+            "interpretation": interpretation,
+            "significant": bool(p_value < self.alpha),
+            "mean_precision_before": mean_before,
+            "mean_precision_after": mean_after,
+            "improvement_pct": float(improvement_pct),
+            "confidence_interval": (float(ci[0]), float(ci[1])),
+            "sample_size": len(precision_before),
         }
+
+        # Add recall stats if provided
+        if recall_before is not None and recall_after is not None:
+            r_before = np.array(recall_before)
+            r_after = np.array(recall_after)
+            r_t_stat, r_p_value = stats.ttest_rel(r_after, r_before)
+            result["recall_t_statistic"] = float(r_t_stat)
+            result["recall_p_value"] = float(r_p_value)
+            result["mean_recall_before"] = float(np.mean(r_before))
+            result["mean_recall_after"] = float(np.mean(r_after))
+
+        return result
 
     # ── Power Analysis ──────────────────────────────────────────────────
 
