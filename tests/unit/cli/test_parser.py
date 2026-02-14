@@ -37,12 +37,31 @@ class TestParserCommands:
         sub = parser.add_subparsers(dest="command")
         p_init = sub.add_parser("init")
         p_init.add_argument("--force", action="store_true")
-        p_init.add_argument("--reset", action="store_true")
 
         args = parser.parse_args(["init"])
         assert args.command == "init"
         assert args.force is False
-        assert args.reset is False
+
+    def test_reset_command(self):
+        """Test 'reset' command parsing."""
+        parser = argparse.ArgumentParser()
+        sub = parser.add_subparsers(dest="command")
+        p_reset = sub.add_parser("reset")
+        p_reset.add_argument("--restart", action="store_true")
+
+        args = parser.parse_args(["reset"])
+        assert args.command == "reset"
+        assert args.restart is False
+
+    def test_reset_with_restart(self):
+        """Test 'reset --restart' command parsing."""
+        parser = argparse.ArgumentParser()
+        sub = parser.add_subparsers(dest="command")
+        p_reset = sub.add_parser("reset")
+        p_reset.add_argument("--restart", action="store_true")
+
+        args = parser.parse_args(["reset", "--restart"])
+        assert args.restart is True
 
     def test_init_force(self):
         parser = argparse.ArgumentParser()
@@ -233,6 +252,14 @@ class TestLazyImportWrappers:
 
         args = MagicMock()
         _lazy_restart(args)
+        mock_cmd.assert_called_once_with(args)
+
+    @patch("cli.commands.init_cmd.cmd_reset")
+    def test_lazy_reset(self, mock_cmd):
+        from cli.parser import _lazy_reset
+
+        args = MagicMock()
+        _lazy_reset(args)
         mock_cmd.assert_called_once_with(args)
 
     @patch("cli.commands.server.cmd_gateway")

@@ -11,7 +11,7 @@ def cmd_init(args: argparse.Namespace) -> None:
     """Initialize the runtime data directory from templates."""
     from pathlib import Path
 
-    from core.init import ensure_runtime_dir, merge_templates, reset_runtime_dir
+    from core.init import ensure_runtime_dir, merge_templates
     from core.paths import get_data_dir
     from core.person_factory import (
         create_blank,
@@ -20,50 +20,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         validate_person_name,
     )
 
-    from cli.commands.server import (
-        _clear_pycache,
-        _is_process_alive,
-        _read_pid,
-        _stop_server,
-        cmd_start,
-    )
-
     data_dir = get_data_dir()
-
-    # --reset: complete deletion + re-initialization (interactive)
-    if getattr(args, "reset", False):
-        # Stop running server before reset (PID file will be deleted with data dir)
-        pid = _read_pid()
-        was_running = pid is not None and _is_process_alive(pid)
-        if was_running:
-            print("Stopping running server before reset...")
-            if not _stop_server():
-                print("Error: Cannot reset — failed to stop the running server.")
-                return
-
-        if data_dir.exists():
-            answer = input(
-                f"WARNING: This will DELETE all data in {data_dir}\n"
-                f"  (episodes, knowledge, state, config — all will be lost)\n"
-                f"Continue? [yes/no]: "
-            )
-            if answer.strip().lower() != "yes":
-                print("Aborted.")
-                return
-        reset_runtime_dir(data_dir, skip_persons=True)
-        print(f"Runtime directory reset: {data_dir}")
-        _interactive_person_setup(data_dir)
-        _interactive_user_setup(data_dir)
-
-        # Restart server if it was running before reset
-        if was_running:
-            print("\nRestarting server...")
-            removed = _clear_pycache()
-            if removed:
-                print(f"Cleared {removed} __pycache__ directories.")
-            start_args = argparse.Namespace(host="0.0.0.0", port=18500)
-            cmd_start(start_args)
-        return
 
     # --force: safe merge (add missing files only)
     if getattr(args, "force", False):
@@ -127,7 +84,7 @@ def cmd_init(args: argparse.Namespace) -> None:
     config_json = data_dir / "config.json"
     if config_json.exists():
         print(f"Runtime directory already exists: {data_dir}")
-        print("Use --force to merge new template files, or --reset to re-initialize.")
+        print("Use --force to merge new template files, or 'animaworks reset' to re-initialize.")
         return
 
     ensure_runtime_dir(skip_persons=True)
@@ -275,6 +232,54 @@ def _interactive_user_setup(data_dir) -> None:
     (user_dir / "log.md").write_text("", encoding="utf-8")
 
     print(f"\nユーザー情報を保存しました: {user_dir}/index.md")
+
+
+def cmd_reset(args: argparse.Namespace) -> None:
+    """Delete runtime directory and re-initialize infrastructure."""
+    from core.init import reset_runtime_dir
+    from core.paths import get_data_dir
+
+    from cli.commands.server import (
+        _clear_pycache,
+        _is_process_alive,
+        _read_pid,
+        _stop_server,
+        cmd_start,
+    )
+
+    data_dir = get_data_dir()
+
+    # Always stop the server first
+    pid = _read_pid()
+    if pid is not None and _is_process_alive(pid):
+        print("Stopping running server...")
+        if not _stop_server():
+            print("Error: Cannot reset — failed to stop the running server.")
+            return
+
+    # Confirmation
+    if data_dir.exists():
+        answer = input(
+            f"WARNING: This will DELETE all data in {data_dir}\n"
+            f"  (episodes, knowledge, state, config — all will be lost)\n"
+            f"Continue? [yes/no]: "
+        )
+        if answer.strip().lower() != "yes":
+            print("Aborted.")
+            return
+
+    reset_runtime_dir(data_dir, skip_persons=True)
+    print(f"Runtime directory reset: {data_dir}")
+
+    if getattr(args, "restart", False):
+        print("\nStarting server...")
+        removed = _clear_pycache()
+        if removed:
+            print(f"Cleared {removed} __pycache__ directories.")
+        start_args = argparse.Namespace(host="0.0.0.0", port=18500)
+        cmd_start(start_args)
+    else:
+        print("Run 'animaworks start' to launch the server and configure via the web UI.")
 
 
 def _register_person_in_config(data_dir, person_name: str) -> None:

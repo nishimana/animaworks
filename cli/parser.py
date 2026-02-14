@@ -36,10 +36,6 @@ def cli_main() -> None:
         help="Merge missing template files into existing runtime",
     )
     init_mode.add_argument(
-        "--reset", action="store_true",
-        help="DELETE runtime directory and re-initialize (dangerous)",
-    )
-    init_mode.add_argument(
         "--template", metavar="NAME",
         help="Non-interactive: create person from named template",
     )
@@ -94,6 +90,16 @@ def cli_main() -> None:
     # ── Stop ──────────────────────────────────────────────
     p_stop = sub.add_parser("stop", help="Stop the running server")
     p_stop.set_defaults(func=_lazy_stop)
+
+    # ── Reset ─────────────────────────────────────────────
+    p_reset = sub.add_parser(
+        "reset", help="Stop server, delete runtime directory, and re-initialize",
+    )
+    p_reset.add_argument(
+        "--restart", action="store_true",
+        help="Start the server after reset",
+    )
+    p_reset.set_defaults(func=_lazy_reset)
 
     # ── Restart ───────────────────────────────────────────
     p_restart = sub.add_parser("restart", help="Restart the server (stop then start)")
@@ -276,6 +282,12 @@ def _lazy_restart(args: argparse.Namespace) -> None:
     from cli.commands.server import cmd_restart
 
     cmd_restart(args)
+
+
+def _lazy_reset(args: argparse.Namespace) -> None:
+    from cli.commands.init_cmd import cmd_reset
+
+    cmd_reset(args)
 
 
 def _lazy_gateway(args: argparse.Namespace) -> None:

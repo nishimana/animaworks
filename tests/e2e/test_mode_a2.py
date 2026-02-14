@@ -244,11 +244,15 @@ class TestModeA2Live:
 
 
 class TestModeA2AzureLive:
-    """Mode A2 tests using Azure OpenAI API."""
+    """Mode A2 tests using Azure OpenAI API.
 
-    @pytest.mark.live
-    @pytest.mark.azure
-    @pytest.mark.timeout(60)
+    These tests call a real Azure GPT-4.1 endpoint. LLM output is
+    non-deterministic, so tool-calling tests are marked ``flaky``
+    with up to 2 retries.
+    """
+
+    pytestmark = [pytest.mark.live, pytest.mark.azure]
+
     async def test_live_azure_basic_response(self, make_agent_core):
         """Live A2: Azure OpenAI gpt-4.1 call via LiteLLM."""
         import os
@@ -267,3 +271,173 @@ class TestModeA2AzureLive:
 
         assert result.summary
         assert result.action == "responded"
+
+    @pytest.mark.flaky(reruns=2)
+    async def test_live_azure_search_memory(self, make_agent_core):
+        """Live A2 + GPT-4.1: LLM autonomously calls search_memory tool."""
+        import os
+
+        agent = make_agent_core(
+            name="a2-azure-memory",
+            model="azure/gpt-4.1",
+            credential="azure",
+            api_base_url=os.environ.get("AZURE_API_BASE", ""),
+            max_turns=10,
+        )
+        agent._sdk_available = False
+
+        # Seed knowledge that the model must discover
+        (agent.person_dir / "knowledge" / "secret.md").write_text(
+            "# Secret Knowledge\nThe project codename is PHOENIX-42.\n",
+            encoding="utf-8",
+        )
+
+        result = await agent.run_cycle(
+            "What is the project codename? "
+            "Use search_memory with query='codename' and scope='knowledge' "
+            "to find it."
+        )
+
+        assert result.action == "responded"
+        assert "PHOENIX" in result.summary or "42" in result.summary
+
+    @pytest.mark.flaky(reruns=2)
+    async def test_live_azure_read_file(self, make_agent_core):
+        """Live A2 + GPT-4.1: LLM autonomously calls read_file tool."""
+        import os
+
+        agent = make_agent_core(
+            name="a2-azure-readfile",
+            model="azure/gpt-4.1",
+            credential="azure",
+            api_base_url=os.environ.get("AZURE_API_BASE", ""),
+            max_turns=10,
+        )
+        agent._sdk_available = False
+
+        target = agent.person_dir / "knowledge" / "report.md"
+        target.write_text(
+            "# Monthly Report\nRevenue: 1,234,567 JPY\nStatus: On track\n",
+            encoding="utf-8",
+        )
+
+        result = await agent.run_cycle(
+            f"Use read_file with path='{target}' to read the file. "
+            "Tell me the revenue figure you found."
+        )
+
+        assert result.action == "responded"
+        assert "1,234,567" in result.summary
+
+    @pytest.mark.flaky(reruns=2)
+    async def test_live_azure_write_file(self, make_agent_core):
+        """Live A2 + GPT-4.1: LLM autonomously calls write_file tool."""
+        import os
+
+        agent = make_agent_core(
+            name="a2-azure-writefile",
+            model="azure/gpt-4.1",
+            credential="azure",
+            api_base_url=os.environ.get("AZURE_API_BASE", ""),
+            max_turns=10,
+        )
+        agent._sdk_available = False
+
+        target = agent.person_dir / "knowledge" / "output.md"
+
+        result = await agent.run_cycle(
+            f"Use write_file with path='{target}' and "
+            "content='WRITE_TEST_SUCCESSFUL' to create a file. "
+            "After the tool confirms success, say 'Done'."
+        )
+
+        assert result.action == "responded"
+        assert target.exists()
+        content = target.read_text(encoding="utf-8")
+        assert "WRITE_TEST_SUCCESSFUL" in content
+
+    @pytest.mark.flaky(reruns=2)
+    async def test_live_azure_search_code(self, make_agent_core):
+        """Live A2 + GPT-4.1: LLM autonomously calls search_code tool."""
+        import os
+
+        agent = make_agent_core(
+            name="a2-azure-searchcode",
+            model="azure/gpt-4.1",
+            credential="azure",
+            api_base_url=os.environ.get("AZURE_API_BASE", ""),
+            max_turns=10,
+        )
+        agent._sdk_available = False
+
+        # Create files for search_code to find
+        (agent.person_dir / "knowledge" / "alpha.md").write_text(
+            "This file contains MARKER_ALPHA_999.\n", encoding="utf-8",
+        )
+        (agent.person_dir / "knowledge" / "beta.md").write_text(
+            "No special markers here.\n", encoding="utf-8",
+        )
+
+        result = await agent.run_cycle(
+            "Use search_code with pattern='MARKER_ALPHA' and "
+            f"directory='{agent.person_dir}' to search for the marker. "
+            "Tell me the exact marker string you found."
+        )
+
+        assert result.action == "responded"
+        assert "MARKER_ALPHA" in result.summary
+
+    @pytest.mark.flaky(reruns=2)
+    async def test_live_azure_list_directory(self, make_agent_core):
+        """Live A2 + GPT-4.1: LLM autonomously calls list_directory tool."""
+        import os
+
+        agent = make_agent_core(
+            name="a2-azure-listdir",
+            model="azure/gpt-4.1",
+            credential="azure",
+            api_base_url=os.environ.get("AZURE_API_BASE", ""),
+            max_turns=10,
+        )
+        agent._sdk_available = False
+
+        # Create recognizable files
+        knowledge_dir = agent.person_dir / "knowledge"
+        (knowledge_dir / "unique_file_xyz.md").write_text(
+            "test", encoding="utf-8",
+        )
+
+        result = await agent.run_cycle(
+            f"Use list_directory with path='{knowledge_dir}' to list files. "
+            "Tell me the exact filenames returned by the tool."
+        )
+
+        assert result.action == "responded"
+        assert "unique_file_xyz" in result.summary
+
+    @pytest.mark.flaky(reruns=2)
+    async def test_live_azure_multi_tool_chain(self, make_agent_core):
+        """Live A2 + GPT-4.1: LLM chains multiple tool calls autonomously."""
+        import os
+
+        agent = make_agent_core(
+            name="a2-azure-chain",
+            model="azure/gpt-4.1",
+            credential="azure",
+            api_base_url=os.environ.get("AZURE_API_BASE", ""),
+            max_turns=15,
+        )
+        agent._sdk_available = False
+
+        chain_path = agent.person_dir / "knowledge" / "chain_test.md"
+
+        result = await agent.run_cycle(
+            f"Use write_file with path='{chain_path}' and "
+            "content='CHAIN_STEP_1_DONE' to create a file. "
+            f"Then use read_file with path='{chain_path}' to read it back. "
+            "Tell me the exact content you read from the file."
+        )
+
+        assert result.action == "responded"
+        assert chain_path.exists()
+        assert "CHAIN_STEP_1_DONE" in result.summary

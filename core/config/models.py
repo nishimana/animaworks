@@ -306,12 +306,19 @@ DEFAULT_MODEL_MODES: dict[str, str] = {
     "claude-haiku-3.5-20241022": "A1",
     "openai/gpt-4o": "A2",
     "openai/gpt-4o-mini": "A2",
+    "azure/gpt-4.1": "A2",
+    "azure/gpt-4.1-mini": "A2",
+    "azure/gpt-4o": "A2",
     "google/gemini-2.0-flash": "A2",
     "google/gemini-2.5-pro": "A2",
     "ollama/gemma3:27b": "B",
     "ollama/llama3.3:70b": "B",
     "ollama/qwen2.5-coder:32b": "B",
 }
+
+# Provider prefixes that default to A2 (tool_use capable) when the specific
+# model name is not in DEFAULT_MODEL_MODES or config.json.
+_A2_PROVIDER_PREFIXES = ("openai/", "azure/", "google/")
 
 
 def resolve_execution_mode(
@@ -325,7 +332,8 @@ def resolve_execution_mode(
       1. Person's execution_mode explicit override (legacy)
       2. config.json model_modes table
       3. DEFAULT_MODEL_MODES (hard-coded fallback)
-      4. Default "B" (safe side)
+      4. Provider prefix heuristic (openai/, azure/, google/ → A2)
+      5. Default "B" (safe side)
     """
     if explicit_override:
         mapping = {"autonomous": "A2", "assisted": "B"}
@@ -336,4 +344,9 @@ def resolve_execution_mode(
         return table[model_name].upper()
     if model_name in DEFAULT_MODEL_MODES:
         return DEFAULT_MODEL_MODES[model_name]
+
+    # Heuristic: known tool_use-capable providers default to A2
+    if any(model_name.startswith(p) for p in _A2_PROVIDER_PREFIXES):
+        return "A2"
+
     return "B"  # unknown model → safe side

@@ -137,11 +137,12 @@ def cmd_start(args: argparse.Namespace) -> None:
 
     from core.config import load_config
 
+    display_host = "localhost" if args.host == "0.0.0.0" else args.host
     config = load_config()
     if not config.setup_complete:
-        print(f"First-time setup: open http://{args.host}:{args.port}/setup/")
+        print(f"Open http://{display_host}:{args.port}/setup/ to configure your persons and settings.")
     else:
-        print(f"Dashboard: http://{args.host}:{args.port}/")
+        print(f"Dashboard ready at http://{display_host}:{args.port}/")
 
     try:
         app = create_app(get_persons_dir(), get_shared_dir())
