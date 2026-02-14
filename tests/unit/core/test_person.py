@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
@@ -297,3 +298,203 @@ class TestRunCronTask:
             result = await dp.run_cron_task("daily_report", "Generate report")
             assert isinstance(result, CycleResult)
             assert dp._status == "idle"
+
+
+# ── process_greet ────────────────────────────────────────
+
+
+class TestProcessGreet:
+    async def test_greet_returns_response(self, data_dir, make_person):
+        person_dir = make_person("alice")
+        shared_dir = data_dir / "shared"
+
+        with patch("core.person.AgentCore") as MockAgent, \
+             patch("core.person.MemoryManager") as MockMM, \
+             patch("core.person.Messenger"), \
+             patch("core.person.ConversationMemory") as MockConv, \
+             patch("core.person.load_prompt", return_value="greet prompt"):
+            MockMM.return_value.read_model_config.return_value = MagicMock()
+            MockConv.return_value.append_turn = MagicMock()
+            MockConv.return_value.save = MagicMock()
+
+            from core.person import DigitalPerson
+            dp = DigitalPerson(person_dir, shared_dir)
+            dp.agent.run_cycle = AsyncMock(
+                return_value=_make_cycle_result(
+                    summary='こんにちは！今は待機中です。<!-- emotion: {"emotion": "smile"} -->'
+                )
+            )
+
+            result = await dp.process_greet()
+            assert result["response"] == "こんにちは！今は待機中です。"
+            assert result["emotion"] == "smile"
+            assert result["cached"] is False
+
+    async def test_greet_caches_response(self, data_dir, make_person):
+        person_dir = make_person("alice")
+        shared_dir = data_dir / "shared"
+
+        with patch("core.person.AgentCore"), \
+             patch("core.person.MemoryManager") as MockMM, \
+             patch("core.person.Messenger"), \
+             patch("core.person.ConversationMemory") as MockConv, \
+             patch("core.person.load_prompt", return_value="greet prompt"):
+            MockMM.return_value.read_model_config.return_value = MagicMock()
+            MockConv.return_value.append_turn = MagicMock()
+            MockConv.return_value.save = MagicMock()
+
+            from core.person import DigitalPerson
+            dp = DigitalPerson(person_dir, shared_dir)
+            dp.agent.run_cycle = AsyncMock(
+                return_value=_make_cycle_result(summary="Hello!")
+            )
+
+            # First call
+            result1 = await dp.process_greet()
+            assert result1["cached"] is False
+
+            # Second call within cooldown
+            result2 = await dp.process_greet()
+            assert result2["cached"] is True
+            assert result2["response"] == result1["response"]
+            # LLM should only be called once
+            assert dp.agent.run_cycle.await_count == 1
+
+    async def test_greet_cache_expires(self, data_dir, make_person):
+        person_dir = make_person("alice")
+        shared_dir = data_dir / "shared"
+
+        with patch("core.person.AgentCore"), \
+             patch("core.person.MemoryManager") as MockMM, \
+             patch("core.person.Messenger"), \
+             patch("core.person.ConversationMemory") as MockConv, \
+             patch("core.person.load_prompt", return_value="greet prompt"):
+            MockMM.return_value.read_model_config.return_value = MagicMock()
+            MockConv.return_value.append_turn = MagicMock()
+            MockConv.return_value.save = MagicMock()
+
+            from core.person import DigitalPerson
+            dp = DigitalPerson(person_dir, shared_dir)
+            dp.agent.run_cycle = AsyncMock(
+                return_value=_make_cycle_result(summary="Hello!")
+            )
+
+            # First call
+            await dp.process_greet()
+
+            # Simulate cache expiry
+            dp._last_greet_at = time.time() - 301
+
+            # Second call after expiry
+            result = await dp.process_greet()
+            assert result["cached"] is False
+            assert dp.agent.run_cycle.await_count == 2
+
+    async def test_greet_records_assistant_turn_only(self, data_dir, make_person):
+        person_dir = make_person("alice")
+        shared_dir = data_dir / "shared"
+
+        with patch("core.person.AgentCore"), \
+             patch("core.person.MemoryManager") as MockMM, \
+             patch("core.person.Messenger"), \
+             patch("core.person.ConversationMemory") as MockConv, \
+             patch("core.person.load_prompt", return_value="greet prompt"):
+            MockMM.return_value.read_model_config.return_value = MagicMock()
+            MockConv.return_value.append_turn = MagicMock()
+            MockConv.return_value.save = MagicMock()
+
+            from core.person import DigitalPerson
+            dp = DigitalPerson(person_dir, shared_dir)
+            dp.agent.run_cycle = AsyncMock(
+                return_value=_make_cycle_result(summary="Hi there!")
+            )
+
+            await dp.process_greet()
+
+            # Should only record assistant turn, no human turn
+            MockConv.return_value.append_turn.assert_called_once_with(
+                "assistant", "Hi there!"
+            )
+            MockConv.return_value.save.assert_called_once()
+
+    async def test_greet_restores_previous_status(self, data_dir, make_person):
+        person_dir = make_person("alice")
+        shared_dir = data_dir / "shared"
+
+        with patch("core.person.AgentCore"), \
+             patch("core.person.MemoryManager") as MockMM, \
+             patch("core.person.Messenger"), \
+             patch("core.person.ConversationMemory") as MockConv, \
+             patch("core.person.load_prompt", return_value="greet prompt"):
+            MockMM.return_value.read_model_config.return_value = MagicMock()
+            MockConv.return_value.append_turn = MagicMock()
+            MockConv.return_value.save = MagicMock()
+
+            from core.person import DigitalPerson
+            dp = DigitalPerson(person_dir, shared_dir)
+
+            # Set pre-existing status
+            dp._status = "working"
+            dp._current_task = "Report generation"
+
+            observed_statuses = []
+
+            async def mock_run_cycle(prompt, trigger="manual"):
+                observed_statuses.append(dp._status)
+                return _make_cycle_result(summary="Hello!")
+
+            dp.agent.run_cycle = mock_run_cycle
+
+            await dp.process_greet()
+
+            # During greet, status should be "greeting"
+            assert "greeting" in observed_statuses
+            # After greet, status should be restored
+            assert dp._status == "working"
+            assert dp._current_task == "Report generation"
+
+    async def test_greet_emotion_fallback(self, data_dir, make_person):
+        person_dir = make_person("alice")
+        shared_dir = data_dir / "shared"
+
+        with patch("core.person.AgentCore"), \
+             patch("core.person.MemoryManager") as MockMM, \
+             patch("core.person.Messenger"), \
+             patch("core.person.ConversationMemory") as MockConv, \
+             patch("core.person.load_prompt", return_value="greet prompt"):
+            MockMM.return_value.read_model_config.return_value = MagicMock()
+            MockConv.return_value.append_turn = MagicMock()
+            MockConv.return_value.save = MagicMock()
+
+            from core.person import DigitalPerson
+            dp = DigitalPerson(person_dir, shared_dir)
+            # No emotion tag in response
+            dp.agent.run_cycle = AsyncMock(
+                return_value=_make_cycle_result(summary="Plain greeting")
+            )
+
+            result = await dp.process_greet()
+            assert result["emotion"] == "neutral"
+
+    async def test_greet_exception_restores_status(self, data_dir, make_person):
+        person_dir = make_person("alice")
+        shared_dir = data_dir / "shared"
+
+        with patch("core.person.AgentCore"), \
+             patch("core.person.MemoryManager") as MockMM, \
+             patch("core.person.Messenger"), \
+             patch("core.person.load_prompt", return_value="greet prompt"):
+            MockMM.return_value.read_model_config.return_value = MagicMock()
+
+            from core.person import DigitalPerson
+            dp = DigitalPerson(person_dir, shared_dir)
+            dp._status = "working"
+            dp._current_task = "Some task"
+            dp.agent.run_cycle = AsyncMock(side_effect=RuntimeError("fail"))
+
+            with pytest.raises(RuntimeError):
+                await dp.process_greet()
+
+            # Status should be restored even after exception
+            assert dp._status == "working"
+            assert dp._current_task == "Some task"

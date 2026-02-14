@@ -32,6 +32,10 @@ export function fetchPersonDetail(name) {
 
 // ── Chat ──────────────────────
 
+export function greetPerson(name) {
+  return post(`/api/persons/${encodeURIComponent(name)}/greet`, {});
+}
+
 export function sendChat(name, message, userName) {
   return post(`/api/persons/${encodeURIComponent(name)}/chat`, {
     message,

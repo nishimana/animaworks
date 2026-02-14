@@ -2,7 +2,7 @@
 // Initialization, screen switching, and event delegation.
 
 import { getState, setState, subscribe } from "./state.js";
-import { fetchSystemStatus, fetchConversationFull } from "./api.js";
+import { fetchSystemStatus, fetchConversationFull, greetPerson } from "./api.js";
 import { connect, onEvent } from "./websocket.js";
 import { initLogin, getCurrentUser, logout } from "./login.js";
 import { initPerson, loadPersons, selectPerson, renderPersonSelector, renderStatus } from "./person.js";
@@ -237,8 +237,9 @@ async function openConversation(personName) {
   await setCharacter(personName);
   setExpression("neutral");
 
-  // Load and render chat history
-  loadAndRenderConvMessages(personName);
+  // Load and render chat history, then trigger greeting
+  await loadAndRenderConvMessages(personName);
+  triggerGreeting(personName);
 
   // Focus input
   dom.convInput?.focus();
@@ -257,6 +258,30 @@ function closeConversation() {
   if (convStreamController) {
     convStreamController.abort();
     convStreamController = null;
+  }
+}
+
+// ── Greeting on Character Click ──────────────────────
+
+async function triggerGreeting(personName) {
+  try {
+    const data = await greetPerson(personName);
+    if (!data.response) return;
+
+    // Add assistant-only greeting message to chat
+    const { chatMessages } = getState();
+    setState({
+      chatMessages: [...chatMessages, { role: "assistant", text: data.response }],
+    });
+    renderConvMessages();
+
+    // Update bust-up expression
+    if (data.emotion) {
+      setExpression(data.emotion);
+      setTimeout(() => setExpression("neutral"), 3000);
+    }
+  } catch (err) {
+    console.error("[greeting] Failed to greet:", err);
   }
 }
 

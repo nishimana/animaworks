@@ -142,6 +142,7 @@ class PersonRunner:
         """Get handler for method."""
         handlers = {
             "process_message": self._handle_process_message,
+            "greet": self._handle_greet,
             "run_heartbeat": self._handle_run_heartbeat,
             "run_cron_task": self._handle_run_cron_task,
             "get_status": self._handle_get_status,
@@ -164,6 +165,13 @@ class PersonRunner:
             "response": result,
             "replied_to": []
         }
+
+    async def _handle_greet(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Handle greet request (character click greeting)."""
+        if not self.person:
+            raise RuntimeError("Person not initialized")
+
+        return await self.person.process_greet()
 
     async def _handle_process_message_stream(
         self, request: IPCRequest

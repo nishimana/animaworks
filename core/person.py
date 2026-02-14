@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from collections.abc import AsyncGenerator, Callable
 from datetime import datetime
 from pathlib import Path
@@ -19,7 +20,7 @@ from core.memory.conversation import ConversationMemory
 from core.memory import MemoryManager
 from core.messenger import Messenger
 from core.paths import load_prompt
-from core.schemas import CycleResult, PersonStatus
+from core.schemas import CycleResult, PersonStatus, VALID_EMOTIONS
 
 logger = logging.getLogger("animaworks.person")
 
@@ -49,6 +50,12 @@ class DigitalPerson:
         self._last_heartbeat: datetime | None = None
         self._last_activity: datetime | None = None
         self._on_lock_released: Callable[[], None] | None = None
+
+        # Greet cache (5-minute cooldown)
+        self._last_greet_at: float | None = None
+        self._last_greet_text: str | None = None
+        self._last_greet_emotion: str = "neutral"
+        self._GREET_COOLDOWN = 300  # seconds
 
         logger.info("DigitalPerson '%s' initialized from %s", self.name, person_dir)
 
@@ -238,6 +245,95 @@ class DigitalPerson:
         finally:
             self._user_waiting.clear()
             self._notify_lock_released()
+
+    async def process_greet(self) -> dict[str, str | bool]:
+        """Generate a greeting response when user clicks the character.
+
+        Returns a cached response if called within the cooldown period.
+
+        Returns:
+            Dict with keys: response, emotion, cached.
+        """
+        # Check cooldown
+        now = time.time()
+        if (
+            self._last_greet_at is not None
+            and (now - self._last_greet_at) < self._GREET_COOLDOWN
+            and self._last_greet_text is not None
+        ):
+            logger.info(
+                "[%s] process_greet CACHED (%.0fs since last)",
+                self.name, now - self._last_greet_at,
+            )
+            return {
+                "response": self._last_greet_text,
+                "emotion": self._last_greet_emotion,
+                "cached": True,
+            }
+
+        logger.info("[%s] process_greet START", self.name)
+        async with self._lock:
+            prev_status = self._status
+            prev_task = self._current_task
+
+            # Build greet prompt with current state
+            status_text = prev_status if prev_status != "idle" else "待機中"
+            task_text = prev_task if prev_task else "特になし"
+            prompt = load_prompt(
+                "greet", status=status_text, current_task=task_text,
+            )
+
+            self._status = "greeting"
+            self._current_task = "Greeting user"
+
+            try:
+                result = await self.agent.run_cycle(
+                    prompt, trigger="greet:user",
+                )
+                self._last_activity = datetime.now()
+
+                # Extract emotion from response (inline to avoid circular import)
+                import re as _re
+                _em_pat = _re.compile(r'<!--\s*emotion:\s*(\{.*?\})\s*-->', _re.DOTALL)
+                _em_match = _em_pat.search(result.summary)
+                if _em_match:
+                    clean_text = _em_pat.sub("", result.summary).rstrip()
+                    try:
+                        _meta = json.loads(_em_match.group(1))
+                        emotion = _meta.get("emotion", "neutral")
+                        if emotion not in VALID_EMOTIONS:
+                            emotion = "neutral"
+                    except (json.JSONDecodeError, AttributeError):
+                        emotion = "neutral"
+                else:
+                    clean_text = result.summary
+                    emotion = "neutral"
+
+                # Record only assistant turn in conversation memory
+                conv_memory = ConversationMemory(self.person_dir, self.model_config)
+                conv_memory.append_turn("assistant", clean_text)
+                conv_memory.save()
+
+                # Update greet cache
+                self._last_greet_at = time.time()
+                self._last_greet_text = clean_text
+                self._last_greet_emotion = emotion
+
+                logger.info(
+                    "[%s] process_greet END duration_ms=%d",
+                    self.name, result.duration_ms,
+                )
+                return {
+                    "response": clean_text,
+                    "emotion": emotion,
+                    "cached": False,
+                }
+            except Exception:
+                logger.exception("[%s] process_greet FAILED", self.name)
+                raise
+            finally:
+                self._status = prev_status
+                self._current_task = prev_task
 
     async def run_heartbeat(self) -> CycleResult:
         # Defer to user messages: skip heartbeat if a user is waiting for the lock

@@ -7,14 +7,69 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 
-def _make_test_app(persons: dict | None = None):
+def _make_test_app(persons: dict | None = None, supervisor: MagicMock | None = None):
     from fastapi import FastAPI
     from server.routes.chat import create_chat_router
 
     app = FastAPI()
-    app.state.persons = persons or {}
+    persons = persons or {}
+    app.state.persons = persons
     app.state.ws_manager = MagicMock()
     app.state.ws_manager.broadcast = AsyncMock()
+    if supervisor is not None:
+        app.state.supervisor = supervisor
+    else:
+        # Build a supervisor mock that delegates to person mocks
+        sup = MagicMock()
+        sup.processes = set(persons.keys())
+
+        async def _send_request(person_name, method, params, timeout=60.0):
+            if person_name not in persons:
+                raise KeyError(person_name)
+            p = persons[person_name]
+            if method == "process_message":
+                result = await p.process_message(
+                    params.get("message", ""),
+                    from_person=params.get("from_person", "human"),
+                )
+                return {"response": result, "replied_to": []}
+            if method == "greet":
+                return await p.process_greet()
+            raise ValueError(f"Unknown method: {method}")
+
+        async def _send_request_stream(person_name, method, params, timeout=120.0):
+            if person_name not in persons:
+                raise KeyError(person_name)
+            p = persons[person_name]
+            from core.supervisor.ipc import IPCResponse
+            import json as _json
+            async for chunk in p.process_message_stream(
+                params.get("message", ""),
+                from_person=params.get("from_person", "human"),
+            ):
+                event_type = chunk.get("type", "unknown")
+                if event_type == "cycle_done":
+                    cycle_result = chunk.get("cycle_result", {})
+                    yield IPCResponse(
+                        id="test",
+                        stream=True,
+                        done=True,
+                        result={
+                            "response": cycle_result.get("summary", ""),
+                            "replied_to": [],
+                            "cycle_result": cycle_result,
+                        },
+                    )
+                    return
+                yield IPCResponse(
+                    id="test",
+                    stream=True,
+                    chunk=_json.dumps(chunk, ensure_ascii=False),
+                )
+
+        sup.send_request = _send_request
+        sup.send_request_stream = _send_request_stream
+        app.state.supervisor = sup
     router = create_chat_router()
     app.include_router(router, prefix="/api")
     return app
@@ -201,3 +256,70 @@ class TestChatStream:
         body = resp.text
         assert "event: error" in body
         assert "Internal server error" in body
+
+
+# ── POST /persons/{name}/greet ──────────────────────────
+
+
+class TestGreet:
+    async def test_greet_success(self):
+        supervisor = MagicMock()
+        supervisor.send_request = AsyncMock(return_value={
+            "response": "こんにちは！待機中です。",
+            "emotion": "smile",
+            "cached": False,
+        })
+        app = _make_test_app(supervisor=supervisor)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post("/api/persons/alice/greet")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["response"] == "こんにちは！待機中です。"
+        assert data["emotion"] == "smile"
+        assert data["cached"] is False
+        assert data["person"] == "alice"
+
+    async def test_greet_cached(self):
+        supervisor = MagicMock()
+        supervisor.send_request = AsyncMock(return_value={
+            "response": "Hi!",
+            "emotion": "neutral",
+            "cached": True,
+        })
+        app = _make_test_app(supervisor=supervisor)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post("/api/persons/alice/greet")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["cached"] is True
+
+    async def test_greet_person_not_found(self):
+        supervisor = MagicMock()
+        supervisor.send_request = AsyncMock(side_effect=KeyError("bob"))
+        app = _make_test_app(supervisor=supervisor)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post("/api/persons/bob/greet")
+
+        assert resp.status_code == 404
+
+    async def test_greet_ipc_sends_correct_method(self):
+        supervisor = MagicMock()
+        supervisor.send_request = AsyncMock(return_value={
+            "response": "Hi", "emotion": "neutral", "cached": False,
+        })
+        app = _make_test_app(supervisor=supervisor)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.post("/api/persons/alice/greet")
+
+        supervisor.send_request.assert_awaited_once_with(
+            person_name="alice",
+            method="greet",
+            params={},
+            timeout=60.0,
+        )

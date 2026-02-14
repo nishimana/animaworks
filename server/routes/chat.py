@@ -189,6 +189,37 @@ def create_chat_router() -> APIRouter:
             from fastapi import HTTPException
             raise HTTPException(status_code=500, detail=str(e))
 
+    @router.post("/persons/{name}/greet")
+    async def greet(name: str, request: Request):
+        """Generate a greeting when user clicks the character.
+
+        Returns cached response if called within the 5-minute cooldown.
+        Non-streaming, returns a single JSON response.
+        """
+        supervisor = request.app.state.supervisor
+
+        try:
+            result = await supervisor.send_request(
+                person_name=name,
+                method="greet",
+                params={},
+                timeout=60.0,
+            )
+
+            return {
+                "response": result.get("response", ""),
+                "emotion": result.get("emotion", "neutral"),
+                "cached": result.get("cached", False),
+                "person": name,
+            }
+
+        except KeyError:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail=f"Person not found: {name}")
+        except ValueError as e:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=500, detail=str(e))
+
     @router.post("/persons/{name}/chat/stream")
     async def chat_stream(name: str, body: ChatRequest, request: Request):
         """Stream chat response via SSE over IPC."""
