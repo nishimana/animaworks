@@ -38,11 +38,8 @@ def create_internal_router() -> APIRouter:
             "summary": body.content[:200],
         })
 
-        # Update replied_to tracking if the sender is a managed person
-        persons = request.app.state.persons
-        person = persons.get(body.from_person)
-        if person:
-            person.agent.replied_to.add(body.to_person)
+        # Note: replied_to tracking is now managed by each Person process.
+        # The server no longer holds live DigitalPerson objects.
 
         return {"status": "ok"}
 

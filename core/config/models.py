@@ -404,24 +404,33 @@ def _match_pattern_table(
 
 
 def load_model_config(person_dir: Path) -> "ModelConfig":
-    """Build a :class:`~core.schemas.ModelConfig` for *person_dir*.
+    """Build a ModelConfig for *person_dir* from the unified config.json.
 
-    Merges per-person overrides with defaults and resolves credentials
-    so that callers (e.g. ``ConversationMemory``) receive a ready-to-use
-    configuration without knowing the config-resolution details.
+    This is a standalone version of ``MemoryManager.read_model_config()``
+    for use in server routes that do not have a live DigitalPerson instance.
     """
     from core.schemas import ModelConfig
 
-    config = load_config()
+    config_path = get_config_path()
+    if not config_path.exists():
+        return ModelConfig()
+
+    config = load_config(config_path)
     person_name = person_dir.name
     resolved, credential = resolve_person_config(config, person_name)
 
+    cred_name = resolved.credential
+    api_key_env = f"{cred_name.upper()}_API_KEY"
+    mode = resolve_execution_mode(
+        config, resolved.model, resolved.execution_mode,
+    )
     return ModelConfig(
         model=resolved.model,
         fallback_model=resolved.fallback_model,
         max_tokens=resolved.max_tokens,
         max_turns=resolved.max_turns,
         api_key=credential.api_key or None,
+        api_key_env=api_key_env,
         api_base_url=credential.base_url,
         context_threshold=resolved.context_threshold,
         max_chains=resolved.max_chains,
@@ -429,6 +438,7 @@ def load_model_config(person_dir: Path) -> "ModelConfig":
         execution_mode=resolved.execution_mode,
         supervisor=resolved.supervisor,
         speciality=resolved.speciality,
+        resolved_mode=mode,
     )
 
 

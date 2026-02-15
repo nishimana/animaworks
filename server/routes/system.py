@@ -149,16 +149,19 @@ def create_system_router() -> APIRouter:
         from core.memory.shortterm import ShortTermMemory
 
         persons_dir = request.app.state.persons_dir
-        person_names: list[str] = request.app.state.person_names
+        person_names = request.app.state.person_names
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         events: list[dict] = []
 
-        target_names = [person] if person and person in person_names else person_names
+        target_names = (
+            [person] if person and person in person_names else person_names
+        )
 
         for name in target_names:
             person_dir = persons_dir / name
             if not person_dir.exists():
                 continue
+
 
             # Short-term memory archives (session history)
             stm = ShortTermMemory(person_dir)
@@ -213,9 +216,7 @@ def create_system_router() -> APIRouter:
                         "metadata": {"role": msg.get("role", "")},
                     })
             except Exception:
-                logger.warning(
-                    "Failed to load transcripts for %s", name, exc_info=True,
-                )
+                logger.warning("Failed to load transcripts for %s", name, exc_info=True)
 
         # Sort descending by timestamp, cap at 200 items
         events.sort(key=lambda e: e.get("timestamp", ""), reverse=True)

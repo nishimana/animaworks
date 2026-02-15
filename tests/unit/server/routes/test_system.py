@@ -18,7 +18,6 @@ def _make_test_app(
     from server.routes.system import create_system_router
 
     app = FastAPI()
-    app.state.persons = persons or {}
     app.state.persons_dir = persons_dir or Path("/tmp/fake/persons")
     app.state.shared_dir = shared_dir or Path("/tmp/fake/shared")
     app.state.person_names = (
@@ -208,13 +207,12 @@ class TestRecentActivity:
             resp = await client.get("/api/activity/recent?hours=1")
         assert resp.status_code == 200
 
-    @patch("core.config.models.load_model_config")
-    async def test_activity_with_person_filter(self, mock_lmc, tmp_path):
+    async def test_activity_with_person_filter(self, tmp_path):
         persons_dir = tmp_path / "persons"
+        persons_dir.mkdir()
         alice_dir = persons_dir / "alice"
-        alice_dir.mkdir(parents=True)
+        alice_dir.mkdir()
 
-        mock_lmc.return_value = MagicMock()
 
         app = _make_test_app(
             persons_dir=persons_dir,

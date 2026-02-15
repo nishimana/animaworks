@@ -7,12 +7,11 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 
-def _make_test_app(persons: dict | None = None):
+def _make_test_app():
     from fastapi import FastAPI
     from server.routes.internal import create_internal_router
 
     app = FastAPI()
-    app.state.persons = persons or {}
     app.state.ws_manager = MagicMock()
     app.state.ws_manager.broadcast = AsyncMock()
     router = create_internal_router()
@@ -25,7 +24,7 @@ def _make_test_app(persons: dict | None = None):
 
 class TestInternalMessageSent:
     async def test_message_sent_broadcasts(self):
-        app = _make_test_app({})
+        app = _make_test_app()
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
@@ -46,27 +45,9 @@ class TestInternalMessageSent:
         assert call_data["data"]["from_person"] == "alice"
         assert call_data["data"]["to_person"] == "bob"
 
-    async def test_message_sent_updates_replied_to(self):
-        mock_person = MagicMock()
-        mock_person.agent.replied_to = set()
-
-        app = _make_test_app({"alice": mock_person})
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.post(
-                "/api/internal/message-sent",
-                json={
-                    "from_person": "alice",
-                    "to_person": "bob",
-                    "content": "Reply",
-                },
-            )
-        assert resp.status_code == 200
-        assert "bob" in mock_person.agent.replied_to
-
     async def test_message_sent_no_person_match(self):
         """Non-managed person as sender should not crash."""
-        app = _make_test_app({})
+        app = _make_test_app()
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
@@ -80,7 +61,7 @@ class TestInternalMessageSent:
         assert resp.status_code == 200
 
     async def test_message_sent_truncates_content(self):
-        app = _make_test_app({})
+        app = _make_test_app()
         transport = ASGITransport(app=app)
         long_content = "x" * 500
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -99,7 +80,7 @@ class TestInternalMessageSent:
         assert len(call_data["data"]["summary"]) <= 200
 
     async def test_message_sent_missing_fields(self):
-        app = _make_test_app({})
+        app = _make_test_app()
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
@@ -111,7 +92,7 @@ class TestInternalMessageSent:
 
     async def test_message_sent_default_content(self):
         """Content field has a default of empty string."""
-        app = _make_test_app({})
+        app = _make_test_app()
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(

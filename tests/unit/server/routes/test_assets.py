@@ -8,12 +8,12 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 
-def _make_test_app(persons: dict | None = None):
+def _make_test_app(persons_dir: Path | None = None):
     from fastapi import FastAPI
     from server.routes.assets import create_assets_router
 
     app = FastAPI()
-    app.state.persons = persons or {}
+    app.state.persons_dir = persons_dir or Path("/tmp/fake/persons")
     app.state.ws_manager = MagicMock()
     app.state.ws_manager.broadcast = AsyncMock()
     router = create_assets_router()
@@ -21,19 +21,12 @@ def _make_test_app(persons: dict | None = None):
     return app
 
 
-def _make_mock_person(name: str = "alice", person_dir: Path | None = None):
-    person = MagicMock()
-    person.name = name
-    person.person_dir = person_dir or Path("/tmp/fake/persons") / name
-    return person
-
-
 # ── GET /persons/{name}/assets ───────────────────────────
 
 
 class TestListAssets:
-    async def test_person_not_found(self):
-        app = _make_test_app({})
+    async def test_person_not_found(self, tmp_path):
+        app = _make_test_app(persons_dir=tmp_path)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/persons/nobody/assets")
@@ -43,8 +36,7 @@ class TestListAssets:
     async def test_no_assets_dir(self, tmp_path):
         person_dir = tmp_path / "alice"
         person_dir.mkdir()
-        alice = _make_mock_person("alice", person_dir=person_dir)
-        app = _make_test_app({"alice": alice})
+        app = _make_test_app(persons_dir=tmp_path)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/persons/alice/assets")
@@ -59,8 +51,7 @@ class TestListAssets:
         (assets_dir / "avatar.png").write_bytes(b"\x89PNG")
         (assets_dir / "model.glb").write_bytes(b"\x00")
 
-        alice = _make_mock_person("alice", person_dir=person_dir)
-        app = _make_test_app({"alice": alice})
+        app = _make_test_app(persons_dir=tmp_path)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/persons/alice/assets")
@@ -75,8 +66,8 @@ class TestListAssets:
 
 
 class TestGetAssetMetadata:
-    async def test_person_not_found(self):
-        app = _make_test_app({})
+    async def test_person_not_found(self, tmp_path):
+        app = _make_test_app(persons_dir=tmp_path)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/persons/nobody/assets/metadata")
@@ -85,11 +76,9 @@ class TestGetAssetMetadata:
     async def test_metadata_no_assets(self, tmp_path):
         person_dir = tmp_path / "alice"
         person_dir.mkdir()
-        # No assets dir, but identity.md exists
         (person_dir / "identity.md").write_text("# Alice", encoding="utf-8")
 
-        alice = _make_mock_person("alice", person_dir=person_dir)
-        app = _make_test_app({"alice": alice})
+        app = _make_test_app(persons_dir=tmp_path)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/persons/alice/assets/metadata")
@@ -105,8 +94,7 @@ class TestGetAssetMetadata:
         )
         (person_dir / "assets").mkdir()
 
-        alice = _make_mock_person("alice", person_dir=person_dir)
-        app = _make_test_app({"alice": alice})
+        app = _make_test_app(persons_dir=tmp_path)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/persons/alice/assets/metadata")
@@ -124,8 +112,7 @@ class TestGetAssetMetadata:
         (assets_dir / "anim_idle.glb").write_bytes(b"\x00")
         (assets_dir / "anim_walk.glb").write_bytes(b"\x00")
 
-        alice = _make_mock_person("alice", person_dir=person_dir)
-        app = _make_test_app({"alice": alice})
+        app = _make_test_app(persons_dir=tmp_path)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/persons/alice/assets/metadata")
@@ -140,8 +127,8 @@ class TestGetAssetMetadata:
 
 
 class TestGetAsset:
-    async def test_person_not_found(self):
-        app = _make_test_app({})
+    async def test_person_not_found(self, tmp_path):
+        app = _make_test_app(persons_dir=tmp_path)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/persons/nobody/assets/file.png")
@@ -150,8 +137,7 @@ class TestGetAsset:
     async def test_invalid_filename(self, tmp_path):
         person_dir = tmp_path / "alice"
         person_dir.mkdir()
-        alice = _make_mock_person("alice", person_dir=person_dir)
-        app = _make_test_app({"alice": alice})
+        app = _make_test_app(persons_dir=tmp_path)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/persons/alice/assets/..%2Fetc%2Fpasswd")
@@ -161,8 +147,7 @@ class TestGetAsset:
         person_dir = tmp_path / "alice"
         person_dir.mkdir()
         (person_dir / "assets").mkdir()
-        alice = _make_mock_person("alice", person_dir=person_dir)
-        app = _make_test_app({"alice": alice})
+        app = _make_test_app(persons_dir=tmp_path)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/persons/alice/assets/missing.png")
@@ -175,8 +160,7 @@ class TestGetAsset:
         assets_dir.mkdir()
         (assets_dir / "avatar.png").write_bytes(b"\x89PNG\r\n\x1a\n")
 
-        alice = _make_mock_person("alice", person_dir=person_dir)
-        app = _make_test_app({"alice": alice})
+        app = _make_test_app(persons_dir=tmp_path)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/persons/alice/assets/avatar.png")
@@ -190,8 +174,7 @@ class TestGetAsset:
         assets_dir.mkdir()
         (assets_dir / "model.glb").write_bytes(b"\x00\x00\x00\x00")
 
-        alice = _make_mock_person("alice", person_dir=person_dir)
-        app = _make_test_app({"alice": alice})
+        app = _make_test_app(persons_dir=tmp_path)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/persons/alice/assets/model.glb")
@@ -205,8 +188,7 @@ class TestGetAsset:
         assets_dir.mkdir()
         (assets_dir / "avatar.png").write_bytes(b"\x89PNG")
 
-        alice = _make_mock_person("alice", person_dir=person_dir)
-        app = _make_test_app({"alice": alice})
+        app = _make_test_app(persons_dir=tmp_path)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.head("/api/persons/alice/assets/avatar.png")
@@ -217,8 +199,8 @@ class TestGetAsset:
 
 
 class TestGenerateAssets:
-    async def test_person_not_found(self):
-        app = _make_test_app({})
+    async def test_person_not_found(self, tmp_path):
+        app = _make_test_app(persons_dir=tmp_path)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
@@ -230,8 +212,7 @@ class TestGenerateAssets:
     async def test_missing_prompt(self, tmp_path):
         person_dir = tmp_path / "alice"
         person_dir.mkdir()
-        alice = _make_mock_person("alice", person_dir=person_dir)
-        app = _make_test_app({"alice": alice})
+        app = _make_test_app(persons_dir=tmp_path)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
@@ -245,7 +226,6 @@ class TestGenerateAssets:
     async def test_generate_success(self, mock_pipeline_cls, tmp_path):
         person_dir = tmp_path / "alice"
         person_dir.mkdir()
-        alice = _make_mock_person("alice", person_dir=person_dir)
 
         mock_result = MagicMock()
         mock_result.fullbody_path = Path("/tmp/fb.png")
@@ -261,7 +241,7 @@ class TestGenerateAssets:
         mock_pipeline.generate_all.return_value = mock_result
         mock_pipeline_cls.return_value = mock_pipeline
 
-        app = _make_test_app({"alice": alice})
+        app = _make_test_app(persons_dir=tmp_path)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
