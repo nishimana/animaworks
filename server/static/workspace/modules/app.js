@@ -17,6 +17,7 @@ import { initMovement, registerCharacter, updateMovements, moveTo, moveToHome, s
 import { computePOIs, initIdleBehaviors, updateIdleBehaviors, cancelBehavior } from "./idle_behavior.js";
 import { initInteractions, showMessageEffect, showConversation, updateInteractions } from "./interactions.js";
 import { initTimeline, addTimelineEvent, loadHistory } from "./timeline.js";
+import { playReveal } from "./reveal.js";
 
 // ── DOM References ──────────────────────
 
@@ -637,6 +638,14 @@ function setupWebSocket() {
   wsUnsubscribers.push(onEvent("person.assets_updated", async (data) => {
     const personName = data.name;
     addActivity("system", personName, `アセット更新: ${(data.assets || []).join(", ")}`);
+
+    // ── Reveal animation (Person birth) ──
+    const assets = data.assets || [];
+    const hasAvatar = assets.some((a) => a.startsWith("avatar_"));
+    if (hasAvatar) {
+      const avatarUrl = `/api/persons/${encodeURIComponent(personName)}/assets/avatar_bustup.png`;
+      await playReveal({ name: personName, avatarUrl });
+    }
 
     // Refresh 3D character if office is initialised
     if (getState().officeInitialized) {
