@@ -96,6 +96,12 @@ class VectorStore(ABC):
     def delete_documents(self, collection: str, ids: list[str]) -> None:
         """Delete specific documents by ID."""
 
+    @abstractmethod
+    def update_metadata(
+        self, collection: str, ids: list[str], metadatas: list[dict[str, str | int | float]]
+    ) -> None:
+        """Update metadata for existing documents without re-embedding."""
+
 
 # ── ChromaDB implementation ─────────────────────────────────────────
 
@@ -237,6 +243,20 @@ class ChromaVectorStore(VectorStore):
             logger.debug("Deleted %d documents from collection '%s'", len(ids), collection)
         except Exception as e:
             logger.warning("Failed to delete documents from '%s': %s", collection, e)
+
+    def update_metadata(
+        self, collection: str, ids: list[str], metadatas: list[dict[str, str | int | float]]
+    ) -> None:
+        """Update metadata for existing documents."""
+        if not ids:
+            return
+        try:
+            coll = self.client.get_collection(name=collection)
+            serialized = [self._serialize_metadata(m) for m in metadatas]
+            coll.update(ids=ids, metadatas=serialized)
+            logger.debug("Updated metadata for %d documents in '%s'", len(ids), collection)
+        except Exception as e:
+            logger.warning("Failed to update metadata in '%s': %s", collection, e)
 
     @staticmethod
     def _serialize_metadata(

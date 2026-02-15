@@ -110,6 +110,20 @@ class ConsolidationEngine:
         # Update RAG index for affected files
         self._update_rag_index(files_created + files_updated)
 
+        # Synaptic downscaling (forgetting phase 1)
+        downscaling_result: dict[str, Any] = {}
+        try:
+            from core.memory.forgetting import ForgettingEngine
+            forgetter = ForgettingEngine(self.person_dir, self.person_name)
+            downscaling_result = forgetter.synaptic_downscaling()
+            logger.info(
+                "Synaptic downscaling: scanned=%d, marked=%d",
+                downscaling_result.get("scanned", 0),
+                downscaling_result.get("marked_low", 0),
+            )
+        except Exception:
+            logger.exception("Synaptic downscaling failed for person=%s", self.person_name)
+
         logger.info(
             "Daily consolidation complete for person=%s: "
             "created=%d updated=%d",
@@ -120,6 +134,7 @@ class ConsolidationEngine:
             "episodes_processed": len(episode_entries),
             "knowledge_files_created": files_created,
             "knowledge_files_updated": files_updated,
+            "downscaling": downscaling_result,
             "skipped": False,
         }
 
@@ -466,6 +481,19 @@ class ConsolidationEngine:
         except Exception:
             logger.exception("Failed to rebuild RAG index for person=%s", self.person_name)
 
+        # Neurogenesis reorganization (forgetting phase 2)
+        try:
+            from core.memory.forgetting import ForgettingEngine
+            forgetter = ForgettingEngine(self.person_dir, self.person_name)
+            reorg_result = await forgetter.neurogenesis_reorganize(model=model)
+            results["reorganization"] = reorg_result
+            logger.info(
+                "Neurogenesis reorganization: merged=%d",
+                reorg_result.get("merged_count", 0),
+            )
+        except Exception:
+            logger.exception("Neurogenesis reorganization failed for person=%s", self.person_name)
+
         logger.info(
             "Weekly integration complete for person=%s: merged=%d compressed=%d",
             self.person_name,
@@ -758,3 +786,33 @@ class ConsolidationEngine:
             logger.debug("RAG not available, skipping index rebuild")
         except Exception:
             logger.exception("Failed to rebuild RAG index")
+
+    # ── Monthly Forgetting ──────────────────────────────────────
+
+    async def monthly_forget(self) -> dict[str, Any]:
+        """Perform monthly forgetting: archive and remove forgotten memories.
+
+        This is the final stage of the forgetting pipeline, removing
+        memories that have remained at low activation for extended periods.
+        """
+        logger.info("Starting monthly forgetting for person=%s", self.person_name)
+        try:
+            from core.memory.forgetting import ForgettingEngine
+            forgetter = ForgettingEngine(self.person_dir, self.person_name)
+            result = forgetter.complete_forgetting()
+
+            # Rebuild RAG index after deletions
+            self._rebuild_rag_index()
+
+            logger.info(
+                "Monthly forgetting complete for person=%s: "
+                "forgotten=%d, archived=%d files",
+                self.person_name,
+                result.get("forgotten_chunks", 0),
+                len(result.get("archived_files", [])),
+            )
+            return result
+
+        except Exception:
+            logger.exception("Monthly forgetting failed for person=%s", self.person_name)
+            return {"forgotten_chunks": 0, "archived_files": [], "error": True}

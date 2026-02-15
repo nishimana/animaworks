@@ -378,6 +378,16 @@ class LifecycleManager:
         )
         logger.info("System cron: Weekly integration on Sunday at 03:00 JST")
 
+        # Monthly forgetting: 1st of each month at 03:00 JST
+        self.scheduler.add_job(
+            self._handle_monthly_forgetting,
+            CronTrigger(day=1, hour=3, minute=0),
+            id="system_monthly_forgetting",
+            name="System: Monthly Forgetting",
+            replace_existing=True,
+        )
+        logger.info("System cron: Monthly forgetting on 1st at 03:00 JST")
+
     async def _handle_daily_consolidation(self) -> None:
         """Run daily consolidation for all persons."""
         logger.info("Starting system-wide daily consolidation")
@@ -505,6 +515,63 @@ class LifecycleManager:
             except Exception:
                 logger.exception(
                     "Weekly integration failed for person=%s",
+                    person_name
+                )
+
+    async def _handle_monthly_forgetting(self) -> None:
+        """Run monthly forgetting for all persons."""
+        logger.info("Starting system-wide monthly forgetting")
+
+        # Load config
+        from core.config import load_config
+        config = load_config()
+        consolidation_cfg = getattr(config, "consolidation", None)
+
+        # Default config
+        enabled = True
+
+        if consolidation_cfg:
+            enabled = getattr(consolidation_cfg, "monthly_forgetting_enabled", True)
+
+        if not enabled:
+            logger.info("Monthly forgetting is disabled in config")
+            return
+
+        # Run forgetting for each person
+        for person_name, person in self.persons.items():
+            try:
+                from core.memory.consolidation import ConsolidationEngine
+
+                engine = ConsolidationEngine(
+                    person_dir=person.memory.person_dir,
+                    person_name=person_name,
+                )
+
+                result = await engine.monthly_forget()
+
+                logger.info(
+                    "Monthly forgetting for %s: forgotten=%d archived=%d",
+                    person_name,
+                    result.get("forgotten_chunks", 0),
+                    len(result.get("archived_files", [])),
+                )
+
+                # Broadcast result
+                if self._ws_broadcast:
+                    await self._ws_broadcast(
+                        {
+                            "type": "system.consolidation",
+                            "data": {
+                                "person": person_name,
+                                "type": "monthly_forgetting",
+                                "result": result,
+                            },
+                        }
+                    )
+
+            except Exception:
+                logger.exception(
+                    "Monthly forgetting failed for person=%s",
                     person_name
                 )
 

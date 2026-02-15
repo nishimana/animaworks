@@ -396,7 +396,7 @@ def test_temporal_decay(temp_person_dir, temp_vector_store):
         ),
     ]
 
-    decayed = retriever._apply_temporal_decay(results)
+    decayed = retriever._apply_score_adjustments(results)
 
     # Recent document should have higher final score
     recent_result = next(r for r in decayed if r.doc_id == "recent")

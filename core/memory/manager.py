@@ -494,6 +494,10 @@ class MemoryManager:
             include_shared=include_shared,
         )
 
+        # Record access (Hebbian LTP: strengthen frequently accessed memories)
+        if rag_results:
+            retriever.record_access(rag_results, person_name)
+
         hits: list[tuple[str, str]] = []
         for r in rag_results:
             source = r.metadata.get("source_file", r.doc_id)

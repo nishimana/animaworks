@@ -290,6 +290,9 @@ class PrimingEngine:
             )
 
             if results:
+                # Record access (Hebbian LTP: memories that fire together wire together)
+                self._retriever.record_access(results, person_name)
+
                 # Format results
                 parts = []
                 for i, result in enumerate(results):

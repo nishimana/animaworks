@@ -12,6 +12,7 @@ Implements:
 """
 
 import logging
+import math
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -24,6 +25,8 @@ WEIGHT_RECENCY = 0.2
 
 # Temporal decay half-life (days)
 RECENCY_HALF_LIFE_DAYS = 30.0
+
+WEIGHT_FREQUENCY = 0.1
 
 
 # ── Data structures ─────────────────────────────────────────────────
@@ -127,8 +130,8 @@ class MemoryRetriever:
             for doc_id, content, score, metadata in vector_results
         ]
 
-        # 3. Apply temporal decay
-        results = self._apply_temporal_decay(results)
+        # 3. Apply temporal decay and frequency boost
+        results = self._apply_score_adjustments(results)
 
         # 4. Sort & top_k
         results.sort(key=lambda r: r.score, reverse=True)
@@ -190,38 +193,75 @@ class MemoryRetriever:
 
     # ── Score adjustment ────────────────────────────────────────────
 
-    def _apply_temporal_decay(
+    def _apply_score_adjustments(
         self,
         results: list[RetrievalResult],
     ) -> list[RetrievalResult]:
-        """Apply temporal decay to scores based on document age.
+        """Apply temporal decay and frequency boost to scores.
 
-        Uses exponential decay: decay_factor = 0.5 ^ (age_days / half_life)
+        - Temporal decay: exponential decay based on document age
+        - Frequency boost: log-scaled boost based on access count (Hebbian LTP)
         """
         now = datetime.now()
 
         for result in results:
-            # Extract update timestamp from metadata
+            # --- Temporal decay (existing) ---
             updated_at_str = result.metadata.get("updated_at")
             if not updated_at_str:
-                # No timestamp - use neutral decay (0.5)
                 decay_factor = 0.5
             else:
                 try:
                     updated_at = datetime.fromisoformat(str(updated_at_str))
                     age_days = (now - updated_at).total_seconds() / 86400.0
-
-                    # Exponential decay
                     decay_factor = 0.5 ** (age_days / RECENCY_HALF_LIFE_DAYS)
                 except (ValueError, TypeError):
                     decay_factor = 0.5
 
-            # Apply decay with weight
             recency_score = WEIGHT_RECENCY * decay_factor
             result.score = result.score + recency_score
             result.source_scores["recency"] = recency_score
 
+            # --- Frequency boost (new: Hebbian LTP analog) ---
+            access_count = int(result.metadata.get("access_count", 0))
+            frequency_boost = WEIGHT_FREQUENCY * math.log1p(access_count)
+            result.score += frequency_boost
+            result.source_scores["frequency"] = frequency_boost
+
         return results
+
+    def record_access(self, results: list[RetrievalResult], person_name: str) -> None:
+        """Record access for retrieved results (LTP analog).
+
+        Increments access_count and updates last_accessed_at for each result.
+        Called when results are injected into the agent's context.
+        """
+        if not results:
+            return
+
+        now_iso = datetime.now().isoformat()
+        updates_by_collection: dict[str, tuple[list[str], list[dict]]] = {}
+
+        for r in results:
+            memory_type = r.metadata.get("memory_type", "knowledge")
+            person = r.metadata.get("person", person_name)
+            collection = f"{person}_{memory_type}"
+            if collection not in updates_by_collection:
+                updates_by_collection[collection] = ([], [])
+            ids, metas = updates_by_collection[collection]
+            ids.append(r.doc_id)
+            metas.append({
+                "access_count": int(r.metadata.get("access_count", 0)) + 1,
+                "last_accessed_at": now_iso,
+            })
+
+        for collection, (ids, metas) in updates_by_collection.items():
+            try:
+                self.vector_store.update_metadata(collection, ids, metas)
+                logger.debug(
+                    "Recorded access for %d chunks in %s", len(ids), collection
+                )
+            except Exception as e:
+                logger.warning("Failed to record access for %s: %s", collection, e)
 
     # ── Spreading activation ────────────────────────────────────────
 

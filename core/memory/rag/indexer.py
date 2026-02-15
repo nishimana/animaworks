@@ -394,6 +394,14 @@ class MemoryIndexer:
         if flattened_tags:
             metadata["tags"] = flattened_tags[:10]  # Limit to 10 tags
 
+        # Access tracking (Hebbian LTP analog)
+        metadata["access_count"] = 0
+        metadata["last_accessed_at"] = ""
+
+        # Activation level (for forgetting mechanism)
+        metadata["activation_level"] = "normal"
+        metadata["low_activation_since"] = ""
+
         return metadata
 
     def _generate_embeddings(self, texts: list[str]) -> list[list[float]]:
