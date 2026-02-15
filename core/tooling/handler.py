@@ -19,6 +19,7 @@ import re
 import shlex
 import subprocess
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -82,6 +83,7 @@ class ToolHandler:
         self._on_message_sent = on_message_sent
         self._on_schedule_changed = on_schedule_changed
         self._human_notifier = human_notifier
+        self._pending_notifications: list[dict[str, Any]] = []
         self._replied_to: set[str] = set()
         self._external = ExternalToolDispatcher(
             tool_registry or [],
@@ -103,6 +105,12 @@ class ToolHandler:
     @on_schedule_changed.setter
     def on_schedule_changed(self, fn: Callable[[str], Any] | None) -> None:
         self._on_schedule_changed = fn
+
+    def drain_notifications(self) -> list[dict[str, Any]]:
+        """Return and clear pending notification events."""
+        events = self._pending_notifications
+        self._pending_notifications = []
+        return events
 
     @property
     def replied_to(self) -> set[str]:
@@ -287,6 +295,15 @@ class ToolHandler:
                 results = asyncio.run(coro)
         except Exception as e:
             return _error_result("NotificationError", f"Failed to send notification: {e}")
+
+        # Queue notification for Web UI broadcast (picked up by stream/IPC)
+        self._pending_notifications.append({
+            "person": self._person_name,
+            "subject": subject,
+            "body": body,
+            "priority": priority,
+            "timestamp": datetime.now().isoformat(),
+        })
 
         import json as _json
         return _json.dumps(

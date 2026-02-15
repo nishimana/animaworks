@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from server.dependencies import get_person
-from server.events import emit
+from server.events import emit, emit_notification
 
 logger = logging.getLogger("animaworks.routes.chat")
 
@@ -133,6 +133,16 @@ def _handle_chunk(
             "message": chunk.get("message", "初期化中です"),
         }), ""
 
+    if event_type == "notification_sent":
+        # Broadcast notification to all WebSocket clients (with queue support)
+        if request:
+            import asyncio
+            notif_data = chunk.get("data", {})
+            asyncio.ensure_future(
+                emit_notification(request, notif_data)
+            )
+        return None, ""
+
     if event_type == "cycle_done":
         cycle_result = chunk.get("cycle_result", {})
         response_text = cycle_result.get("summary", "")
@@ -212,6 +222,10 @@ def create_chat_router() -> APIRouter:
 
             response = result.get("response", "")
             clean_response, _ = extract_emotion(response)
+
+            # Broadcast any queued notifications from this cycle
+            for notif in result.get("notifications", []):
+                await emit_notification(request, notif)
 
             await emit(request, "person.status", {"name": name, "status": "idle"})
 

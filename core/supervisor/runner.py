@@ -328,7 +328,8 @@ class PersonRunner:
 
         return {
             "response": result,
-            "replied_to": []
+            "replied_to": [],
+            "notifications": self.person.drain_notifications(),
         }
 
     async def _handle_greet(self, params: dict[str, Any]) -> dict[str, Any]:

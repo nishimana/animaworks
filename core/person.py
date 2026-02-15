@@ -72,6 +72,10 @@ class DigitalPerson:
         """Inject a callback fired when heartbeat.md or cron.md is modified."""
         self.agent.set_on_schedule_changed(fn)
 
+    def drain_notifications(self) -> list[dict[str, Any]]:
+        """Return and clear pending notification events."""
+        return self.agent.drain_notifications()
+
     def set_on_lock_released(self, fn: Callable[[], None]) -> None:
         """Inject a callback invoked when the person's lock is released."""
         self._on_lock_released = fn
@@ -318,6 +322,10 @@ class DigitalPerson:
                             asyncio.create_task(
                                 conv_memory.finalize_session(min_turns=3)
                             )
+
+                            # Yield pending notification events before cycle_done
+                            for notif in self.agent.drain_notifications():
+                                yield {"type": "notification_sent", "data": notif}
 
                             logger.info(
                                 "[%s] process_message_stream END",

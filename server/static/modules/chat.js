@@ -21,6 +21,7 @@ export function renderChat() {
     }
     if (m.role === "assistant") {
       const streamClass = m.streaming ? " streaming" : "";
+      const notifClass = m.notification ? " notification" : "";
       let content = "";
       if (m.text) {
         content = renderMarkdown(m.text);
@@ -33,7 +34,7 @@ export function renderChat() {
       const toolHtml = m.activeTool
         ? `<div class="tool-indicator"><span class="tool-spinner"></span>${escapeHtml(m.activeTool)} を実行中...</div>`
         : "";
-      return `<div class="chat-bubble assistant${streamClass}">${content}${bootstrapHtml}${toolHtml}</div>`;
+      return `<div class="chat-bubble assistant${streamClass}${notifClass}">${content}${bootstrapHtml}${toolHtml}</div>`;
     }
     return `<div class="chat-bubble user">${escapeHtml(m.text)}</div>`;
   }).join("");

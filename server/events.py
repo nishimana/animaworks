@@ -15,3 +15,14 @@ async def emit(request: Request, event_type: str, data: dict[str, Any]) -> None:
     ws = getattr(request.app.state, "ws_manager", None)
     if ws:
         await ws.broadcast({"type": event_type, "data": data})
+
+
+async def emit_notification(request: Request, data: dict[str, Any]) -> None:
+    """Broadcast a person notification with queue support.
+
+    Uses ``broadcast_notification`` which queues the event when no
+    WebSocket clients are connected, flushing when a client reconnects.
+    """
+    ws = getattr(request.app.state, "ws_manager", None)
+    if ws:
+        await ws.broadcast_notification(data)

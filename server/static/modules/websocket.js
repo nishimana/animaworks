@@ -4,6 +4,7 @@ import { state, dom } from "./state.js";
 import { addActivity } from "./activity.js";
 import { renderPersonDropdown, updatePersonAvatar, refreshSelectedPerson } from "./persons.js";
 import { updateSystemStatus } from "./status.js";
+import { renderChat } from "./chat.js";
 
 let ws = null;
 let wsReconnectTimer = null;
@@ -178,10 +179,83 @@ function handleWsMessage(raw) {
       break;
     }
 
+    case "person.notification": {
+      const personName = data.person || data.name;
+      const subject = data.subject || "";
+      const body = data.body || "";
+      const priority = data.priority || "normal";
+      if (personName) {
+        // Add to chat history as assistant notification message
+        if (!state.chatHistories[personName]) {
+          state.chatHistories[personName] = [];
+        }
+        const notifText = subject ? `**${subject}**\n${body}` : body;
+        state.chatHistories[personName].push({
+          role: "assistant",
+          text: notifText,
+          notification: true,
+          priority: priority,
+        });
+        if (personName === state.selectedPerson) {
+          renderChat();
+        }
+        // Show toast notification
+        showNotificationToast(personName, subject, body, priority);
+        // Add to activity log
+        addActivity("notification", personName, subject || body.slice(0, 100));
+      }
+      break;
+    }
+
     default:
       if (data.name || data.person) {
         addActivity("system", data.name || data.person, JSON.stringify(data).slice(0, 120));
       }
       break;
   }
+}
+
+// ── Toast Notifications ─────────────────────
+
+function showNotificationToast(personName, subject, body, priority) {
+  // Create toast container if it doesn't exist
+  let container = document.getElementById("notificationToasts");
+  if (!container) {
+    container = document.createElement("div");
+    container.id = "notificationToasts";
+    document.body.appendChild(container);
+  }
+
+  const toast = document.createElement("div");
+  toast.className = `notification-toast priority-${priority}`;
+
+  const header = document.createElement("div");
+  header.className = "notification-toast-header";
+  header.textContent = personName;
+
+  const subjectEl = document.createElement("div");
+  subjectEl.className = "notification-toast-subject";
+  subjectEl.textContent = subject;
+
+  const bodyEl = document.createElement("div");
+  bodyEl.className = "notification-toast-body";
+  bodyEl.textContent = body.slice(0, 200);
+
+  toast.appendChild(header);
+  if (subject) toast.appendChild(subjectEl);
+  toast.appendChild(bodyEl);
+  container.appendChild(toast);
+
+  // Auto-dismiss after 5 seconds (8 seconds for urgent)
+  const dismissDelay = priority === "urgent" ? 8000 : 5000;
+  setTimeout(() => {
+    toast.classList.add("notification-toast-exit");
+    toast.addEventListener("animationend", () => toast.remove());
+  }, dismissDelay);
+
+  // Click to dismiss
+  toast.addEventListener("click", () => {
+    toast.classList.add("notification-toast-exit");
+    toast.addEventListener("animationend", () => toast.remove());
+  });
 }

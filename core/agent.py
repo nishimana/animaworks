@@ -93,6 +93,10 @@ class AgentCore:
         """Inject a callback invoked when heartbeat.md or cron.md is modified."""
         self._tool_handler.on_schedule_changed = fn
 
+    def drain_notifications(self) -> list[dict[str, Any]]:
+        """Return and clear pending notification events from ToolHandler."""
+        return self._tool_handler.drain_notifications()
+
     def reset_reply_tracking(self) -> None:
         """Clear reply tracking (call at start of each heartbeat cycle)."""
         self._tool_handler.reset_replied_to()
