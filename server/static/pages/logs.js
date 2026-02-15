@@ -179,11 +179,23 @@ function _applyFilters() {
   }
 }
 
+function _formatLogLine(text) {
+  try {
+    const obj = JSON.parse(text);
+    if (obj.ts && obj.level && obj.msg) {
+      const ts = obj.ts.replace(/T/, " ").replace(/\+.+$/, "");
+      return `${ts} [${obj.level}] ${obj.msg}`;
+    }
+  } catch { /* not JSON, use as-is */ }
+  return text;
+}
+
 function _colorizeLogLine(text) {
-  const escaped = escapeHtml(text);
-  if (text.includes("ERROR")) return `<span style="color:#ef4444;">${escaped}</span>`;
-  if (text.includes("WARNING")) return `<span style="color:#f59e0b;">${escaped}</span>`;
-  if (text.includes("DEBUG")) return `<span style="color:#9ca3af;">${escaped}</span>`;
+  const formatted = _formatLogLine(text);
+  const escaped = escapeHtml(formatted);
+  if (formatted.includes("ERROR")) return `<span style="color:#ef4444;">${escaped}</span>`;
+  if (formatted.includes("WARNING")) return `<span style="color:#f59e0b;">${escaped}</span>`;
+  if (formatted.includes("DEBUG")) return `<span style="color:#9ca3af;">${escaped}</span>`;
   return escaped;
 }
 

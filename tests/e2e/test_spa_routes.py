@@ -194,10 +194,8 @@ class TestScheduler:
     """Test /api/system/scheduler response."""
 
     async def test_no_scheduler(self, tmp_path):
-        """When supervisor has no scheduler attr, running=False."""
+        """When no cron.md files exist, running=False."""
         app = _create_test_app(tmp_path)
-        # Ensure the mock supervisor has no scheduler attribute
-        del app.state.supervisor.scheduler
         async with _client(app) as c:
             resp = await c.get("/api/system/scheduler")
         data = resp.json()
@@ -205,27 +203,29 @@ class TestScheduler:
         assert data["jobs"] == []
 
     async def test_with_scheduler_and_jobs(self, tmp_path):
-        """When scheduler exists, report its jobs."""
+        """When cron.md files exist, report parsed jobs."""
         app = _create_test_app(tmp_path)
 
-        mock_job = MagicMock()
-        mock_job.id = "hb-alice"
-        mock_job.name = "heartbeat:alice"
-        mock_job.next_run_time = "2026-02-15T10:00:00"
-        mock_job.trigger = MagicMock(__str__=lambda self: "interval[0:05:00]")
-
-        scheduler = MagicMock()
-        scheduler.get_jobs.return_value = [mock_job]
-        app.state.supervisor.scheduler = scheduler
+        # Create a person with cron.md
+        persons_dir = app.state.persons_dir
+        alice_dir = persons_dir / "alice"
+        alice_dir.mkdir(parents=True)
+        (alice_dir / "cron.md").write_text(
+            "# Cron: alice\n\n"
+            "## Morning Planning (Daily 9:00 JST)\n"
+            "type: llm\n"
+            "Plan daily tasks.\n",
+            encoding="utf-8",
+        )
+        app.state.person_names = ["alice"]
 
         async with _client(app) as c:
             resp = await c.get("/api/system/scheduler")
         data = resp.json()
         assert data["running"] is True
         assert len(data["jobs"]) == 1
-        assert data["jobs"][0]["id"] == "hb-alice"
-        assert data["jobs"][0]["name"] == "heartbeat:alice"
-        assert data["jobs"][0]["next_run"] is not None
+        assert data["jobs"][0]["person"] == "alice"
+        assert "Morning Planning" in data["jobs"][0]["name"]
 
 
 # ── 5. Logs Integration ─────────────────────────────────────────

@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from server.routes.system import _parse_cron_jobs
+
 
 def _make_test_app(
     persons: dict | None = None,
@@ -81,8 +83,10 @@ class TestListSharedUsers:
 
 
 class TestSystemStatus:
-    async def test_status(self):
-        app = _make_test_app(person_names=["alice"])
+    async def test_status(self, tmp_path):
+        persons_dir = tmp_path / "persons"
+        persons_dir.mkdir()
+        app = _make_test_app(persons_dir=persons_dir, person_names=["alice"])
         app.state.supervisor.get_all_status.return_value = {
             "alice": {"status": "running", "pid": 1234},
         }
@@ -92,14 +96,38 @@ class TestSystemStatus:
         data = resp.json()
         assert data["persons"] == 1
         assert "processes" in data
+        assert data["scheduler_running"] is False
 
-    async def test_status_empty(self):
-        app = _make_test_app(person_names=[])
+    async def test_status_empty(self, tmp_path):
+        persons_dir = tmp_path / "persons"
+        persons_dir.mkdir()
+        app = _make_test_app(persons_dir=persons_dir, person_names=[])
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/system/status")
         data = resp.json()
         assert data["persons"] == 0
+        assert data["scheduler_running"] is False
+
+    async def test_status_scheduler_running_with_cron(self, tmp_path):
+        """scheduler_running should be True when cron.md has active jobs."""
+        persons_dir = tmp_path / "persons"
+        alice_dir = persons_dir / "alice"
+        alice_dir.mkdir(parents=True)
+        (alice_dir / "cron.md").write_text(
+            "# Cron: alice\n\n## Morning Report (毎朝9時)\ntype: llm\nDo report\n",
+            encoding="utf-8",
+        )
+
+        app = _make_test_app(persons_dir=persons_dir, person_names=["alice"])
+        app.state.supervisor.get_all_status.return_value = {
+            "alice": {"status": "running", "pid": 1234},
+        }
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/system/status")
+        data = resp.json()
+        assert data["scheduler_running"] is True
 
 
 # ── POST /system/reload ─────────────────────────────────
@@ -268,10 +296,11 @@ class TestSystemConnections:
 
 
 class TestSystemScheduler:
-    async def test_no_scheduler(self):
-        app = _make_test_app()
-        # Supervisor has no scheduler attribute
-        del app.state.supervisor.scheduler
+    async def test_no_cron_files(self, tmp_path):
+        """No cron.md files -> running=False, empty jobs."""
+        persons_dir = tmp_path / "persons"
+        persons_dir.mkdir()
+        app = _make_test_app(persons_dir=persons_dir, person_names=["alice"])
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -280,18 +309,33 @@ class TestSystemScheduler:
         assert data["running"] is False
         assert data["jobs"] == []
 
-    async def test_scheduler_with_jobs(self):
-        app = _make_test_app()
+    async def test_no_persons(self, tmp_path):
+        """No registered persons -> running=False, empty jobs."""
+        persons_dir = tmp_path / "persons"
+        persons_dir.mkdir()
+        app = _make_test_app(persons_dir=persons_dir, person_names=[])
 
-        mock_job = MagicMock()
-        mock_job.id = "hb-alice"
-        mock_job.name = "heartbeat:alice"
-        mock_job.next_run_time = "2026-01-01T12:00:00"
-        mock_job.trigger = "interval[0:05:00]"
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/system/scheduler")
+        data = resp.json()
+        assert data["running"] is False
+        assert data["jobs"] == []
 
-        scheduler = MagicMock()
-        scheduler.get_jobs.return_value = [mock_job]
-        app.state.supervisor.scheduler = scheduler
+    async def test_scheduler_with_cron_jobs(self, tmp_path):
+        """cron.md with active jobs -> running=True, jobs populated."""
+        persons_dir = tmp_path / "persons"
+        alice_dir = persons_dir / "alice"
+        alice_dir.mkdir(parents=True)
+        (alice_dir / "cron.md").write_text(
+            "# Cron: alice\n\n"
+            "## Morning Report (毎朝9時)\n"
+            "type: llm\n"
+            "朝の報告をまとめる\n",
+            encoding="utf-8",
+        )
+
+        app = _make_test_app(persons_dir=persons_dir, person_names=["alice"])
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -299,40 +343,240 @@ class TestSystemScheduler:
         data = resp.json()
         assert data["running"] is True
         assert len(data["jobs"]) == 1
-        assert data["jobs"][0]["id"] == "hb-alice"
-        assert data["jobs"][0]["name"] == "heartbeat:alice"
-        assert data["jobs"][0]["next_run"] == "2026-01-01T12:00:00"
-        assert "interval" in data["jobs"][0]["trigger"]
+        job = data["jobs"][0]
+        assert job["person"] == "alice"
+        assert job["type"] == "llm"
+        assert "Morning Report" in job["name"]
+        assert job["schedule"] == "毎朝9時"
+        assert job["next_run"] is None
 
-    async def test_scheduler_with_no_jobs(self):
-        app = _make_test_app()
+    async def test_scheduler_multiple_persons(self, tmp_path):
+        """Jobs from multiple persons are aggregated."""
+        persons_dir = tmp_path / "persons"
+        for name in ("alice", "bob"):
+            d = persons_dir / name
+            d.mkdir(parents=True)
+            (d / "cron.md").write_text(
+                f"# Cron: {name}\n\n## Task ({name} schedule)\ntype: llm\nDo work\n",
+                encoding="utf-8",
+            )
 
-        scheduler = MagicMock()
-        scheduler.get_jobs.return_value = []
-        app.state.supervisor.scheduler = scheduler
+        app = _make_test_app(
+            persons_dir=persons_dir, person_names=["alice", "bob"],
+        )
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/system/scheduler")
         data = resp.json()
         assert data["running"] is True
-        assert data["jobs"] == []
+        assert len(data["jobs"]) == 2
+        persons_in_jobs = {j["person"] for j in data["jobs"]}
+        assert persons_in_jobs == {"alice", "bob"}
 
-    async def test_scheduler_job_without_next_run(self):
-        app = _make_test_app()
+    async def test_scheduler_commented_sections_ignored(self, tmp_path):
+        """Sections inside HTML comments should not produce jobs."""
+        persons_dir = tmp_path / "persons"
+        alice_dir = persons_dir / "alice"
+        alice_dir.mkdir(parents=True)
+        (alice_dir / "cron.md").write_text(
+            "# Cron: alice\n\n"
+            "<!--\n"
+            "## Disabled Task (noon)\n"
+            "type: llm\n"
+            "Should be ignored\n"
+            "-->\n",
+            encoding="utf-8",
+        )
 
-        mock_job = MagicMock()
-        mock_job.id = "cron-bob"
-        mock_job.name = "cron:bob"
-        mock_job.next_run_time = None
-        mock_job.trigger = "cron[hour=9]"
-
-        scheduler = MagicMock()
-        scheduler.get_jobs.return_value = [mock_job]
-        app.state.supervisor.scheduler = scheduler
+        app = _make_test_app(persons_dir=persons_dir, person_names=["alice"])
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/system/scheduler")
         data = resp.json()
-        assert data["jobs"][0]["next_run"] is None
+        assert data["running"] is False
+        assert data["jobs"] == []
+
+    async def test_scheduler_mixed_active_and_commented(self, tmp_path):
+        """Active jobs are returned; commented-out ones are skipped."""
+        persons_dir = tmp_path / "persons"
+        alice_dir = persons_dir / "alice"
+        alice_dir.mkdir(parents=True)
+        (alice_dir / "cron.md").write_text(
+            "# Cron: alice\n\n"
+            "## Active Task (every 5 min)\n"
+            "type: llm\n"
+            "Do active work\n\n"
+            "<!--\n"
+            "## Disabled Task (noon)\n"
+            "type: llm\n"
+            "Should be ignored\n"
+            "-->\n",
+            encoding="utf-8",
+        )
+
+        app = _make_test_app(persons_dir=persons_dir, person_names=["alice"])
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/system/scheduler")
+        data = resp.json()
+        assert data["running"] is True
+        assert len(data["jobs"]) == 1
+        assert "Active Task" in data["jobs"][0]["name"]
+
+
+# ── _parse_cron_jobs (unit) ────────────────────────────────
+
+
+class TestParseCronJobs:
+    def test_empty_persons_list(self, tmp_path):
+        persons_dir = tmp_path / "persons"
+        persons_dir.mkdir()
+        assert _parse_cron_jobs(persons_dir, []) == []
+
+    def test_no_cron_file(self, tmp_path):
+        persons_dir = tmp_path / "persons"
+        (persons_dir / "alice").mkdir(parents=True)
+        assert _parse_cron_jobs(persons_dir, ["alice"]) == []
+
+    def test_single_job(self, tmp_path):
+        persons_dir = tmp_path / "persons"
+        alice_dir = persons_dir / "alice"
+        alice_dir.mkdir(parents=True)
+        (alice_dir / "cron.md").write_text(
+            "# Cron: alice\n\n"
+            "## Daily Summary (毎日18時)\n"
+            "type: llm\n"
+            "まとめを作成する\n",
+            encoding="utf-8",
+        )
+        jobs = _parse_cron_jobs(persons_dir, ["alice"])
+        assert len(jobs) == 1
+        assert jobs[0]["person"] == "alice"
+        assert jobs[0]["type"] == "llm"
+        assert jobs[0]["schedule"] == "毎日18時"
+        assert "Daily Summary" in jobs[0]["name"]
+        assert jobs[0]["next_run"] is None
+        assert jobs[0]["id"].startswith("cron-alice-")
+
+    def test_multiple_jobs_same_person(self, tmp_path):
+        persons_dir = tmp_path / "persons"
+        alice_dir = persons_dir / "alice"
+        alice_dir.mkdir(parents=True)
+        (alice_dir / "cron.md").write_text(
+            "# Cron: alice\n\n"
+            "## Morning Report (毎朝9時)\n"
+            "type: llm\n"
+            "朝の報告\n\n"
+            "## Evening Summary (毎夕18時)\n"
+            "type: llm\n"
+            "夕方のまとめ\n",
+            encoding="utf-8",
+        )
+        jobs = _parse_cron_jobs(persons_dir, ["alice"])
+        assert len(jobs) == 2
+        assert jobs[0]["name"] == "Morning Report (毎朝9時)"
+        assert jobs[1]["name"] == "Evening Summary (毎夕18時)"
+
+    def test_commented_section_skipped(self, tmp_path):
+        persons_dir = tmp_path / "persons"
+        alice_dir = persons_dir / "alice"
+        alice_dir.mkdir(parents=True)
+        (alice_dir / "cron.md").write_text(
+            "# Cron: alice\n\n"
+            "<!--\n"
+            "## Disabled (noon)\n"
+            "type: llm\n"
+            "This should be ignored\n"
+            "-->\n",
+            encoding="utf-8",
+        )
+        jobs = _parse_cron_jobs(persons_dir, ["alice"])
+        assert jobs == []
+
+    def test_mixed_active_and_commented(self, tmp_path):
+        persons_dir = tmp_path / "persons"
+        alice_dir = persons_dir / "alice"
+        alice_dir.mkdir(parents=True)
+        (alice_dir / "cron.md").write_text(
+            "# Cron: alice\n\n"
+            "## Active (every hour)\n"
+            "type: llm\n"
+            "Do work\n\n"
+            "<!--\n"
+            "## Disabled (noon)\n"
+            "type: llm\n"
+            "Skip\n"
+            "-->\n\n"
+            "## Also Active (daily)\n"
+            "type: llm\n"
+            "More work\n",
+            encoding="utf-8",
+        )
+        jobs = _parse_cron_jobs(persons_dir, ["alice"])
+        assert len(jobs) == 2
+        names = [j["name"] for j in jobs]
+        assert "Active (every hour)" in names
+        assert "Also Active (daily)" in names
+
+    def test_multiple_persons(self, tmp_path):
+        persons_dir = tmp_path / "persons"
+        for name in ("alice", "bob"):
+            d = persons_dir / name
+            d.mkdir(parents=True)
+            (d / "cron.md").write_text(
+                f"# Cron: {name}\n\n## Task ({name})\ntype: llm\nWork\n",
+                encoding="utf-8",
+            )
+        jobs = _parse_cron_jobs(persons_dir, ["alice", "bob"])
+        assert len(jobs) == 2
+        persons = {j["person"] for j in jobs}
+        assert persons == {"alice", "bob"}
+
+    def test_schedule_extracted_from_parentheses(self, tmp_path):
+        """Schedule info inside parentheses (both half-width and full-width)."""
+        persons_dir = tmp_path / "persons"
+        alice_dir = persons_dir / "alice"
+        alice_dir.mkdir(parents=True)
+        (alice_dir / "cron.md").write_text(
+            "# Cron: alice\n\n"
+            "## Task（全角括弧）\n"
+            "type: llm\n"
+            "Work\n",
+            encoding="utf-8",
+        )
+        jobs = _parse_cron_jobs(persons_dir, ["alice"])
+        assert len(jobs) == 1
+        assert jobs[0]["schedule"] == "全角括弧"
+
+    def test_no_schedule_in_title(self, tmp_path):
+        """Job title without parentheses -> empty schedule."""
+        persons_dir = tmp_path / "persons"
+        alice_dir = persons_dir / "alice"
+        alice_dir.mkdir(parents=True)
+        (alice_dir / "cron.md").write_text(
+            "# Cron: alice\n\n"
+            "## Simple Task\n"
+            "type: llm\n"
+            "Work\n",
+            encoding="utf-8",
+        )
+        jobs = _parse_cron_jobs(persons_dir, ["alice"])
+        assert len(jobs) == 1
+        assert jobs[0]["schedule"] == ""
+
+    def test_person_without_cron_skipped(self, tmp_path):
+        """Person directory exists but has no cron.md."""
+        persons_dir = tmp_path / "persons"
+        (persons_dir / "alice").mkdir(parents=True)
+        bob_dir = persons_dir / "bob"
+        bob_dir.mkdir(parents=True)
+        (bob_dir / "cron.md").write_text(
+            "# Cron: bob\n\n## Task (hourly)\ntype: llm\nWork\n",
+            encoding="utf-8",
+        )
+        jobs = _parse_cron_jobs(persons_dir, ["alice", "bob"])
+        assert len(jobs) == 1
+        assert jobs[0]["person"] == "bob"

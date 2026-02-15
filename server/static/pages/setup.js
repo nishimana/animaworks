@@ -66,11 +66,20 @@ async function _loadChecklist() {
 
   if (initData) {
     // Use init-status data
-    const items = initData.checks || initData;
-    if (typeof items === "object") {
-      for (const [key, val] of Object.entries(items)) {
-        const ok = val === true || val === "ok" || val === "configured";
-        checks.push({ label: key, ok });
+    if (Array.isArray(initData.checks)) {
+      // Structured checks array format
+      for (const item of initData.checks) {
+        const label = item.detail ? `${item.label} (${item.detail})` : item.label;
+        checks.push({ label, ok: !!item.ok });
+      }
+    } else {
+      // Legacy flat object format — use truthy evaluation
+      const items = initData.checks || initData;
+      if (typeof items === "object") {
+        for (const [key, val] of Object.entries(items)) {
+          const ok = !!val && val !== "error" && val !== "missing";
+          checks.push({ label: key, ok });
+        }
       }
     }
   } else {

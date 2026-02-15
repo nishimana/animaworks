@@ -70,19 +70,31 @@ def create_config_router() -> APIRouter:
                     persons_count += 1
 
         # Check API keys from environment
-        api_keys = {
-            "anthropic": bool(os.environ.get("ANTHROPIC_API_KEY")),
-            "openai": bool(os.environ.get("OPENAI_API_KEY")),
-            "google": bool(os.environ.get("GOOGLE_API_KEY")),
-        }
+        has_anthropic = bool(os.environ.get("ANTHROPIC_API_KEY"))
+        has_openai = bool(os.environ.get("OPENAI_API_KEY"))
+        has_google = bool(os.environ.get("GOOGLE_API_KEY"))
 
         config_exists = config_path.exists()
         initialized = config_exists and persons_count > 0
 
         return {
+            "checks": [
+                {"label": "設定ファイル", "ok": config_exists},
+                {"label": "パーソン登録", "ok": persons_count > 0,
+                 "detail": f"{persons_count}名"},
+                {"label": "共有ディレクトリ", "ok": shared_dir.exists()},
+                {"label": "Anthropic APIキー", "ok": has_anthropic},
+                {"label": "OpenAI APIキー", "ok": has_openai},
+                {"label": "Google APIキー", "ok": has_google},
+                {"label": "初期化完了", "ok": initialized},
+            ],
             "config_exists": config_exists,
             "persons_count": persons_count,
-            "api_keys": api_keys,
+            "api_keys": {
+                "anthropic": has_anthropic,
+                "openai": has_openai,
+                "google": has_google,
+            },
             "shared_dir_exists": shared_dir.exists(),
             "initialized": initialized,
         }

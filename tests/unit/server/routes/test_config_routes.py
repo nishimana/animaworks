@@ -161,12 +161,27 @@ class TestInitStatus:
             resp = await client.get("/api/system/init-status")
         assert resp.status_code == 200
         data = resp.json()
+        # Backward-compatible fields
         assert data["config_exists"] is False
         assert data["persons_count"] == 0
         assert data["initialized"] is False
         assert data["api_keys"]["anthropic"] is False
         assert data["api_keys"]["openai"] is False
         assert data["api_keys"]["google"] is False
+        # New checks array
+        assert "checks" in data
+        checks = data["checks"]
+        assert isinstance(checks, list)
+        assert len(checks) >= 1
+        labels = {c["label"] for c in checks}
+        assert "設定ファイル" in labels
+        assert "パーソン登録" in labels
+        assert "初期化完了" in labels
+        # All checks should be not-ok when nothing is initialized
+        config_check = next(c for c in checks if c["label"] == "設定ファイル")
+        assert config_check["ok"] is False
+        init_check = next(c for c in checks if c["label"] == "初期化完了")
+        assert init_check["ok"] is False
 
     async def test_with_config_and_persons(self, tmp_path, monkeypatch):
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
@@ -194,10 +209,22 @@ class TestInitStatus:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/system/init-status")
         data = resp.json()
+        # Backward-compatible fields
         assert data["config_exists"] is True
         assert data["persons_count"] == 1
         assert data["initialized"] is True
         assert data["shared_dir_exists"] is True
+        # New checks array
+        checks = data["checks"]
+        config_check = next(c for c in checks if c["label"] == "設定ファイル")
+        assert config_check["ok"] is True
+        person_check = next(c for c in checks if c["label"] == "パーソン登録")
+        assert person_check["ok"] is True
+        assert person_check["detail"] == "1名"
+        shared_check = next(c for c in checks if c["label"] == "共有ディレクトリ")
+        assert shared_check["ok"] is True
+        init_check = next(c for c in checks if c["label"] == "初期化完了")
+        assert init_check["ok"] is True
 
     async def test_api_key_detection(self, tmp_path, monkeypatch):
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
@@ -210,9 +237,18 @@ class TestInitStatus:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/system/init-status")
         data = resp.json()
+        # Backward-compatible fields
         assert data["api_keys"]["anthropic"] is True
         assert data["api_keys"]["openai"] is True
         assert data["api_keys"]["google"] is False
+        # New checks array - API key checks
+        checks = data["checks"]
+        anthropic_check = next(c for c in checks if c["label"] == "Anthropic APIキー")
+        assert anthropic_check["ok"] is True
+        openai_check = next(c for c in checks if c["label"] == "OpenAI APIキー")
+        assert openai_check["ok"] is True
+        google_check = next(c for c in checks if c["label"] == "Google APIキー")
+        assert google_check["ok"] is False
 
     async def test_persons_without_identity_not_counted(self, tmp_path, monkeypatch):
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
@@ -236,3 +272,79 @@ class TestInitStatus:
         data = resp.json()
         assert data["persons_count"] == 0
         assert data["initialized"] is False
+        # checks array should reflect zero persons
+        checks = data["checks"]
+        person_check = next(c for c in checks if c["label"] == "パーソン登録")
+        assert person_check["ok"] is False
+        assert person_check["detail"] == "0名"
+
+    async def test_checks_array_has_all_expected_labels(self, tmp_path, monkeypatch):
+        """Verify that the checks array contains all expected labels."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/system/init-status")
+        data = resp.json()
+        checks = data["checks"]
+        expected_labels = {
+            "設定ファイル",
+            "パーソン登録",
+            "共有ディレクトリ",
+            "Anthropic APIキー",
+            "OpenAI APIキー",
+            "Google APIキー",
+            "初期化完了",
+        }
+        actual_labels = {c["label"] for c in checks}
+        assert expected_labels == actual_labels
+
+    async def test_checks_items_have_ok_field(self, tmp_path, monkeypatch):
+        """Every check item must have at least 'label' and 'ok' fields."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/system/init-status")
+        data = resp.json()
+        for check in data["checks"]:
+            assert "label" in check, f"Missing 'label' in check: {check}"
+            assert "ok" in check, f"Missing 'ok' in check: {check}"
+            assert isinstance(check["ok"], bool), f"'ok' should be bool: {check}"
+
+    async def test_persons_detail_with_multiple(self, tmp_path, monkeypatch):
+        """Person check detail should show correct count with multiple persons."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+        base_dir = tmp_path / ".animaworks"
+        base_dir.mkdir()
+        (base_dir / "config.json").write_text("{}", encoding="utf-8")
+
+        persons_dir = base_dir / "persons"
+        persons_dir.mkdir()
+        for name in ("alice", "bob", "charlie"):
+            d = persons_dir / name
+            d.mkdir()
+            (d / "identity.md").write_text(f"# {name}", encoding="utf-8")
+
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/system/init-status")
+        data = resp.json()
+        assert data["persons_count"] == 3
+        checks = data["checks"]
+        person_check = next(c for c in checks if c["label"] == "パーソン登録")
+        assert person_check["detail"] == "3名"
+        assert person_check["ok"] is True

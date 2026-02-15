@@ -74,8 +74,9 @@ async function _loadStatus() {
   try {
     const data = await api("/api/system/status");
 
+    // Server is running if we got a response
     if (uptimeEl) {
-      uptimeEl.textContent = data.scheduler_running ? "稼働中" : "停止";
+      uptimeEl.textContent = "稼働中";
     }
 
     const rows = [];
@@ -95,6 +96,7 @@ async function _loadStatus() {
       </table>
     `;
   } catch (err) {
+    if (uptimeEl) uptimeEl.textContent = "停止";
     statusContent.innerHTML = `<div class="loading-placeholder">ステータス取得失敗: ${escapeHtml(err.message)}</div>`;
   }
 }
@@ -107,22 +109,30 @@ async function _loadConnections() {
   try {
     const data = await api("/api/system/connections");
 
-    const connections = data.connections || data.clients || [];
-    if (clientsEl) clientsEl.textContent = Array.isArray(connections) ? connections.length : (data.count ?? 0);
+    // Read WebSocket client count from response structure
+    const wsCount = data.websocket?.connected_clients ?? 0;
+    if (clientsEl) clientsEl.textContent = wsCount;
 
-    if (Array.isArray(connections) && connections.length > 0) {
+    const rows = [];
+
+    // WebSocket connections summary
+    if (wsCount > 0) {
+      rows.push(`<tr><td>WebSocket</td><td><code>--</code></td><td>${wsCount} 接続</td></tr>`);
+    }
+
+    // Process connections
+    const processes = data.processes || {};
+    for (const [name, info] of Object.entries(processes)) {
+      const status = info.status || "unknown";
+      const pid = info.pid || "--";
+      rows.push(`<tr><td>プロセス</td><td><code>${escapeHtml(name)} (PID: ${pid})</code></td><td>${escapeHtml(status)}</td></tr>`);
+    }
+
+    if (rows.length > 0) {
       content.innerHTML = `
         <table class="data-table">
-          <thead><tr><th>タイプ</th><th>ID</th><th>接続時刻</th></tr></thead>
-          <tbody>
-            ${connections.map(c => `
-              <tr>
-                <td>${escapeHtml(c.type || "WebSocket")}</td>
-                <td><code>${escapeHtml(c.id || c.client_id || "--")}</code></td>
-                <td>${escapeHtml(c.connected_at ? timeStr(c.connected_at) : "--")}</td>
-              </tr>
-            `).join("")}
-          </tbody>
+          <thead><tr><th>タイプ</th><th>ID</th><th>状態</th></tr></thead>
+          <tbody>${rows.join("")}</tbody>
         </table>
       `;
     } else {

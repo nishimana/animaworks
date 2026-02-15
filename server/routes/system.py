@@ -5,10 +5,61 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+from pathlib import Path
 
 from fastapi import APIRouter, Request
 
 logger = logging.getLogger("animaworks.routes.system")
+
+
+def _parse_cron_jobs(persons_dir: Path, person_names: list[str]) -> list[dict]:
+    """Parse cron.md files from all persons and return job definitions."""
+    jobs: list[dict] = []
+    for name in person_names:
+        cron_path = persons_dir / name / "cron.md"
+        if not cron_path.exists():
+            continue
+        try:
+            content = cron_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        # Parse markdown sections: ## Title (schedule info)
+        # Skip commented-out sections (inside <!-- --> blocks)
+        in_comment = False
+        current_title = ""
+        current_type = ""
+        for line in content.splitlines():
+            stripped = line.strip()
+            if "<!--" in stripped:
+                in_comment = True
+            if "-->" in stripped:
+                in_comment = False
+                continue
+            if in_comment:
+                continue
+            if stripped.startswith("## "):
+                current_title = stripped[3:].strip()
+                current_type = ""
+            elif stripped.startswith("type:"):
+                current_type = stripped[5:].strip()
+            elif current_title and current_type:
+                # Extract schedule from title parentheses
+                schedule = ""
+                m = re.search(r"[（(](.+?)[）)]", current_title)
+                if m:
+                    schedule = m.group(1)
+                jobs.append({
+                    "id": f"cron-{name}-{len(jobs)}",
+                    "name": current_title,
+                    "person": name,
+                    "type": current_type,
+                    "schedule": schedule,
+                    "next_run": None,
+                })
+                current_title = ""
+                current_type = ""
+    return jobs
 
 
 def create_system_router() -> APIRouter:
@@ -26,16 +77,19 @@ def create_system_router() -> APIRouter:
     async def system_status(request: Request):
         supervisor = request.app.state.supervisor
         person_names = request.app.state.person_names
+        persons_dir = request.app.state.persons_dir
 
         # Get all process statuses
         process_statuses = supervisor.get_all_status()
 
-        scheduler = getattr(supervisor, "scheduler", None)
+        # Check if any cron jobs are defined
+        cron_jobs = _parse_cron_jobs(persons_dir, person_names)
+        has_cron = len(cron_jobs) > 0
 
         return {
             "persons": len(person_names),
             "processes": process_statuses,
-            "scheduler_running": scheduler is not None,
+            "scheduler_running": has_cron,
         }
 
     @router.post("/system/reload")
@@ -113,24 +167,14 @@ def create_system_router() -> APIRouter:
 
     @router.get("/system/scheduler")
     async def system_scheduler(request: Request):
-        """Return scheduler job information."""
-        supervisor = request.app.state.supervisor
+        """Return scheduler job information from cron.md files."""
+        persons_dir = request.app.state.persons_dir
+        person_names = request.app.state.person_names
 
-        jobs: list[dict] = []
-        scheduler = getattr(supervisor, "scheduler", None)
-        if scheduler is not None:
-            for job in scheduler.get_jobs():
-                jobs.append({
-                    "id": job.id,
-                    "name": job.name,
-                    "next_run": (
-                        str(job.next_run_time) if job.next_run_time else None
-                    ),
-                    "trigger": str(job.trigger),
-                })
+        jobs = _parse_cron_jobs(persons_dir, person_names)
 
         return {
-            "running": scheduler is not None,
+            "running": len(jobs) > 0,
             "jobs": jobs,
         }
 

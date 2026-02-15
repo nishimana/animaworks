@@ -66,15 +66,24 @@ class TestSystemStatusE2E:
         assert "processes" in data
         assert "scheduler_running" in data
 
-    async def test_scheduler_running_reflects_supervisor_state(
+    async def test_scheduler_running_reflects_cron_files(
         self, tmp_path: Path,
     ) -> None:
-        """scheduler_running should reflect actual supervisor scheduler attribute."""
+        """scheduler_running should be True when cron.md files define jobs."""
         app = _create_real_app(tmp_path)
 
-        # Attach a mock scheduler to the supervisor
-        mock_scheduler = MagicMock()
-        app.state.supervisor.scheduler = mock_scheduler
+        # Create a person with cron.md
+        persons_dir = app.state.persons_dir
+        alice_dir = persons_dir / "alice"
+        alice_dir.mkdir(parents=True, exist_ok=True)
+        (alice_dir / "cron.md").write_text(
+            "# Cron: alice\n\n"
+            "## Morning Planning (Daily 9:00 JST)\n"
+            "type: llm\n"
+            "Plan daily tasks.\n",
+            encoding="utf-8",
+        )
+        app.state.person_names = ["alice"]
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -83,14 +92,11 @@ class TestSystemStatusE2E:
         data = resp.json()
         assert data["scheduler_running"] is True
 
-    async def test_scheduler_running_false_without_scheduler(
+    async def test_scheduler_running_false_without_cron(
         self, tmp_path: Path,
     ) -> None:
-        """scheduler_running should be False when supervisor lacks scheduler."""
+        """scheduler_running should be False when no cron.md files exist."""
         app = _create_real_app(tmp_path)
-
-        # Remove scheduler attribute from supervisor
-        del app.state.supervisor.scheduler
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
