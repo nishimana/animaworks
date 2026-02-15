@@ -575,3 +575,69 @@ class TestStructuredErrors:
         result = handler.handle("read_file", {"path": "/etc/passwd"})
         parsed = json.loads(result)
         assert parsed["error_type"] == "PermissionDenied"
+
+
+# ── Schedule changed callback ────────────────────────────────
+
+
+class TestScheduleChangedCallback:
+    def test_on_schedule_changed_property(self, handler: ToolHandler):
+        assert handler.on_schedule_changed is None
+        fn = MagicMock()
+        handler.on_schedule_changed = fn
+        assert handler.on_schedule_changed is fn
+
+    def test_write_heartbeat_triggers_callback(
+        self, person_dir: Path, memory: MagicMock,
+    ):
+        callback = MagicMock()
+        h = ToolHandler(
+            person_dir=person_dir,
+            memory=memory,
+            on_schedule_changed=callback,
+        )
+        h.handle("write_memory_file", {"path": "heartbeat.md", "content": "new config"})
+        callback.assert_called_once_with("test-person")
+
+    def test_write_cron_triggers_callback(
+        self, person_dir: Path, memory: MagicMock,
+    ):
+        callback = MagicMock()
+        h = ToolHandler(
+            person_dir=person_dir,
+            memory=memory,
+            on_schedule_changed=callback,
+        )
+        h.handle("write_memory_file", {"path": "cron.md", "content": "new cron"})
+        callback.assert_called_once_with("test-person")
+
+    def test_write_other_file_does_not_trigger_callback(
+        self, person_dir: Path, memory: MagicMock,
+    ):
+        callback = MagicMock()
+        h = ToolHandler(
+            person_dir=person_dir,
+            memory=memory,
+            on_schedule_changed=callback,
+        )
+        h.handle("write_memory_file", {"path": "knowledge/note.md", "content": "note"})
+        callback.assert_not_called()
+
+    def test_callback_error_does_not_break_write(
+        self, person_dir: Path, memory: MagicMock,
+    ):
+        callback = MagicMock(side_effect=RuntimeError("reload failed"))
+        h = ToolHandler(
+            person_dir=person_dir,
+            memory=memory,
+            on_schedule_changed=callback,
+        )
+        result = h.handle("write_memory_file", {"path": "heartbeat.md", "content": "cfg"})
+        assert "Written to" in result
+        # File should still be written despite callback error
+        assert (person_dir / "heartbeat.md").read_text(encoding="utf-8") == "cfg"
+
+    def test_no_callback_set_does_not_error(self, handler: ToolHandler, person_dir: Path):
+        # handler has no on_schedule_changed set (default None)
+        result = handler.handle("write_memory_file", {"path": "heartbeat.md", "content": "cfg"})
+        assert "Written to" in result

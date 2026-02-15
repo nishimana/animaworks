@@ -85,6 +85,10 @@ class AgentCore:
         """Inject a callback invoked after a send_message tool call."""
         self._tool_handler.on_message_sent = fn
 
+    def set_on_schedule_changed(self, fn: Callable[[str], Any] | None) -> None:
+        """Inject a callback invoked when heartbeat.md or cron.md is modified."""
+        self._tool_handler.on_schedule_changed = fn
+
     def reset_reply_tracking(self) -> None:
         """Clear reply tracking (call at start of each heartbeat cycle)."""
         self._tool_handler.reset_replied_to()

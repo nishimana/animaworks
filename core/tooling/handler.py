@@ -71,11 +71,14 @@ class ToolHandler:
         tool_registry: list[str] | None = None,
         personal_tools: dict[str, str] | None = None,
         on_message_sent: OnMessageSentFn | None = None,
+        on_schedule_changed: Callable[[str], Any] | None = None,
     ) -> None:
         self._person_dir = person_dir
+        self._person_name = person_dir.name
         self._memory = memory
         self._messenger = messenger
         self._on_message_sent = on_message_sent
+        self._on_schedule_changed = on_schedule_changed
         self._replied_to: set[str] = set()
         self._external = ExternalToolDispatcher(
             tool_registry or [],
@@ -89,6 +92,14 @@ class ToolHandler:
     @on_message_sent.setter
     def on_message_sent(self, fn: OnMessageSentFn | None) -> None:
         self._on_message_sent = fn
+
+    @property
+    def on_schedule_changed(self) -> Callable[[str], Any] | None:
+        return self._on_schedule_changed
+
+    @on_schedule_changed.setter
+    def on_schedule_changed(self, fn: Callable[[str], Any] | None) -> None:
+        self._on_schedule_changed = fn
 
     @property
     def replied_to(self) -> set[str]:
@@ -182,6 +193,15 @@ class ToolHandler:
             "write_memory_file path=%s mode=%s",
             args["path"], args.get("mode", "overwrite"),
         )
+
+        # Trigger schedule reload if heartbeat or cron config changed
+        if args["path"] in ("heartbeat.md", "cron.md") and self._on_schedule_changed:
+            try:
+                self._on_schedule_changed(self._person_name)
+                logger.info("Schedule reload triggered for '%s'", self._person_name)
+            except Exception:
+                logger.exception("Schedule reload failed for '%s'", self._person_name)
+
         return f"Written to {args['path']}"
 
     def _handle_send_message(self, args: dict[str, Any]) -> str:

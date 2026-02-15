@@ -14,6 +14,7 @@ import time
 from collections.abc import AsyncGenerator, Callable
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from core.agent import AgentCore
 from core.memory.conversation import ConversationMemory
@@ -64,6 +65,12 @@ class DigitalPerson:
     ) -> None:
         """Inject a callback fired after this person sends a message."""
         self.agent.set_on_message_sent(fn)
+
+    def set_on_schedule_changed(
+        self, fn: Callable[[str], Any] | None,
+    ) -> None:
+        """Inject a callback fired when heartbeat.md or cron.md is modified."""
+        self.agent.set_on_schedule_changed(fn)
 
     def set_on_lock_released(self, fn: Callable[[], None]) -> None:
         """Inject a callback invoked when the person's lock is released."""

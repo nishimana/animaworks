@@ -67,6 +67,8 @@ class LifecycleManager:
                 self._on_person_lock_released(n)
             )
         )
+        # Wire up schedule-changed callback for hot-reload
+        person.set_on_schedule_changed(self.reload_person_schedule)
         self._setup_heartbeat(person)
         self._setup_cron_tasks(person)
         logger.info("Registered '%s' with lifecycle manager", person.name)
@@ -81,6 +83,44 @@ class LifecycleManager:
             if job.id.startswith(f"{name}_"):
                 job.remove()
         logger.info("Unregistered '%s' from lifecycle manager", name)
+
+    def reload_person_schedule(self, name: str) -> dict[str, Any]:
+        """Reload heartbeat and cron schedules for a person from disk.
+
+        Called when heartbeat.md or cron.md is modified at runtime.
+
+        Args:
+            name: The person name whose schedule should be reloaded.
+
+        Returns:
+            A summary dict with keys ``reloaded``, ``removed``, ``new_jobs``
+            (or ``error`` if the person is not registered).
+        """
+        person = self.persons.get(name)
+        if not person:
+            logger.warning("reload_person_schedule: '%s' not registered", name)
+            return {"error": f"Person '{name}' not registered"}
+
+        # Remove existing heartbeat and cron jobs for this person
+        removed = 0
+        for job in self.scheduler.get_jobs():
+            if job.id.startswith(f"{name}_"):
+                job.remove()
+                removed += 1
+
+        # Re-setup from current files on disk
+        self._setup_heartbeat(person)
+        self._setup_cron_tasks(person)
+
+        new_jobs = [
+            j.id for j in self.scheduler.get_jobs()
+            if j.id.startswith(f"{name}_")
+        ]
+        logger.info(
+            "Reloaded schedule for '%s': removed=%d, new_jobs=%s",
+            name, removed, new_jobs,
+        )
+        return {"reloaded": name, "removed": removed, "new_jobs": new_jobs}
 
     # ── Heartbeat ─────────────────────────────────────────
 

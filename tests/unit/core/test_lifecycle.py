@@ -486,3 +486,69 @@ class TestCommandTypeCron:
             {"key": "value"},
         )
         person.memory.append_cron_command_log.assert_called_once()
+
+
+# ── ReloadPersonSchedule ─────────────────────────────────
+
+
+class TestReloadPersonSchedule:
+    def test_reload_nonexistent_person(self):
+        lm = LifecycleManager()
+        result = lm.reload_person_schedule("nobody")
+        assert "error" in result
+
+    def test_reload_registered_person(self):
+        lm = LifecycleManager()
+        person = MagicMock()
+        person.name = "alice"
+        person.memory.read_heartbeat_config.return_value = "30分ごと\n9:00 - 22:00"
+        person.memory.read_cron_config.return_value = ""
+        person.set_on_lock_released = MagicMock()
+        person.set_on_schedule_changed = MagicMock()
+
+        lm.register_person(person)
+        # Initial setup creates heartbeat job
+        initial_jobs = [j.id for j in lm.scheduler.get_jobs() if j.id.startswith("alice_")]
+        assert len(initial_jobs) >= 1
+
+        # Now modify heartbeat config and reload
+        person.memory.read_heartbeat_config.return_value = "15分ごと\n8:00 - 23:00"
+        result = lm.reload_person_schedule("alice")
+
+        assert result["reloaded"] == "alice"
+        assert result["removed"] >= 1
+        assert len(result["new_jobs"]) >= 1
+
+    def test_reload_with_cron_tasks(self):
+        lm = LifecycleManager()
+        person = MagicMock()
+        person.name = "bob"
+        person.memory.read_heartbeat_config.return_value = "30分ごと\n9:00 - 22:00"
+        person.memory.read_cron_config.return_value = ""
+        person.set_on_lock_released = MagicMock()
+        person.set_on_schedule_changed = MagicMock()
+
+        lm.register_person(person)
+
+        # Add a cron task and reload
+        person.memory.read_cron_config.return_value = """\
+## ログチェック（毎日 10:00 JST）
+type: llm
+サーバーログを確認する。
+"""
+        result = lm.reload_person_schedule("bob")
+        assert result["reloaded"] == "bob"
+        # Should have heartbeat + cron job
+        assert len(result["new_jobs"]) >= 2
+
+    def test_register_person_wires_schedule_callback(self):
+        lm = LifecycleManager()
+        person = MagicMock()
+        person.name = "alice"
+        person.memory.read_heartbeat_config.return_value = ""
+        person.memory.read_cron_config.return_value = ""
+        person.set_on_lock_released = MagicMock()
+        person.set_on_schedule_changed = MagicMock()
+
+        lm.register_person(person)
+        person.set_on_schedule_changed.assert_called_once_with(lm.reload_person_schedule)
