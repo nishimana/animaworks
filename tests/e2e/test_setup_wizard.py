@@ -446,6 +446,9 @@ class TestSetupComplete:
         _write_config(data_dir, setup_complete=False)
         app = _create_app(data_dir)
 
+        # Mock start_all to prevent spawning real child processes
+        app.state.supervisor.start_all = AsyncMock()
+
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
@@ -472,6 +475,9 @@ class TestSetupComplete:
         """After setup completion, middleware switches: setup blocked, API open."""
         _write_config(data_dir, setup_complete=False)
         app = _create_app(data_dir)
+
+        # Mock start_all to prevent spawning real child processes
+        app.state.supervisor.start_all = AsyncMock()
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -502,6 +508,9 @@ class TestSetupComplete:
         """End-to-end flow: fresh config → detect → configure → complete → verify."""
         _write_config(data_dir, setup_complete=False)
         app = _create_app(data_dir)
+
+        # Mock start_all to prevent spawning real child processes
+        app.state.supervisor.start_all = AsyncMock()
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -570,6 +579,9 @@ class TestSetupComplete:
         # Ensure the person dir survives the config rewrite
         app = _create_app(data_dir)
 
+        # Mock start_all to prevent spawning real child processes
+        app.state.supervisor.start_all = AsyncMock()
+
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
@@ -588,6 +600,9 @@ class TestSetupComplete:
         """Calling complete twice (via direct config) keeps setup_complete=True."""
         _write_config(data_dir, setup_complete=False)
         app = _create_app(data_dir)
+
+        # Mock start_all to prevent spawning real child processes
+        app.state.supervisor.start_all = AsyncMock()
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:

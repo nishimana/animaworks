@@ -7,12 +7,17 @@ mock/live switching for all test modules.
 from __future__ import annotations
 
 import json
+import logging
 import os
+import signal
+import subprocess
 from pathlib import Path
 from typing import Any
 
 import pytest
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 from tests.helpers.filesystem import (
     create_person_dir,
@@ -101,9 +106,64 @@ def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
     yield d
 
+    # Teardown: kill any supervisor.runner child processes spawned during
+    # this test.  Matches processes whose command line references the
+    # test's tmp data directory so we don't affect production processes.
+    _kill_orphan_runners(str(d))
+
     # Cleanup: invalidate caches again to avoid leaking between tests
     invalidate_cache()
     _prompt_cache.clear()
+
+
+def _kill_orphan_runners(data_dir_str: str) -> None:
+    """Terminate supervisor.runner processes whose cmdline references *data_dir_str*.
+
+    Scans ``/proc`` on Linux to find child processes; falls back to
+    ``pgrep`` if ``/proc`` is unavailable.
+    """
+    proc_dir = Path("/proc")
+    if not proc_dir.exists():
+        # Fallback for non-Linux: use pgrep
+        _kill_orphan_runners_pgrep(data_dir_str)
+        return
+
+    for pid_dir in proc_dir.iterdir():
+        if not pid_dir.name.isdigit():
+            continue
+        cmdline_file = pid_dir / "cmdline"
+        try:
+            cmdline = cmdline_file.read_text().replace("\x00", " ")
+            if "core.supervisor.runner" in cmdline and data_dir_str in cmdline:
+                pid = int(pid_dir.name)
+                logger.info("Killing orphan runner process PID=%s", pid)
+                os.kill(pid, signal.SIGTERM)
+        except (OSError, ValueError, PermissionError):
+            pass
+
+
+def _kill_orphan_runners_pgrep(data_dir_str: str) -> None:
+    """Fallback: use pgrep + kill for non-Linux platforms."""
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", "core.supervisor.runner"],
+            capture_output=True, text=True, timeout=5,
+        )
+        for line in result.stdout.strip().splitlines():
+            pid = int(line.strip())
+            # Verify cmdline contains our data_dir before killing
+            try:
+                cmdline_path = Path(f"/proc/{pid}/cmdline")
+                if cmdline_path.exists():
+                    cmdline = cmdline_path.read_text().replace("\x00", " ")
+                    if data_dir_str not in cmdline:
+                        continue
+            except OSError:
+                continue
+            logger.info("Killing orphan runner process PID=%s", pid)
+            os.kill(pid, signal.SIGTERM)
+    except (subprocess.TimeoutExpired, FileNotFoundError, ValueError):
+        pass
 
 
 @pytest.fixture

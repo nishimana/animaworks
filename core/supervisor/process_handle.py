@@ -122,12 +122,17 @@ class ProcessHandle:
             )
             logger.info("Process started: %s (PID %s)", self.person_name, self.process.pid)
 
-            # Wait for socket to be created
-            await self._wait_for_socket(timeout=30.0)
+            # Wait for socket to be created (IPC server starts before
+            # heavy DigitalPerson init, so this should be quick)
+            await self._wait_for_socket(timeout=15.0)
 
             # Connect IPC client
             self.ipc_client = IPCClient(self.socket_path)
             await self.ipc_client.connect(timeout=5.0)
+
+            # Wait for Person to finish initialization (RAG model loading
+            # etc.) by polling the ping endpoint until status is "ok"
+            await self._wait_for_ready(timeout=120.0)
 
             self.state = ProcessState.RUNNING
             logger.info("Process running: %s", self.person_name)
@@ -151,9 +156,62 @@ class ProcessHandle:
             if self.socket_path.exists():
                 logger.debug("Socket file created: %s", self.socket_path)
                 return
+            # Check if the subprocess exited early (crash before socket)
+            if self.process and self.process.poll() is not None:
+                raise RuntimeError(
+                    f"Process '{self.person_name}' exited with code "
+                    f"{self.process.returncode} before creating socket"
+                )
             await asyncio.sleep(0.1)
 
         raise TimeoutError(f"Socket file not created: {self.socket_path}")
+
+    async def _wait_for_ready(self, timeout: float) -> None:
+        """Wait for the Person to finish initialization.
+
+        The child process creates the IPC socket immediately, then loads
+        the heavy DigitalPerson (RAG models, etc.).  This method polls
+        the ``ping`` endpoint until the response reports ``status: "ok"``.
+        """
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+
+        while loop.time() < deadline:
+            # Check if the subprocess exited unexpectedly
+            if self.process and self.process.poll() is not None:
+                raise RuntimeError(
+                    f"Process '{self.person_name}' exited with code "
+                    f"{self.process.returncode} during initialization"
+                )
+
+            try:
+                request = IPCRequest(
+                    id="ready_check",
+                    method="ping",
+                    params={}
+                )
+                response = await self.ipc_client.send_request(request, timeout=5.0)
+                if response.result and response.result.get("status") == "ok":
+                    logger.info(
+                        "Person ready: %s (init took %.1fs)",
+                        self.person_name,
+                        loop.time() - (deadline - timeout),
+                    )
+                    return
+                # status == "initializing" — keep polling
+                logger.debug(
+                    "Person initializing: %s (status=%s)",
+                    self.person_name,
+                    response.result.get("status") if response.result else "unknown",
+                )
+            except Exception as e:
+                logger.debug("Ready check failed for %s: %s", self.person_name, e)
+
+            await asyncio.sleep(1.0)
+
+        raise TimeoutError(
+            f"Person '{self.person_name}' not ready within {timeout}s"
+        )
 
     async def send_request(
         self,

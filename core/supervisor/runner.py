@@ -53,30 +53,37 @@ class PersonRunner:
         self.ipc_server: IPCServer | None = None
         self.inbox_watcher_task: asyncio.Task | None = None
         self.shutdown_event = asyncio.Event()
+        self._ready_event = asyncio.Event()
         self._started_at = datetime.now()
 
     async def run(self) -> None:
         """
         Run the person process.
 
-        Initializes DigitalPerson, starts IPC server, and runs until shutdown.
+        Starts IPC server first (creates socket immediately), then
+        initializes DigitalPerson (heavy RAG/model loading).
+        The parent process can connect to the socket early and poll
+        readiness via the ``ping`` method.
         """
         try:
-            logger.info("Initializing Person: %s", self.person_name)
-
-            # Initialize DigitalPerson
-            person_dir = self.persons_dir / self.person_name
-            self.person = DigitalPerson(
-                person_dir=person_dir,
-                shared_dir=self.shared_dir
-            )
-
-            # Start IPC server
+            # Start IPC server first so the socket is created immediately.
+            # This allows the parent process to detect the socket quickly
+            # while the heavy DigitalPerson initialization proceeds.
             self.ipc_server = IPCServer(
                 socket_path=self.socket_path,
                 request_handler=self._handle_request
             )
             await self.ipc_server.start()
+
+            logger.info("Initializing Person: %s", self.person_name)
+
+            # Initialize DigitalPerson (heavy: RAG indexer, model loading)
+            person_dir = self.persons_dir / self.person_name
+            self.person = DigitalPerson(
+                person_dir=person_dir,
+                shared_dir=self.shared_dir
+            )
+            self._ready_event.set()
 
             # Start inbox watcher
             self.inbox_watcher_task = asyncio.create_task(
@@ -297,10 +304,16 @@ class PersonRunner:
         }
 
     async def _handle_ping(self, params: dict[str, Any]) -> dict[str, Any]:
-        """Handle ping request."""
+        """Handle ping request.
+
+        Returns ``status: "initializing"`` while DigitalPerson is loading,
+        ``status: "ok"`` once ready.  The parent process polls this to
+        confirm readiness.
+        """
         uptime = (datetime.now() - self._started_at).total_seconds()
+        status = "ok" if self._ready_event.is_set() else "initializing"
         return {
-            "status": "ok",
+            "status": status,
             "person": self.person_name,
             "uptime_sec": round(uptime, 1),
         }

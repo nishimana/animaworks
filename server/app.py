@@ -51,10 +51,15 @@ def create_app(persons_dir: Path, shared_dir: Path) -> FastAPI:
     run_dir.mkdir(parents=True, exist_ok=True)
 
     # Initialize ProcessSupervisor
+    from core.paths import get_data_dir
+    log_dir = get_data_dir() / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+
     supervisor = ProcessSupervisor(
         persons_dir=persons_dir,
         shared_dir=shared_dir,
-        run_dir=run_dir
+        run_dir=run_dir,
+        log_dir=log_dir,
     )
 
     # Discover person names from disk

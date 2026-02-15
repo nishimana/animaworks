@@ -45,14 +45,20 @@ class MemoryManager:
         ):
             d.mkdir(parents=True, exist_ok=True)
 
-        # Initialize RAG indexer (Phase 2) if available
+        # RAG indexer is initialized lazily on first access to avoid
+        # heavy model loading (sentence-transformers / CUDA) during
+        # DigitalPerson construction.  See: _get_indexer()
         self._indexer = None
-        self._init_indexer()
+        self._indexer_initialized = False
 
     # ── RAG indexer initialization ────────────────────────
 
     def _init_indexer(self) -> None:
-        """Initialize RAG indexer if dependencies are available."""
+        """Initialize RAG indexer if dependencies are available.
+
+        Called lazily by ``_get_indexer()`` on first access.
+        """
+        self._indexer_initialized = True
         try:
             from core.memory.rag import MemoryIndexer
             from core.memory.rag.store import ChromaVectorStore
@@ -65,6 +71,12 @@ class MemoryManager:
             logger.debug("RAG dependencies not installed, indexing disabled")
         except Exception as e:
             logger.warning("Failed to initialize RAG indexer: %s", e)
+
+    def _get_indexer(self):
+        """Return the RAG indexer, initializing it on first call."""
+        if not self._indexer_initialized:
+            self._init_indexer()
+        return self._indexer
 
     # ── Read ──────────────────────────────────────────────
 
@@ -369,9 +381,9 @@ class MemoryManager:
         logger.debug("Episode appended, length=%d", len(entry))
 
         # Index the updated episode file (incremental)
-        if self._indexer:
+        if self._get_indexer():
             try:
-                self._indexer.index_file(path, "episodes")
+                self._get_indexer().index_file(path, "episodes")
             except Exception as e:
                 logger.warning("Failed to index episode file: %s", e)
 
@@ -388,9 +400,9 @@ class MemoryManager:
         logger.debug("Knowledge written topic='%s' length=%d", topic, len(content))
 
         # Index the new/updated knowledge file
-        if self._indexer:
+        if self._get_indexer():
             try:
-                self._indexer.index_file(path, "knowledge")
+                self._get_indexer().index_file(path, "knowledge")
             except Exception as e:
                 logger.warning("Failed to index knowledge file: %s", e)
 
