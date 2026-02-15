@@ -45,7 +45,6 @@ def _create_test_app(tmp_path: Path):
     app.state.ws_manager = ws_manager
     app.state.persons_dir = persons_dir
     app.state.shared_dir = shared_dir
-    app.state.persons = {}
 
     app.include_router(create_router())
     return app
@@ -441,7 +440,7 @@ class TestStaticFileServing:
         app.state.persons_dir.mkdir()
         app.state.shared_dir = tmp_path / "shared"
         app.state.shared_dir.mkdir()
-        app.state.persons = {}
+
 
         app.include_router(create_router())
 
@@ -480,7 +479,7 @@ class TestStaticFileServing:
         app.state.persons_dir.mkdir()
         app.state.shared_dir = tmp_path / "shared"
         app.state.shared_dir.mkdir()
-        app.state.persons = {}
+
 
         app.include_router(create_router())
 
@@ -522,7 +521,7 @@ class TestStaticFileServing:
         app.state.persons_dir.mkdir()
         app.state.shared_dir = tmp_path / "shared"
         app.state.shared_dir.mkdir()
-        app.state.persons = {}
+
 
         app.include_router(create_router())
 

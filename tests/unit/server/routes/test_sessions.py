@@ -9,39 +9,24 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 
-def _make_test_app(persons: dict | None = None):
+def _make_test_app(persons_dir: Path | None = None, person_names: list[str] | None = None):
     from fastapi import FastAPI
     from server.routes.sessions import create_sessions_router
 
     app = FastAPI()
-    app.state.persons = persons or {}
+    app.state.persons_dir = persons_dir or Path("/tmp/fake/persons")
+    app.state.person_names = person_names or []
     router = create_sessions_router()
     app.include_router(router, prefix="/api")
     return app
-
-
-def _make_mock_person(name: str = "alice", person_dir: Path | None = None):
-    person = MagicMock()
-    person.name = name
-    person.person_dir = person_dir or Path("/tmp/fake/persons") / name
-
-    mc = MagicMock()
-    mc.model = "test-model"
-    person.model_config = mc
-
-    memory = MagicMock()
-    memory.episodes_dir = person.person_dir / "episodes"
-    person.memory = memory
-
-    return person
 
 
 # ── GET /persons/{name}/sessions ─────────────────────────
 
 
 class TestListSessions:
-    async def test_person_not_found(self):
-        app = _make_test_app({})
+    async def test_person_not_found(self, tmp_path):
+        app = _make_test_app(persons_dir=tmp_path)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/persons/nobody/sessions")
@@ -54,8 +39,6 @@ class TestListSessions:
         person_dir = tmp_path / "alice"
         person_dir.mkdir()
         (person_dir / "episodes").mkdir()
-
-        alice = _make_mock_person("alice", person_dir=person_dir)
 
         # ConversationMemory mock
         mock_state = MagicMock()
@@ -71,7 +54,7 @@ class TestListSessions:
         mock_stm._archive_dir = person_dir / "shortterm" / "archive"
         mock_stm_cls.return_value = mock_stm
 
-        app = _make_test_app({"alice": alice})
+        app = _make_test_app(persons_dir=tmp_path, person_names=["alice"])
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/persons/alice/sessions")
@@ -92,8 +75,6 @@ class TestListSessions:
         person_dir.mkdir()
         (person_dir / "episodes").mkdir()
 
-        alice = _make_mock_person("alice", person_dir=person_dir)
-
         mock_turn = MagicMock()
         mock_turn.timestamp = "2026-01-01T12:00:00"
 
@@ -111,7 +92,7 @@ class TestListSessions:
         mock_stm._archive_dir = person_dir / "shortterm" / "archive"
         mock_stm_cls.return_value = mock_stm
 
-        app = _make_test_app({"alice": alice})
+        app = _make_test_app(persons_dir=tmp_path, person_names=["alice"])
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/persons/alice/sessions")
@@ -126,8 +107,8 @@ class TestListSessions:
 
 
 class TestGetSessionDetail:
-    async def test_person_not_found(self):
-        app = _make_test_app({})
+    async def test_person_not_found(self, tmp_path):
+        app = _make_test_app(persons_dir=tmp_path)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/persons/nobody/sessions/123")
@@ -141,13 +122,11 @@ class TestGetSessionDetail:
         archive_dir = person_dir / "shortterm" / "archive"
         archive_dir.mkdir(parents=True)
 
-        alice = _make_mock_person("alice", person_dir=person_dir)
-
         mock_stm = MagicMock()
         mock_stm._archive_dir = archive_dir
         mock_stm_cls.return_value = mock_stm
 
-        app = _make_test_app({"alice": alice})
+        app = _make_test_app(persons_dir=tmp_path, person_names=["alice"])
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/persons/alice/sessions/nonexistent")
@@ -167,13 +146,11 @@ class TestGetSessionDetail:
         )
         (archive_dir / "20260101.md").write_text("# Session log", encoding="utf-8")
 
-        alice = _make_mock_person("alice", person_dir=person_dir)
-
         mock_stm = MagicMock()
         mock_stm._archive_dir = archive_dir
         mock_stm_cls.return_value = mock_stm
 
-        app = _make_test_app({"alice": alice})
+        app = _make_test_app(persons_dir=tmp_path, person_names=["alice"])
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/persons/alice/sessions/20260101")
@@ -193,13 +170,11 @@ class TestGetSessionDetail:
 
         (archive_dir / "bad.json").write_text("not json", encoding="utf-8")
 
-        alice = _make_mock_person("alice", person_dir=person_dir)
-
         mock_stm = MagicMock()
         mock_stm._archive_dir = archive_dir
         mock_stm_cls.return_value = mock_stm
 
-        app = _make_test_app({"alice": alice})
+        app = _make_test_app(persons_dir=tmp_path, person_names=["alice"])
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/persons/alice/sessions/bad")
@@ -211,8 +186,8 @@ class TestGetSessionDetail:
 
 
 class TestGetTranscript:
-    async def test_person_not_found(self):
-        app = _make_test_app({})
+    async def test_person_not_found(self, tmp_path):
+        app = _make_test_app(persons_dir=tmp_path)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/persons/nobody/transcripts/2026-01-01")
@@ -220,8 +195,9 @@ class TestGetTranscript:
         assert resp.json()["detail"] == "Person not found: nobody"
 
     @patch("server.routes.sessions.ConversationMemory")
-    async def test_get_transcript_success(self, mock_conv_cls):
-        alice = _make_mock_person("alice")
+    async def test_get_transcript_success(self, mock_conv_cls, tmp_path):
+        person_dir = tmp_path / "alice"
+        person_dir.mkdir()
 
         mock_conv = MagicMock()
         mock_conv.load_transcript.return_value = [
@@ -229,7 +205,7 @@ class TestGetTranscript:
         ]
         mock_conv_cls.return_value = mock_conv
 
-        app = _make_test_app({"alice": alice})
+        app = _make_test_app(persons_dir=tmp_path, person_names=["alice"])
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/persons/alice/transcripts/2026-01-01")

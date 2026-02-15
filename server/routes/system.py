@@ -144,22 +144,26 @@ def create_system_router() -> APIRouter:
         from datetime import date as date_type
         from datetime import datetime, timedelta, timezone
 
+        from core.config.models import load_model_config
         from core.memory.conversation import ConversationMemory
         from core.memory.shortterm import ShortTermMemory
 
-        persons = request.app.state.persons
+        persons_dir = request.app.state.persons_dir
+        person_names = request.app.state.person_names
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         events: list[dict] = []
 
-        target_persons = (
-            {person: persons[person]}
-            if person and person in persons
-            else persons
+        target_names = (
+            [person] if person and person in person_names else person_names
         )
 
-        for name, p in target_persons.items():
+        for name in target_names:
+            person_dir = persons_dir / name
+            if not person_dir.exists():
+                continue
+
             # Short-term memory archives (session history)
-            stm = ShortTermMemory(p.person_dir)
+            stm = ShortTermMemory(person_dir)
             archive_dir = stm._archive_dir
             if archive_dir.exists():
                 for json_file in sorted(
@@ -196,18 +200,22 @@ def create_system_router() -> APIRouter:
                         continue
 
             # Conversation transcripts (today)
-            conv = ConversationMemory(p.person_dir, p.model_config)
-            today = date_type.today().isoformat()
-            messages = conv.load_transcript(today)
-            for msg in messages:
-                ts_str = msg.get("timestamp", "")
-                events.append({
-                    "type": "chat",
-                    "persons": [name],
-                    "timestamp": ts_str,
-                    "summary": (msg.get("content", ""))[:80],
-                    "metadata": {"role": msg.get("role", "")},
-                })
+            try:
+                model_config = load_model_config(person_dir)
+                conv = ConversationMemory(person_dir, model_config)
+                today = date_type.today().isoformat()
+                messages = conv.load_transcript(today)
+                for msg in messages:
+                    ts_str = msg.get("timestamp", "")
+                    events.append({
+                        "type": "chat",
+                        "persons": [name],
+                        "timestamp": ts_str,
+                        "summary": (msg.get("content", ""))[:80],
+                        "metadata": {"role": msg.get("role", "")},
+                    })
+            except Exception:
+                logger.warning("Failed to load transcripts for %s", name, exc_info=True)
 
         # Sort descending by timestamp, cap at 200 items
         events.sort(key=lambda e: e.get("timestamp", ""), reverse=True)

@@ -26,7 +26,6 @@ def _make_test_app(
     from server.routes.system import create_system_router
 
     app = FastAPI()
-    app.state.persons = {}
     app.state.persons_dir = Path("/tmp/fake/persons")
     app.state.shared_dir = Path("/tmp/fake/shared")
     app.state.person_names = person_names if person_names is not None else []

@@ -88,10 +88,15 @@ def create_sessions_router() -> APIRouter:
                 )
 
         # Transcripts (permanent message logs)
-        transcripts = [
-            {"date": date, "message_count": len(conv.load_transcript(date))}
-            for date in conv.list_transcript_dates()
-        ]
+        transcripts = []
+        for date in conv.list_transcript_dates():
+            try:
+                transcripts.append(
+                    {"date": date, "message_count": len(conv.load_transcript(date))}
+                )
+            except Exception:
+                logger.warning("Failed to load transcript for %s/%s", name, date)
+                transcripts.append({"date": date, "message_count": 0})
 
         return {
             "person": name,
