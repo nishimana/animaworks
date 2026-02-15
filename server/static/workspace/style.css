@@ -506,6 +506,12 @@ html, body {
 .chat-bubble.assistant.streaming {
   border: 1px solid #e0e7ff;
   min-height: 2em;
+  animation: breathe-bg 2s ease-in-out infinite;
+}
+
+@keyframes breathe-bg {
+  0%, 100% { background-color: #f0f0f0; }
+  50%      { background-color: #d0d0de; }
 }
 
 /* Markdown inside assistant bubbles */

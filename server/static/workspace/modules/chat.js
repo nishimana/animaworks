@@ -227,8 +227,7 @@ export async function sendMessage(text) {
             break;
 
           case "tool_end":
-            streamingMsg.activeTool = null;
-            updateStreamingBubble(streamingMsg);
+            // Keep last tool indicator visible — cleared on done
             break;
 
           case "chain_start":

@@ -168,8 +168,7 @@ export async function sendChat(message) {
             break;
 
           case "tool_end":
-            streamingMsg.activeTool = null;
-            renderStreamingBubble(streamingMsg);
+            // Keep last tool indicator visible — cleared on done
             break;
 
           case "bootstrap":
