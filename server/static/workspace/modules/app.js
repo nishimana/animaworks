@@ -416,11 +416,15 @@ async function sendConversationMessage() {
     const userName = getCurrentUser() || "guest";
     const body = JSON.stringify({ message: text, from_person: userName });
 
-    setTalking(true);
-    setExpression("neutral");
+    let talkingStarted = false;
 
     await streamChat(animaName, body, convStreamController.signal, {
       onTextDelta: (deltaText) => {
+        if (!talkingStarted) {
+          setTalking(true);
+          setExpression("neutral");
+          talkingStarted = true;
+        }
         streamingMsg.text += deltaText;
         scheduleStreamingUpdate(streamingMsg);
       },

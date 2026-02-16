@@ -433,4 +433,90 @@ describe("streamChat", () => {
 
     assert.ok(capturedUrl.includes("anima%20with%20spaces"));
   });
+
+  it("should propagate AbortError when signal is aborted mid-stream", async () => {
+    const controller = new AbortController();
+    const encoder = new TextEncoder();
+
+    // Mock fetch returns a stream that delays between reads, allowing abort mid-stream
+    globalThis.fetch = async (url, options) => {
+      let readCount = 0;
+      return {
+        ok: true,
+        status: 200,
+        body: {
+          getReader() {
+            return {
+              async read() {
+                readCount++;
+                if (readCount === 1) {
+                  return {
+                    done: false,
+                    value: encoder.encode(sseEvent("text_delta", { text: "Hello" })),
+                  };
+                }
+                // Abort the controller before the second read
+                controller.abort();
+                // Simulate the AbortError that fetch/reader.read() would throw
+                const err = new DOMException("The operation was aborted.", "AbortError");
+                throw err;
+              },
+              releaseLock() {},
+            };
+          },
+        },
+      };
+    };
+
+    await assert.rejects(
+      () => streamChat("test-anima", '{"message":"hi"}', controller.signal, {
+        onTextDelta: () => {},
+      }),
+      (err) => {
+        assert.strictEqual(err.name, "AbortError");
+        return true;
+      }
+    );
+  });
+
+  it("should call reader.releaseLock() even when a callback throws mid-stream", async () => {
+    let releaseLockCalled = false;
+    const encoder = new TextEncoder();
+
+    globalThis.fetch = async (url, options) => {
+      return {
+        ok: true,
+        status: 200,
+        body: {
+          getReader() {
+            return {
+              async read() {
+                return {
+                  done: false,
+                  value: encoder.encode(sseEvent("text_delta", { text: "boom" })),
+                };
+              },
+              releaseLock() {
+                releaseLockCalled = true;
+              },
+            };
+          },
+        },
+      };
+    };
+
+    await assert.rejects(
+      () => streamChat("test-anima", '{"message":"hi"}', null, {
+        onTextDelta: () => {
+          throw new Error("callback exploded");
+        },
+      }),
+      (err) => {
+        assert.strictEqual(err.message, "callback exploded");
+        return true;
+      }
+    );
+
+    assert.ok(releaseLockCalled, "reader.releaseLock() should have been called in finally block");
+  });
 });
