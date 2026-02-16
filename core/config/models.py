@@ -224,13 +224,15 @@ class AnimaWorksConfig(BaseModel):
 
 _config: AnimaWorksConfig | None = None
 _config_path: Path | None = None
+_config_mtime: float = 0.0
 
 
 def invalidate_cache() -> None:
     """Reset the module-level singleton cache."""
-    global _config, _config_path
+    global _config, _config_path, _config_mtime
     _config = None
     _config_path = None
+    _config_mtime = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -261,15 +263,25 @@ def load_config(path: Path | None = None) -> AnimaWorksConfig:
 
     If *path* is ``None``, :func:`get_config_path` determines the location.
     When the file does not exist the default configuration is returned.
+
+    The cache is automatically invalidated when the file's mtime changes,
+    so external edits (org_sync, manual changes) are picked up without
+    requiring a server restart.
     """
-    global _config, _config_path
+    global _config, _config_path, _config_mtime
 
     if path is None:
         path = get_config_path()
 
-    # Return cached instance if same path was already loaded.
+    # Check whether the on-disk file has been modified since last load.
     if _config is not None and _config_path == path:
-        return _config
+        try:
+            disk_mtime = path.stat().st_mtime
+        except OSError:
+            disk_mtime = 0.0
+        if disk_mtime == _config_mtime:
+            return _config
+        logger.debug("Config file changed on disk (mtime %.3f → %.3f); reloading", _config_mtime, disk_mtime)
 
     if path.is_file():
         logger.debug("Loading config from %s", path)
@@ -289,6 +301,10 @@ def load_config(path: Path | None = None) -> AnimaWorksConfig:
 
     _config = config
     _config_path = path
+    try:
+        _config_mtime = path.stat().st_mtime
+    except OSError:
+        _config_mtime = 0.0
     return config
 
 
@@ -298,7 +314,7 @@ def save_config(config: AnimaWorksConfig, path: Path | None = None) -> None:
     Updates the module-level singleton cache so subsequent :func:`load_config`
     calls return the freshly saved config.
     """
-    global _config, _config_path
+    global _config, _config_path, _config_mtime
 
     if path is None:
         path = get_config_path()
@@ -316,6 +332,10 @@ def save_config(config: AnimaWorksConfig, path: Path | None = None) -> None:
 
     _config = config
     _config_path = path
+    try:
+        _config_mtime = path.stat().st_mtime
+    except OSError:
+        _config_mtime = 0.0
 
 
 # ---------------------------------------------------------------------------

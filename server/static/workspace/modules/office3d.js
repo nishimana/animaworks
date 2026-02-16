@@ -455,14 +455,14 @@ function createDesk(animaName, pos) {
   });
   const screenGeo = box(0.4, 0.3, 0.02);
   const screen = new THREE.Mesh(screenGeo, monitorMat);
-  screen.position.set(0, 0.4 + 0.05 / 2 + 0.15 + 0.02, -0.15);
+  screen.position.set(0, 0.4 + 0.05 / 2 + 0.15 + 0.02, 0.15);
   screen.castShadow = true;
   group.add(screen);
 
   // Monitor stand
   const standGeo = box(0.03, 0.15, 0.03);
   const stand = new THREE.Mesh(standGeo, legMat);
-  stand.position.set(0, 0.4 + 0.05 / 2 + 0.075, -0.15);
+  stand.position.set(0, 0.4 + 0.05 / 2 + 0.075, 0.15);
   group.add(stand);
 
   // Name label

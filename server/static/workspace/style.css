@@ -1611,19 +1611,26 @@ html, body {
     height: 100svh;
   }
 
-  /* Timeline as left sidebar instead of bottom bar */
-  .ws-layout {
+  /* Office panel: row layout so timeline becomes left sidebar.
+     NOTE: .ws-timeline is a CHILD of .ws-office-panel (appended by timeline.js),
+     not a sibling under .ws-layout. */
+  .ws-office-panel {
     flex-direction: row;
+  }
+
+  .ws-office-canvas {
+    flex: 1;
+    min-width: 0;
   }
 
   .ws-timeline {
     position: static;
     width: 240px;
     min-width: 48px;
-    height: 100%;
+    height: auto;
     border-top: none;
     border-right: 1px solid #ddd;
-    order: -1; /* Place before office panel */
+    order: -1; /* Place before canvas */
     display: flex;
     flex-direction: column;
     overflow-y: auto;

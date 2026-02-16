@@ -622,6 +622,10 @@ class ProcessSupervisor:
                 continue
             if not (anima_dir / "identity.md").exists():
                 continue
+            # status.json is created as the final step of anima_factory.
+            # Its absence means creation is still in progress — skip.
+            if not (anima_dir / "status.json").exists():
+                continue
             on_disk[anima_dir.name] = self.read_anima_enabled(anima_dir)
 
         running = set(self.processes.keys())

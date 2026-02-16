@@ -73,6 +73,10 @@ def cli_main() -> None:
         "--from-md", default=None, metavar="PATH",
         help="Create from an MD file",
     )
+    p_create.add_argument(
+        "--supervisor", default=None,
+        help="Supervisor anima name (overrides character sheet)",
+    )
     p_create.set_defaults(func=_lazy_create_anima)
 
     # ── Start ─────────────────────────────────────────────

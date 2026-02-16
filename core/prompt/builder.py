@@ -369,16 +369,31 @@ def build_system_prompt(
             f"| スキル名 | 概要 |\n|---------|------|\n{common_skill_lines}"
         )
 
-    # Commander hiring guardrail: force create_anima tool usage
+    # Commander hiring guardrail: force create_anima tool/CLI usage
     if skill_summaries:
         has_newstaff = any(name == "newstaff" for name, _ in skill_summaries)
         if has_newstaff:
-            parts.append(
-                "## 雇用ルール\n\n"
-                "新しいAnimaを雇用する際は、必ず `create_anima` ツールを使用してください。\n"
-                "手動で identity.md 等のファイルを個別に作成してはいけません。\n"
-                "キャラクターシートを1ファイルで作成し、create_anima に渡してください。"
-            )
+            if execution_mode == "a1":
+                parts.append(
+                    "## 雇用ルール\n\n"
+                    "新しいAnimaを雇用する際は、以下の手順に従ってください。\n"
+                    "手動で identity.md 等のファイルを個別に作成してはいけません。\n\n"
+                    "1. キャラクターシートを1ファイルのMarkdownとして作成する\n"
+                    "   - 必須セクション: `## 基本情報`, `## 人格`, `## 役割・行動方針`\n"
+                    "2. Bashで以下のコマンドを実行する:\n"
+                    "   ```\n"
+                    "   animaworks create-anima --from-md <キャラクターシートのパス>"
+                    " --supervisor $(basename $ANIMAWORKS_ANIMA_DIR)\n"
+                    "   ```\n"
+                    "3. サーバーのReconciliationが自動的に新Animaを検出・起動します"
+                )
+            else:
+                parts.append(
+                    "## 雇用ルール\n\n"
+                    "新しいAnimaを雇用する際は、必ず `create_anima` ツールを使用してください。\n"
+                    "手動で identity.md 等のファイルを個別に作成してはいけません。\n"
+                    "キャラクターシートを1ファイルで作成し、create_anima に渡してください。"
+                )
 
     # Inject dynamically generated external tools guide (filtered by registry)
     if permissions and "外部ツール" in permissions and (tool_registry or personal_tools):
