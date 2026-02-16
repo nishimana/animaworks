@@ -619,20 +619,25 @@ class ProcessSupervisor:
         if not self.animas_dir.exists():
             return
 
+        running = set(self.processes.keys())
+
         # Build desired state from disk
         on_disk: dict[str, bool] = {}  # name -> enabled
+        # Anima dirs that have identity.md but no status.json.
+        # These are either legacy animas or factory-in-progress.
+        # They must NOT be auto-started but must NOT be killed if running.
+        on_disk_incomplete: set[str] = set()
         for anima_dir in sorted(self.animas_dir.iterdir()):
             if not anima_dir.is_dir():
                 continue
             if not (anima_dir / "identity.md").exists():
                 continue
             # status.json is created as the final step of anima_factory.
-            # Its absence means creation is still in progress — skip.
+            # Its absence means creation may still be in progress.
             if not (anima_dir / "status.json").exists():
+                on_disk_incomplete.add(anima_dir.name)
                 continue
             on_disk[anima_dir.name] = self.read_anima_enabled(anima_dir)
-
-        running = set(self.processes.keys())
 
         # enabled + not running → start
         for name, enabled in on_disk.items():
@@ -666,8 +671,10 @@ class ProcessSupervisor:
                     )
 
         # removed from disk + running → stop
+        # Protect running animas whose directory exists (identity.md present)
+        # even if status.json is missing (legacy or factory-in-progress).
         for name in list(running):
-            if name not in on_disk:
+            if name not in on_disk and name not in on_disk_incomplete:
                 logger.info(
                     "Reconciliation: stopping anima %s (removed from disk)",
                     name,

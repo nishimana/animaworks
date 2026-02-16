@@ -15,6 +15,7 @@ from core.anima_factory import (
     _apply_defaults_from_sheet,
     _create_status_json,
     _ensure_runtime_subdirs,
+    _ensure_status_json,
     _extract_name_from_md,
     _extract_section_content,
     _init_state_files,
@@ -270,6 +271,21 @@ class TestCreateFromTemplate:
             anima_dir = create_from_template(animas_dir, "dev", anima_name="alice")
             assert anima_dir.name == "alice"
 
+    def test_creates_status_json(self, tmp_path):
+        """create_from_template() creates status.json with enabled=true."""
+        tpl_dir = tmp_path / "tpl"
+        (tpl_dir / "dev").mkdir(parents=True)
+        (tpl_dir / "dev" / "identity.md").write_text("dev id", encoding="utf-8")
+        animas_dir = tmp_path / "animas"
+        animas_dir.mkdir()
+        with patch("core.anima_factory.ANIMA_TEMPLATES_DIR", tpl_dir), \
+             patch("core.anima_factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"):
+            anima_dir = create_from_template(animas_dir, "dev")
+            status_path = anima_dir / "status.json"
+            assert status_path.exists()
+            data = json.loads(status_path.read_text(encoding="utf-8"))
+            assert data["enabled"] is True
+
 
 # ── create_blank ──────────────────────────────────────────
 
@@ -303,6 +319,18 @@ class TestCreateBlank:
         (animas_dir / "alice").mkdir(parents=True)
         with pytest.raises(FileExistsError):
             create_blank(animas_dir, "alice")
+
+    def test_creates_status_json(self, tmp_path):
+        """create_blank() creates status.json with enabled=true."""
+        animas_dir = tmp_path / "animas"
+        animas_dir.mkdir()
+        with patch("core.anima_factory.BLANK_TEMPLATE_DIR", tmp_path / "no_blank"), \
+             patch("core.anima_factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"):
+            anima_dir = create_blank(animas_dir, "alice")
+            status_path = anima_dir / "status.json"
+            assert status_path.exists()
+            data = json.loads(status_path.read_text(encoding="utf-8"))
+            assert data["enabled"] is True
 
 
 # ── create_from_md ────────────────────────────────────────
@@ -695,6 +723,46 @@ class TestCreateStatusJson:
         _create_status_json(person_dir, info, supervisor_override="rin")
         status = json.loads((person_dir / "status.json").read_text(encoding="utf-8"))
         assert status["supervisor"] == "rin"
+
+
+# ── _ensure_status_json ──────────────────────────────────
+
+
+class TestEnsureStatusJson:
+    def test_creates_minimal_status_json(self, tmp_path):
+        """Creates {"enabled": true} when no status.json exists."""
+        anima_dir = tmp_path / "anima"
+        anima_dir.mkdir()
+        _ensure_status_json(anima_dir)
+        status_path = anima_dir / "status.json"
+        assert status_path.exists()
+        data = json.loads(status_path.read_text(encoding="utf-8"))
+        assert data == {"enabled": True}
+
+    def test_does_not_overwrite_existing(self, tmp_path):
+        """Preserves existing status.json with richer fields."""
+        anima_dir = tmp_path / "anima"
+        anima_dir.mkdir()
+        existing = {"enabled": True, "supervisor": "tanaka", "role": "developer"}
+        (anima_dir / "status.json").write_text(
+            json.dumps(existing, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        _ensure_status_json(anima_dir)
+        data = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
+        assert data == existing  # unchanged
+
+    def test_does_not_overwrite_disabled(self, tmp_path):
+        """Preserves disabled status.json."""
+        anima_dir = tmp_path / "anima"
+        anima_dir.mkdir()
+        existing = {"enabled": False}
+        (anima_dir / "status.json").write_text(
+            json.dumps(existing) + "\n", encoding="utf-8",
+        )
+        _ensure_status_json(anima_dir)
+        data = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
+        assert data["enabled"] is False
 
 
 # ── _extract_section_content ─────────────────────────────

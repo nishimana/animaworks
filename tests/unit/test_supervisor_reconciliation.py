@@ -204,14 +204,14 @@ async def test_reconcile_stops_removed_anima(supervisor, temp_dirs):
 
 
 @pytest.mark.asyncio
-async def test_reconcile_no_status_file_backward_compat(supervisor, temp_dirs):
-    """Anima with identity.md but no status.json → treated as enabled, started."""
+async def test_reconcile_no_status_file_incomplete_protection(supervisor, temp_dirs):
+    """Anima with identity.md but no status.json → on_disk_incomplete, not started, not killed."""
     animas_dir = temp_dirs["animas_dir"]
     animas_dir.mkdir(parents=True)
     alice_dir = animas_dir / "alice"
     alice_dir.mkdir()
     (alice_dir / "identity.md").write_text("Alice identity", encoding="utf-8")
-    # No status.json
+    # No status.json — treated as incomplete (legacy or factory-in-progress)
 
     supervisor.start_anima = AsyncMock()
     supervisor.stop_anima = AsyncMock()
@@ -220,8 +220,9 @@ async def test_reconcile_no_status_file_backward_compat(supervisor, temp_dirs):
 
     await supervisor._reconcile()
 
-    supervisor.start_anima.assert_called_once_with("alice")
-    callback.assert_called_once_with("alice")
+    supervisor.start_anima.assert_not_called()
+    supervisor.stop_anima.assert_not_called()
+    callback.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -276,9 +277,15 @@ async def test_reconcile_start_anima_failure(supervisor, temp_dirs):
     alice_dir = animas_dir / "alice"
     alice_dir.mkdir()
     (alice_dir / "identity.md").write_text("Alice identity", encoding="utf-8")
+    (alice_dir / "status.json").write_text(
+        json.dumps({"enabled": True}), encoding="utf-8"
+    )
     bob_dir = animas_dir / "bob"
     bob_dir.mkdir()
     (bob_dir / "identity.md").write_text("Bob identity", encoding="utf-8")
+    (bob_dir / "status.json").write_text(
+        json.dumps({"enabled": True}), encoding="utf-8"
+    )
 
     # start_anima fails for alice but succeeds for bob
     async def start_side_effect(name: str) -> None:

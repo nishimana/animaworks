@@ -73,6 +73,7 @@ def create_from_template(
     _init_state_files(anima_dir)
     _place_bootstrap(anima_dir)
     _place_send_script(anima_dir)
+    _ensure_status_json(anima_dir)
 
     logger.info("Created anima '%s' from template '%s'", name, template_name)
     return anima_dir
@@ -112,6 +113,9 @@ def create_blank(animas_dir: Path, name: str) -> Path:
         _init_state_files(anima_dir)
         _place_bootstrap(anima_dir)
         _place_send_script(anima_dir)
+        # Create a minimal status.json so the reconciliation loop
+        # recognises this anima as a valid on-disk entry.
+        _ensure_status_json(anima_dir)
     except Exception:
         logger.error("Failed to create blank anima '%s'; rolling back", name)
         shutil.rmtree(anima_dir, ignore_errors=True)
@@ -300,6 +304,25 @@ def _validate_character_sheet(content: str) -> None:
             "Character sheet is missing required sections: "
             + ", ".join(missing)
         )
+
+
+def _ensure_status_json(anima_dir: Path) -> None:
+    """Create a minimal status.json if one does not already exist.
+
+    This is called by :func:`create_blank` so that every anima directory
+    has a valid status.json from the start.  :func:`_create_status_json`
+    (used by :func:`create_from_md`) may overwrite it later with richer
+    metadata parsed from the character sheet.
+    """
+    status_path = anima_dir / "status.json"
+    if status_path.exists():
+        return
+    status = {"enabled": True}
+    status_path.write_text(
+        json.dumps(status, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    logger.debug("Created minimal status.json in %s", anima_dir)
 
 
 def _create_status_json(
