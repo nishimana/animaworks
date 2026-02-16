@@ -2,9 +2,9 @@
 // Chat UI + SSE streaming display.
 
 import { getState, setState } from "./state.js";
-import { sendChatStream, fetchConversationFull } from "./api.js";
+import { fetchConversationFull } from "./api.js";
 import { escapeHtml, renderSimpleMarkdown } from "./utils.js";
-import { parseConvSSE as parseSSEEvents, getErrorMessage } from "../../shared/sse-parser.js";
+import { streamChat } from "../../shared/chat-stream.js";
 import { createLogger } from "../../shared/logger.js";
 
 const logger = createLogger("ws-chat");
@@ -222,72 +222,43 @@ export async function sendMessage(text) {
   _isSseStreaming = true;
 
   try {
-    const response = await sendChatStream(selectedAnima, trimmed, currentUser || "human");
-    if (!response.ok) {
-      logger.error("Chat stream request failed", { anima: selectedAnima, status: response.status, statusText: response.statusText });
-      throw new Error(`API ${response.status}: ${response.statusText}`);
-    }
+    const body = JSON.stringify({ message: trimmed, from_person: currentUser || "human" });
 
-    logger.info("Chat stream started", { anima: selectedAnima });
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const { parsed, remaining } = parseSSEEvents(buffer);
-      buffer = remaining;
-
-      for (const evt of parsed) {
-        switch (evt.event) {
-          case "text_delta":
-            streamingMsg.text += evt.data.text;
-            scheduleStreamingUpdate(streamingMsg);
-            break;
-
-          case "tool_start":
-            streamingMsg.activeTool = evt.data.tool_name;
-            updateStreamingBubble(streamingMsg);
-            break;
-
-          case "tool_end":
-            // Keep last tool indicator visible — cleared on done
-            break;
-
-          case "chain_start":
-            // Session continuation — stream continues
-            break;
-
-          case "error":
-            logger.error("SSE error event", { anima: selectedAnima, code: evt.data?.code, message: getErrorMessage(evt.data) });
-            streamingMsg.text += `\n[エラー] ${getErrorMessage(evt.data)}`;
-            streamingMsg.streaming = false;
-            streamingMsg.activeTool = null;
-            setState({ chatMessages: [...getState().chatMessages] });
-            renderAllMessages();
-            break;
-
-          case "done": {
-            const summary = evt.data && evt.data.summary;
-            if (summary) {
-              streamingMsg.text = summary;
-            }
-            if (!streamingMsg.text) {
-              streamingMsg.text = "(空の応答)";
-            }
-            streamingMsg.streaming = false;
-            streamingMsg.activeTool = null;
-            setState({ chatMessages: [...getState().chatMessages] });
-            renderAllMessages();
-            logger.info("Chat stream completed", { anima: selectedAnima });
-            break;
-          }
+    await streamChat(selectedAnima, body, null, {
+      onTextDelta: (text) => {
+        streamingMsg.text += text;
+        scheduleStreamingUpdate(streamingMsg);
+      },
+      onToolStart: (toolName) => {
+        streamingMsg.activeTool = toolName;
+        updateStreamingBubble(streamingMsg);
+      },
+      onToolEnd: () => {
+        // Keep last tool indicator visible — cleared on done
+      },
+      onChainStart: () => {
+        // Session continuation — stream continues
+      },
+      onError: ({ message: errorMsg }) => {
+        streamingMsg.text += `\n[エラー] ${errorMsg}`;
+        streamingMsg.streaming = false;
+        streamingMsg.activeTool = null;
+        setState({ chatMessages: [...getState().chatMessages] });
+        renderAllMessages();
+      },
+      onDone: ({ summary }) => {
+        if (summary) {
+          streamingMsg.text = summary;
         }
-      }
-    }
+        if (!streamingMsg.text) {
+          streamingMsg.text = "(空の応答)";
+        }
+        streamingMsg.streaming = false;
+        streamingMsg.activeTool = null;
+        setState({ chatMessages: [...getState().chatMessages] });
+        renderAllMessages();
+      },
+    });
 
     // Ensure finalized if stream ended without done event
     if (streamingMsg.streaming) {

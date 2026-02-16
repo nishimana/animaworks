@@ -2,7 +2,7 @@
 
 import { state, dom, escapeHtml, renderMarkdown } from "./state.js";
 import { addActivity } from "./activity.js";
-import { parseConvSSE as parseSSEEvents, getErrorMessage } from "../shared/sse-parser.js";
+import { streamChat } from "../shared/chat-stream.js";
 import { createLogger } from "../shared/logger.js";
 
 const logger = createLogger("chat");
@@ -110,88 +110,52 @@ export async function sendChat(message) {
   addActivity("chat", name, `ユーザー: ${message}`);
 
   try {
-    const response = await fetch(
-      `/api/animas/${encodeURIComponent(name)}/chat/stream`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, from_person: state.currentUser || "human" }),
-      }
-    );
+    const body = JSON.stringify({ message, from_person: state.currentUser || "human" });
 
-    if (!response.ok) {
-      logger.error("Chat stream request failed", { anima: name, status: response.status, statusText: response.statusText });
-      throw new Error(`API ${response.status}: ${response.statusText}`);
-    }
-
-    logger.info("Chat stream started", { anima: name });
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const { parsed, remaining } = parseSSEEvents(buffer);
-      buffer = remaining;
-
-      for (const evt of parsed) {
-        switch (evt.event) {
-          case "text_delta":
-            streamingMsg.text += evt.data.text;
-            renderStreamingBubble(streamingMsg);
-            break;
-
-          case "tool_start":
-            streamingMsg.activeTool = evt.data.tool_name;
-            renderStreamingBubble(streamingMsg);
-            break;
-
-          case "tool_end":
-            // Keep last tool indicator visible — cleared on done
-            break;
-
-          case "bootstrap":
-            if (evt.data.status === "started") {
-              streamingMsg.bootstrapping = true;
-              renderStreamingBubble(streamingMsg);
-            } else if (evt.data.status === "completed") {
-              streamingMsg.bootstrapping = false;
-              renderStreamingBubble(streamingMsg);
-            } else if (evt.data.status === "busy") {
-              streamingMsg.text = evt.data.message || "現在初期化中です。しばらくお待ちください。";
-              streamingMsg.streaming = false;
-              streamingMsg.bootstrapping = false;
-              renderChat();
-              addActivity("system", name, "ブートストラップ中のため応答保留");
-            }
-            break;
-
-          case "chain_start":
-            break;
-
-          case "error":
-            streamingMsg.text += `\n[エラー] ${getErrorMessage(evt.data)}`;
-            streamingMsg.streaming = false;
-            renderChat();
-            break;
-
-          case "done": {
-            const summary = (evt.data && evt.data.summary) || streamingMsg.text;
-            streamingMsg.text = summary || "(空の応答)";
-            streamingMsg.streaming = false;
-            streamingMsg.activeTool = null;
-            renderChat();
-            addActivity("chat", name, `応答: ${streamingMsg.text.slice(0, 100)}`);
-            break;
-          }
+    await streamChat(name, body, null, {
+      onTextDelta: (text) => {
+        streamingMsg.text += text;
+        renderStreamingBubble(streamingMsg);
+      },
+      onToolStart: (toolName) => {
+        streamingMsg.activeTool = toolName;
+        renderStreamingBubble(streamingMsg);
+      },
+      onToolEnd: () => {
+        // Keep last tool indicator visible — cleared on done
+      },
+      onBootstrap: (data) => {
+        if (data.status === "started") {
+          streamingMsg.bootstrapping = true;
+          renderStreamingBubble(streamingMsg);
+        } else if (data.status === "completed") {
+          streamingMsg.bootstrapping = false;
+          renderStreamingBubble(streamingMsg);
+        } else if (data.status === "busy") {
+          streamingMsg.text = data.message || "現在初期化中です。しばらくお待ちください。";
+          streamingMsg.streaming = false;
+          streamingMsg.bootstrapping = false;
+          renderChat();
+          addActivity("system", name, "ブートストラップ中のため応答保留");
         }
-      }
-    }
+      },
+      onChainStart: () => {},
+      onError: ({ message: errorMsg }) => {
+        streamingMsg.text += `\n[エラー] ${errorMsg}`;
+        streamingMsg.streaming = false;
+        renderChat();
+      },
+      onDone: ({ summary }) => {
+        const text = summary || streamingMsg.text;
+        streamingMsg.text = text || "(空の応答)";
+        streamingMsg.streaming = false;
+        streamingMsg.activeTool = null;
+        renderChat();
+        addActivity("chat", name, `応答: ${streamingMsg.text.slice(0, 100)}`);
+      },
+    });
 
-    // Ensure streaming is finalized
+    // Ensure streaming is finalized if stream ended without done event
     if (streamingMsg.streaming) {
       streamingMsg.streaming = false;
       if (!streamingMsg.text) streamingMsg.text = "(空の応答)";
