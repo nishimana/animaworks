@@ -379,10 +379,10 @@ class ToolHandler:
         name = args.get("name")
         try:
             person_dir = create_from_md(get_persons_dir(), sheet_path, name=name)
-        except FileExistsError:
+        except FileExistsError as e:
             return _error_result(
                 "PersonExists",
-                f"Person '{name}' already exists",
+                str(e),
                 suggestion="Choose a different name",
             )
         except ValueError as e:
