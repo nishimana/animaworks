@@ -1,5 +1,5 @@
 from __future__ import annotations
-# AnimaWorks - Digital Person Framework
+# AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
@@ -38,7 +38,7 @@ OnMessageSentFn = Callable[[str, str, str], None]
 # Shell metacharacters that indicate injection attempts.
 _SHELL_METACHAR_RE = re.compile(r"[;&|`$(){}]")
 
-# Files that persons cannot modify themselves (identity/privilege protection).
+# Files that animas cannot modify themselves (identity/privilege protection).
 _PROTECTED_FILES = frozenset({
     "permissions.md",
     "identity.md",
@@ -67,27 +67,27 @@ def _error_result(
     return _json.dumps(result, ensure_ascii=False)
 
 
-def _is_protected_write(person_dir: Path, target: Path) -> str | None:
-    """Check if a write target is a protected file or outside person_dir.
+def _is_protected_write(anima_dir: Path, target: Path) -> str | None:
+    """Check if a write target is a protected file or outside anima_dir.
 
     Returns error message string if blocked, None if allowed.
     """
     resolved = target.resolve()
-    person_resolved = person_dir.resolve()
+    anima_resolved = anima_dir.resolve()
 
-    # Path traversal: target must be within person_dir
-    if not resolved.is_relative_to(person_resolved):
+    # Path traversal: target must be within anima_dir
+    if not resolved.is_relative_to(anima_resolved):
         return _error_result(
             "PermissionDenied",
-            "Path resolves outside person directory",
+            "Path resolves outside anima directory",
         )
 
     # Protected file check
-    rel = str(resolved.relative_to(person_resolved))
+    rel = str(resolved.relative_to(anima_resolved))
     if rel in _PROTECTED_FILES:
         return _error_result(
             "PermissionDenied",
-            f"'{rel}' is a protected file and cannot be modified by the person itself",
+            f"'{rel}' is a protected file and cannot be modified by the anima itself",
         )
 
     return None
@@ -102,7 +102,7 @@ class ToolHandler:
 
     def __init__(
         self,
-        person_dir: Path,
+        anima_dir: Path,
         memory: MemoryManager,
         messenger: Messenger | None = None,
         tool_registry: list[str] | None = None,
@@ -112,8 +112,8 @@ class ToolHandler:
         human_notifier: HumanNotifier | None = None,
         background_manager: BackgroundTaskManager | None = None,
     ) -> None:
-        self._person_dir = person_dir
-        self._person_name = person_dir.name
+        self._anima_dir = anima_dir
+        self._anima_name = anima_dir.name
         self._memory = memory
         self._messenger = messenger
         self._on_message_sent = on_message_sent
@@ -151,7 +151,7 @@ class ToolHandler:
 
     @property
     def replied_to(self) -> set[str]:
-        """Person names this person has sent messages to in the current cycle."""
+        """Anima names this anima has sent messages to in the current cycle."""
         return self._replied_to
 
     def reset_replied_to(self) -> None:
@@ -205,8 +205,8 @@ class ToolHandler:
             elif name == "notify_human":
                 result = self._handle_notify_human(args)
             # Admin tools
-            elif name == "create_person":
-                result = self._handle_create_person(args)
+            elif name == "create_anima":
+                result = self._handle_create_anima(args)
             # Tool management
             elif name == "refresh_tools":
                 result = self._handle_refresh_tools(args)
@@ -215,7 +215,7 @@ class ToolHandler:
             else:
                 # ── Background execution for eligible external tools ──
                 if self._background_manager and self._background_manager.is_eligible(name):
-                    ext_args = {**args, "person_dir": str(self._person_dir)}
+                    ext_args = {**args, "anima_dir": str(self._anima_dir)}
                     task_id = self._background_manager.submit(
                         name, ext_args, self._external.dispatch,
                     )
@@ -225,8 +225,8 @@ class ToolHandler:
                         "message": f"タスクをバックグラウンドで実行開始しました (task_id: {task_id})",
                     }, ensure_ascii=False)
                 else:
-                    # External tool dispatch -- inject person_dir for tools that need it
-                    ext_args = {**args, "person_dir": str(self._person_dir)}
+                    # External tool dispatch -- inject anima_dir for tools that need it
+                    ext_args = {**args, "anima_dir": str(self._anima_dir)}
                     result = self._external.dispatch(name, ext_args)
                     if result is None:
                         logger.warning("Unknown tool requested: %s", name)
@@ -281,12 +281,12 @@ class ToolHandler:
             suffix = rel[len("common_knowledge/"):]
             path = get_common_knowledge_dir() / suffix
         else:
-            path = self._person_dir / rel
-            # Prevent path traversal outside person_dir
-            if not path.resolve().is_relative_to(self._person_dir.resolve()):
+            path = self._anima_dir / rel
+            # Prevent path traversal outside anima_dir
+            if not path.resolve().is_relative_to(self._anima_dir.resolve()):
                 return _error_result(
                     "PermissionDenied",
-                    "Path resolves outside person directory",
+                    "Path resolves outside anima directory",
                 )
         if path.exists() and path.is_file():
             logger.debug("read_memory_file path=%s", rel)
@@ -296,10 +296,10 @@ class ToolHandler:
 
     def _handle_write_memory_file(self, args: dict[str, Any]) -> str:
         rel = args["path"]
-        path = self._person_dir / rel
+        path = self._anima_dir / rel
 
         # Security check: block protected files and path traversal
-        err = _is_protected_write(self._person_dir, path)
+        err = _is_protected_write(self._anima_dir, path)
         if err:
             return err
 
@@ -325,10 +325,10 @@ class ToolHandler:
         # Trigger schedule reload if heartbeat or cron config changed
         if args["path"] in ("heartbeat.md", "cron.md") and self._on_schedule_changed:
             try:
-                self._on_schedule_changed(self._person_name)
-                logger.info("Schedule reload triggered for '%s'", self._person_name)
+                self._on_schedule_changed(self._anima_name)
+                logger.info("Schedule reload triggered for '%s'", self._anima_name)
             except Exception:
-                logger.exception("Schedule reload failed for '%s'", self._person_name)
+                logger.exception("Schedule reload failed for '%s'", self._anima_name)
 
         return f"Written to {args['path']}"
 
@@ -347,7 +347,7 @@ class ToolHandler:
         if self._on_message_sent:
             try:
                 self._on_message_sent(
-                    self._messenger.person_name, args["to"], args["content"],
+                    self._messenger.anima_name, args["to"], args["content"],
                 )
             except Exception:
                 logger.exception("on_message_sent callback failed")
@@ -385,7 +385,7 @@ class ToolHandler:
         try:
             coro = self._human_notifier.notify(
                 subject, body, priority,
-                person_name=self._person_name,
+                anima_name=self._anima_name,
             )
             try:
                 loop = asyncio.get_running_loop()
@@ -404,7 +404,7 @@ class ToolHandler:
 
         # Queue notification for Web UI broadcast (picked up by stream/IPC)
         self._pending_notifications.append({
-            "person": self._person_name,
+            "anima": self._anima_name,
             "subject": subject,
             "body": body,
             "priority": priority,
@@ -419,28 +419,28 @@ class ToolHandler:
 
     # ── Admin tool handlers ────────────────────────────────
 
-    def _handle_create_person(self, args: dict[str, Any]) -> str:
-        """Create a new person from a character sheet via person_factory."""
-        from core.person_factory import create_from_md
-        from core.paths import get_data_dir, get_persons_dir
+    def _handle_create_anima(self, args: dict[str, Any]) -> str:
+        """Create a new anima from a character sheet vian anima_factory."""
+        from core.anima_factory import create_from_md
+        from core.paths import get_data_dir, get_animas_dir
 
         sheet_path = Path(args["character_sheet_path"]).expanduser()
         if not sheet_path.is_absolute():
-            sheet_path = self._person_dir / sheet_path
+            sheet_path = self._anima_dir / sheet_path
 
         if not sheet_path.exists():
             return _error_result(
                 "FileNotFound",
                 f"Character sheet not found: {sheet_path}",
-                suggestion="Write the character_sheet.md first, then call create_person",
+                suggestion="Write the character_sheet.md first, then call create_anima",
             )
 
         name = args.get("name")
         try:
-            person_dir = create_from_md(get_persons_dir(), sheet_path, name=name)
+            anima_dir = create_from_md(get_animas_dir(), sheet_path, name=name)
         except FileExistsError as e:
             return _error_result(
-                "PersonExists",
+                "AnimaExists",
                 str(e),
                 suggestion="Choose a different name",
             )
@@ -449,13 +449,13 @@ class ToolHandler:
 
         # Register in config.json
         try:
-            from cli.commands.init_cmd import _register_person_in_config
-            _register_person_in_config(get_data_dir(), person_dir.name)
+            from cli.commands.init_cmd import _register_anima_in_config
+            _register_anima_in_config(get_data_dir(), anima_dir.name)
         except Exception:
-            logger.warning("Failed to register person in config.json", exc_info=True)
+            logger.warning("Failed to register anima in config.json", exc_info=True)
 
-        logger.info("create_person: created '%s' at %s", person_dir.name, person_dir)
-        return f"Person '{person_dir.name}' created successfully at {person_dir}. Reload the server to activate."
+        logger.info("create_anima: created '%s' at %s", anima_dir.name, anima_dir)
+        return f"Anima '{anima_dir.name}' created successfully at {anima_dir}. Reload the server to activate."
 
     # ── Tool management handlers ─────────────────────────────
 
@@ -477,7 +477,7 @@ class ToolHandler:
         """Re-discover personal and common tools, update dispatcher."""
         from core.tools import discover_common_tools, discover_personal_tools
 
-        personal = discover_personal_tools(self._person_dir)
+        personal = discover_personal_tools(self._anima_dir)
         common = discover_common_tools()
         merged = {**common, **personal}
         self._external.update_personal_tools(merged)
@@ -493,7 +493,7 @@ class ToolHandler:
         )
 
     def _handle_share_tool(self, args: dict[str, Any]) -> str:
-        """Copy a personal tool to common_tools/ for all persons."""
+        """Copy a personal tool to common_tools/ for all animas."""
         import shutil
 
         from core.paths import get_data_dir
@@ -508,7 +508,7 @@ class ToolHandler:
                 suggestion="Use only letters, digits, and underscores",
             )
 
-        src = self._person_dir / "tools" / f"{tool_name}.py"
+        src = self._anima_dir / "tools" / f"{tool_name}.py"
         if not src.exists():
             return _error_result(
                 "FileNotFound",
@@ -535,7 +535,7 @@ class ToolHandler:
 
         shutil.copy2(src, dst)
         logger.info("share_tool: copied %s → %s", src, dst)
-        return f"Shared tool '{tool_name}' to common_tools/. All persons can now use it after refresh_tools."
+        return f"Shared tool '{tool_name}' to common_tools/. All animas can now use it after refresh_tools."
 
     # ── File operation handlers ──────────────────────────────
 
@@ -611,7 +611,7 @@ class ToolHandler:
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                cwd=str(self._person_dir),
+                cwd=str(self._anima_dir),
             )
             output = proc.stdout
             if proc.stderr:
@@ -652,7 +652,7 @@ class ToolHandler:
             if err:
                 return err
         else:
-            search_path = self._person_dir
+            search_path = self._anima_dir
 
         if not search_path.exists():
             return _error_result(
@@ -705,7 +705,7 @@ class ToolHandler:
             if err:
                 return err
         else:
-            dir_path = self._person_dir
+            dir_path = self._anima_dir
 
         if not dir_path.exists():
             return _error_result(
@@ -788,16 +788,16 @@ class ToolHandler:
         Returns ``None`` if allowed, or an error message string if denied.
 
         Access rules (evaluated in order):
-          1. Own person_dir -- always allowed for reads; writes to protected files blocked
+          1. Own anima_dir -- always allowed for reads; writes to protected files blocked
           2. Paths listed under ``ファイル操作`` section in permissions.md
           3. Everything else -- denied
         """
         resolved = Path(path).resolve()
 
-        # Own person_dir
-        if resolved.is_relative_to(self._person_dir.resolve()):
+        # Own anima_dir
+        if resolved.is_relative_to(self._anima_dir.resolve()):
             if write:
-                err = _is_protected_write(self._person_dir, resolved)
+                err = _is_protected_write(self._anima_dir, resolved)
                 if err:
                     return err
             return None
@@ -856,15 +856,15 @@ class ToolHandler:
         if cmd_base not in allowed:
             return _error_result("PermissionDenied", f"Command '{cmd_base}' not in allowed list", context={"allowed_commands": allowed})
 
-        # Block arguments with path traversal targeting other persons
+        # Block arguments with path traversal targeting other animas
         for arg in argv[1:]:
             if ".." in arg:
                 try:
-                    resolved = (self._person_dir / arg).resolve()
-                    if not resolved.is_relative_to(self._person_dir.resolve()):
+                    resolved = (self._anima_dir / arg).resolve()
+                    if not resolved.is_relative_to(self._anima_dir.resolve()):
                         return _error_result(
                             "PermissionDenied",
-                            f"Command argument resolves outside person directory",
+                            f"Command argument resolves outside anima directory",
                         )
                 except (ValueError, OSError):
                     pass

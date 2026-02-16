@@ -2,8 +2,8 @@
 
 ## 概要
 
-新しいDigital Personを作成する。キャラクターシートを1ファイルで作成し、`create_person`ツールで一括作成する。
-新Personは初回起動時にbootstrapで自己整備する（identity/injection充実化、heartbeat/cron設計、アバター生成）。
+新しいDigital Animaを作成する。キャラクターシートを1ファイルで作成し、`create_anima`ツールで一括作成する。
+新Animaは初回起動時にbootstrapで自己整備する（identity/injection充実化、heartbeat/cron設計、アバター生成）。
 
 ## 発動条件
 
@@ -32,7 +32,7 @@
 
 **技術設定（指定がなければデフォルト使用）:**
 - 役割: `commander`（他の社員に委任できる）または `worker`（委任を受ける側）
-- supervisor: 上司となる Person の英名（worker の場合は必須。未指定なら自分）
+- supervisor: 上司となる Anima の英名（worker の場合は必須。未指定なら自分）
 
 **頭脳（LLMモデル）設定:**
 
@@ -95,7 +95,7 @@ write_memory_file(
 
 ## 定期業務 (→ heartbeat.md, cron.md) [省略可]
 
-{省略時: 汎用テンプレート適用。新Person自身がbootstrapで調整}
+{省略時: 汎用テンプレート適用。新Anima自身がbootstrapで調整}
 
 ## 初回起動指示 (→ bootstrap.md 追加指示) [省略可]
 
@@ -105,10 +105,10 @@ write_memory_file(
 **必須セクション**: 基本情報、人格、役割・行動方針
 **省略可能セクション**: 権限、定期業務、初回起動指示
 
-### 4. create_person ツールでPerson作成
+### 4. create_anima ツールでAnima作成
 
 ```
-create_person(
+create_anima(
   character_sheet_path="../{英名}/character_sheet.md",
   name="{英名}"
 )
@@ -123,8 +123,8 @@ create_person(
 
 ### 5. config.json にモデル設定を追加
 
-config.json の `persons.{英名}` セクションにモデル設定を追加する。
-create_person ツールが自動で基本設定を登録するが、以下を確認・補完すること:
+config.json の `animas.{英名}` セクションにモデル設定を追加する。
+create_anima ツールが自動で基本設定を登録するが、以下を確認・補完すること:
 
 - `model`: ヒアリングで決定したモデル名
 - `credential`: 使用するcredential名
@@ -144,9 +144,9 @@ execute_command(command="curl -s -X POST http://localhost:18500/api/system/reloa
 - 新しい社員の名前と役割
 - 設定した技術スタック（モデル、実行モード）
 
-⚠️ アバター画像の生成は報告しない（新Person自身がbootstrapで生成する）
+⚠️ アバター画像の生成は報告しない（新Anima自身がbootstrapで生成する）
 
-### 以降は新Person自身が自律的に実行:
+### 以降は新Anima自身が自律的に実行:
 - identity.md / injection.md の充実化
 - heartbeat.md / cron.md の自己設計
 - アバター画像の生成（上司参照付き）
