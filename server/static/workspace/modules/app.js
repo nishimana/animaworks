@@ -18,7 +18,7 @@ import { computePOIs, initIdleBehaviors, updateIdleBehaviors, cancelBehavior } f
 import { initInteractions, showMessageEffect, showConversation, updateInteractions } from "./interactions.js";
 import { initTimeline, addTimelineEvent, loadHistory } from "./timeline.js";
 import { playReveal } from "./reveal.js";
-import { parseConvSSE, getErrorMessage } from "../../shared/sse-parser.js";
+import { streamChat } from "../../shared/chat-stream.js";
 import { SwipeHandler } from "../../modules/touch.js";
 
 // ── Mobile Resource Tracking ────────────
@@ -414,59 +414,41 @@ async function sendConversationMessage() {
 
   try {
     const userName = getCurrentUser() || "guest";
-    const resp = await fetch(`/api/animas/${encodeURIComponent(animaName)}/chat/stream`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text, from_person: userName }),
-      signal: convStreamController.signal,
-    });
-
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const body = JSON.stringify({ message: text, from_person: userName });
 
     setTalking(true);
     setExpression("neutral");
 
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const { parsed, remaining } = parseConvSSE(buffer);
-      buffer = remaining;
-
-      for (const { event: evt, data } of parsed) {
-        if (evt === "text_delta" && data.text) {
-          streamingMsg.text += data.text;
-          scheduleStreamingUpdate(streamingMsg);
-        } else if (evt === "tool_start") {
-          streamingMsg.activeTool = data.tool_name;
-          setExpression("thinking");
-          updateStreamingBubble(streamingMsg);
-        } else if (evt === "tool_end") {
-          streamingMsg.activeTool = null;
-          setExpression("neutral");
-          updateStreamingBubble(streamingMsg);
-        } else if (evt === "done") {
-          // Use clean summary (emotion tag already stripped server-side)
-          if (data.summary) {
-            streamingMsg.text = data.summary;
-            updateStreamingBubble(streamingMsg);
-          }
-          const emotion = data.emotion || "neutral";
-          setExpression(emotion);
-          setTimeout(() => setExpression("neutral"), 3000);
-        } else if (evt === "error") {
-          setExpression("troubled");
-          const errorMsg = getErrorMessage(data);
-          streamingMsg.text += `\n[エラー: ${errorMsg}]`;
+    await streamChat(animaName, body, convStreamController.signal, {
+      onTextDelta: (deltaText) => {
+        streamingMsg.text += deltaText;
+        scheduleStreamingUpdate(streamingMsg);
+      },
+      onToolStart: (toolName) => {
+        streamingMsg.activeTool = toolName;
+        setExpression("thinking");
+        updateStreamingBubble(streamingMsg);
+      },
+      onToolEnd: () => {
+        streamingMsg.activeTool = null;
+        setExpression("neutral");
+        updateStreamingBubble(streamingMsg);
+      },
+      onDone: ({ summary, emotion }) => {
+        // Use clean summary (emotion tag already stripped server-side)
+        if (summary) {
+          streamingMsg.text = summary;
           updateStreamingBubble(streamingMsg);
         }
-      }
-    }
+        setExpression(emotion);
+        setTimeout(() => setExpression("neutral"), 3000);
+      },
+      onError: ({ message: errorMsg }) => {
+        setExpression("troubled");
+        streamingMsg.text += `\n[エラー: ${errorMsg}]`;
+        updateStreamingBubble(streamingMsg);
+      },
+    });
 
     setTalking(false);
 
@@ -477,6 +459,7 @@ async function sendConversationMessage() {
     renderConvMessages();
   } catch (err) {
     if (err.name === "AbortError") return;
+    // TODO: Replace with logger.error() when shared/logger.js is available
     console.error("[conversation] Stream error:", err);
     streamingMsg.text = `[エラー] ${err.message}`;
     streamingMsg.streaming = false;

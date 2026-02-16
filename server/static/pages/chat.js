@@ -1,7 +1,7 @@
 // ── Chat Page (Self-Contained) ──────────────
 import { api } from "../modules/api.js";
 import { escapeHtml, renderMarkdown, timeStr, statusClass } from "../modules/state.js";
-import { parseConvSSE, getErrorMessage } from "../shared/sse-parser.js";
+import { streamChat } from "../shared/chat-stream.js";
 
 // ── Local State ────────────────────────────
 
@@ -426,63 +426,38 @@ async function _sendChat(message) {
 
   try {
     const currentUser = localStorage.getItem("animaworks_user") || "human";
-    const response = await fetch(
-      `/api/animas/${encodeURIComponent(name)}/chat/stream`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, from_person: currentUser }),
-      }
-    );
+    const body = JSON.stringify({ message, from_person: currentUser });
 
-    if (!response.ok) throw new Error(`API ${response.status}: ${response.statusText}`);
+    await streamChat(name, body, null, {
+      onTextDelta: (text) => {
+        streamingMsg.text += text;
+        _renderStreamingBubble(streamingMsg);
+      },
+      onToolStart: (toolName) => {
+        streamingMsg.activeTool = toolName;
+        _renderStreamingBubble(streamingMsg);
+      },
+      onToolEnd: () => {
+        streamingMsg.activeTool = null;
+        _renderStreamingBubble(streamingMsg);
+      },
+      onChainStart: () => {},
+      onError: ({ message: errorMsg }) => {
+        streamingMsg.text += `\n[エラー] ${errorMsg}`;
+        streamingMsg.streaming = false;
+        _renderChat();
+      },
+      onDone: ({ summary }) => {
+        const text = summary || streamingMsg.text;
+        streamingMsg.text = text || "(空の応答)";
+        streamingMsg.streaming = false;
+        streamingMsg.activeTool = null;
+        _renderChat();
+        _addLocalActivity("chat", name, `応答: ${streamingMsg.text.slice(0, 100)}`);
+      },
+    });
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const { parsed, remaining } = parseConvSSE(buffer);
-      buffer = remaining;
-
-      for (const evt of parsed) {
-        switch (evt.event) {
-          case "text_delta":
-            streamingMsg.text += evt.data.text;
-            _renderStreamingBubble(streamingMsg);
-            break;
-          case "tool_start":
-            streamingMsg.activeTool = evt.data.tool_name;
-            _renderStreamingBubble(streamingMsg);
-            break;
-          case "tool_end":
-            streamingMsg.activeTool = null;
-            _renderStreamingBubble(streamingMsg);
-            break;
-          case "chain_start":
-            break;
-          case "error":
-            streamingMsg.text += `\n[エラー] ${getErrorMessage(evt.data)}`;
-            streamingMsg.streaming = false;
-            _renderChat();
-            break;
-          case "done": {
-            const summary = (evt.data && evt.data.summary) || streamingMsg.text;
-            streamingMsg.text = summary || "(空の応答)";
-            streamingMsg.streaming = false;
-            streamingMsg.activeTool = null;
-            _renderChat();
-            _addLocalActivity("chat", name, `応答: ${streamingMsg.text.slice(0, 100)}`);
-            break;
-          }
-        }
-      }
-    }
-
+    // Ensure streaming is finalized if stream ended without done event
     if (streamingMsg.streaming) {
       streamingMsg.streaming = false;
       if (!streamingMsg.text) streamingMsg.text = "(空の応答)";
