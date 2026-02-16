@@ -1,6 +1,6 @@
 // ── Chat Page (Self-Contained) ──────────────
 import { api } from "../modules/api.js";
-import { escapeHtml, renderMarkdown, timeStr, statusClass } from "../modules/state.js";
+import { escapeHtml, renderMarkdown, timeStr } from "../modules/state.js";
 import { streamChat } from "../shared/chat-stream.js";
 import { createLogger } from "../shared/logger.js";
 
@@ -231,7 +231,7 @@ async function _loadAnimas() {
       _selectAnima(_animas[0].name);
     }
   } catch (err) {
-    console.error("Failed to load animas:", err);
+    logger.error("Failed to load animas", err);
   }
 }
 
