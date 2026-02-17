@@ -38,8 +38,9 @@ def _get_frontend_logger() -> logging.Logger:
     _frontend_logger.setLevel(logging.DEBUG)
     _frontend_logger.propagate = False  # Don't forward to root logger
 
-    today = datetime.now().strftime("%Y%m%d")
-    log_path = _frontend_log_dir / f"{today}.jsonl"
+    # Fixed base filename; TimedRotatingFileHandler appends date suffix on rotation
+    # e.g. frontend.jsonl -> frontend.jsonl.20260217
+    log_path = _frontend_log_dir / "frontend.jsonl"
 
     handler = TimedRotatingFileHandler(
         filename=log_path,
@@ -49,7 +50,7 @@ def _get_frontend_logger() -> logging.Logger:
         encoding="utf-8",
         utc=False,
     )
-    handler.suffix = "%Y%m%d.jsonl"
+    handler.suffix = "%Y%m%d"
     # Raw passthrough: message is already a JSON string
     handler.setFormatter(logging.Formatter("%(message)s"))
     _frontend_logger.addHandler(handler)
@@ -462,10 +463,19 @@ def create_system_router() -> APIRouter:
 
     @router.post("/system/frontend-logs")
     async def receive_frontend_logs(request: Request):
-        """Receive a batch of frontend log entries and write to daily JSONL."""
+        """Receive a batch of frontend log entries and write to daily JSONL.
+
+        Parses request body directly via ``json.loads`` to accept both
+        ``application/json`` and ``text/plain`` Content-Type headers
+        (the latter may be sent by ``navigator.sendBeacon`` in some browsers).
+        """
+        raw = await request.body()
         try:
-            entries = await request.json()
-        except Exception:
+            entries = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            logger.warning(
+                "Frontend log: invalid JSON body (%d bytes)", len(raw),
+            )
             return JSONResponse({"error": "Invalid JSON"}, status_code=400)
 
         if not isinstance(entries, list):
@@ -481,7 +491,15 @@ def create_system_router() -> APIRouter:
         for entry in entries:
             if isinstance(entry, dict):
                 fe_logger.info(json.dumps(entry, ensure_ascii=False))
+                # Echo to server console for debugging
+                logger.debug(
+                    "[frontend:%s] %s %s",
+                    entry.get("module", "?"),
+                    entry.get("level", "?"),
+                    entry.get("msg", ""),
+                )
 
+        logger.info("Frontend logs received: %d entries", len(entries))
         return {"ok": True, "count": len(entries)}
 
     # ── Frontend Log Viewer ─────────────────────────────────
@@ -496,6 +514,11 @@ def create_system_router() -> APIRouter:
     ):
         """Read frontend logs from JSONL files with optional filters.
 
+        File layout (TimedRotatingFileHandler with fixed base name):
+          - Active file: ``frontend.jsonl`` (today's logs)
+          - Rotated files: ``frontend.jsonl.YYYYMMDD`` (past days)
+          - Legacy files: ``YYYYMMDD.jsonl`` (pre-migration)
+
         Query params:
             date: YYYYMMDD (defaults to today)
             level: Filter by log level (DEBUG, INFO, WARN, ERROR)
@@ -506,8 +529,19 @@ def create_system_router() -> APIRouter:
 
         limit = max(1, min(limit, 1000))
         target_date = date or datetime.now().strftime("%Y%m%d")
+        today = datetime.now().strftime("%Y%m%d")
         log_dir = get_data_dir() / "logs" / "frontend"
-        log_path = log_dir / f"{target_date}.jsonl"
+
+        # Determine which file to read:
+        #   today → active file (frontend.jsonl)
+        #   past  → rotated file (frontend.jsonl.YYYYMMDD) or legacy (YYYYMMDD.jsonl)
+        if target_date == today:
+            log_path = log_dir / "frontend.jsonl"
+        else:
+            log_path = log_dir / f"frontend.jsonl.{target_date}"
+            if not log_path.exists():
+                # Fallback: legacy date-encoded filename
+                log_path = log_dir / f"{target_date}.jsonl"
 
         if not log_path.exists():
             return {"entries": [], "date": target_date, "total": 0}
