@@ -364,6 +364,18 @@ class LifecycleManager:
 
     def _setup_system_crons(self) -> None:
         """Set up system-wide cron tasks for memory consolidation."""
+        # Daily RAG indexing: Every day at 04:00 JST
+        # Runs after consolidation (02:00) and weekly/monthly jobs (03:00)
+        # to catch all generated/modified files as a final sweep
+        self.scheduler.add_job(
+            self._handle_daily_indexing,
+            CronTrigger(hour=4, minute=0),
+            id="system_daily_indexing",
+            name="System: Daily RAG Indexing",
+            replace_existing=True,
+        )
+        logger.info("System cron: Daily RAG indexing at 04:00 JST")
+
         # Daily consolidation: Every day at 02:00 JST
         self.scheduler.add_job(
             self._handle_daily_consolidation,
@@ -393,6 +405,95 @@ class LifecycleManager:
             replace_existing=True,
         )
         logger.info("System cron: Monthly forgetting on 1st at 03:00 JST")
+
+    async def _handle_daily_indexing(self) -> None:
+        """Run daily RAG indexing for all animas.
+
+        Incrementally indexes all memory files (knowledge, episodes,
+        procedures, skills, shared_users) so that the RAG database stays
+        up-to-date even for files added while the server was stopped.
+        Runs at 04:00, after daily consolidation (02:00) and
+        weekly/monthly jobs (03:00) to capture all outputs.
+        """
+        logger.info("Starting system-wide daily RAG indexing")
+
+        try:
+            from core.memory.rag import MemoryIndexer
+            from core.memory.rag.store import ChromaVectorStore
+        except ImportError:
+            logger.warning("RAG dependencies not available, skipping daily indexing")
+            return
+
+        from core.paths import get_data_dir
+
+        base_dir = get_data_dir()
+        animas_dir = base_dir / "animas"
+
+        if not animas_dir.is_dir():
+            logger.warning("Animas directory not found, skipping daily indexing")
+            return
+
+        loop = asyncio.get_running_loop()
+        vector_store = ChromaVectorStore()
+        total_chunks = 0
+
+        # Index each anima
+        for anima_name, _anima in self.animas.items():
+            anima_dir = animas_dir / anima_name
+            if not anima_dir.is_dir():
+                continue
+
+            try:
+                indexer = MemoryIndexer(vector_store, anima_name, anima_dir)
+                memory_types = [
+                    ("knowledge", anima_dir / "knowledge"),
+                    ("episodes", anima_dir / "episodes"),
+                    ("procedures", anima_dir / "procedures"),
+                    ("skills", anima_dir / "skills"),
+                ]
+
+                for memory_type, memory_dir in memory_types:
+                    if not memory_dir.is_dir():
+                        continue
+                    chunks = await loop.run_in_executor(
+                        None, indexer.index_directory, memory_dir, memory_type,
+                    )
+                    total_chunks += chunks
+
+                logger.info("Daily indexing for %s complete", anima_name)
+
+            except Exception:
+                logger.exception(
+                    "Daily indexing failed for anima=%s", anima_name
+                )
+
+        # Index shared user memories
+        shared_users_dir = base_dir / "shared" / "users"
+        if shared_users_dir.is_dir():
+            try:
+                indexer = MemoryIndexer(
+                    vector_store, "shared", shared_users_dir.parent
+                )
+                chunks = await loop.run_in_executor(
+                    None, indexer.index_directory, shared_users_dir, "shared_users",
+                )
+                total_chunks += chunks
+            except Exception:
+                logger.exception("Daily indexing failed for shared_users")
+
+        logger.info(
+            "System-wide daily RAG indexing complete: %d chunks indexed",
+            total_chunks,
+        )
+
+        # Broadcast result via WebSocket
+        if self._ws_broadcast:
+            await self._ws_broadcast(
+                {
+                    "type": "system.rag_indexing",
+                    "data": {"total_chunks": total_chunks},
+                }
+            )
 
     async def _handle_daily_consolidation(self) -> None:
         """Run daily consolidation for all animas."""
