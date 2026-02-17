@@ -112,11 +112,17 @@ class MemoryRetriever:
         vector_results = self._vector_search(query, anima_name, memory_type, top_k * 2)
 
         # 1b. Shared collection search (if requested)
-        if include_shared and memory_type == "knowledge":
-            shared_results = self._vector_search_collection(
-                query, "shared_common_knowledge", top_k * 2,
-            )
-            vector_results.extend(shared_results)
+        _SHARED_COLLECTION_MAP: dict[str, str] = {
+            "knowledge": "shared_common_knowledge",
+            "skills": "shared_common_skills",
+        }
+        if include_shared:
+            shared_collection = _SHARED_COLLECTION_MAP.get(memory_type)
+            if shared_collection:
+                shared_results = self._vector_search_collection(
+                    query, shared_collection, top_k * 2,
+                )
+                vector_results.extend(shared_results)
 
         # 2. Convert to RetrievalResult
         results = [

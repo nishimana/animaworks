@@ -610,3 +610,38 @@ class TestMatchTier3WithMockRetriever:
             "deploy", [skill], mock_retriever, "test",
         )
         assert len(result) == 1  # Deduplicated
+
+    def test_tier3_passes_include_shared_for_common_skills(self, tmp_path):
+        """Tier 3 via match_skills_by_description passes include_shared=True."""
+        from unittest.mock import MagicMock
+
+        p = tmp_path / "my-common-skill.md"
+        p.write_text("dummy")
+        # Common skill that didn't match Tier 1/2
+        skill = SkillMeta(
+            name="my-common-skill",
+            description="obscure description without matching words",
+            path=p,
+            is_common=True,
+        )
+
+        mock_retriever = self._make_mock_retriever()
+        mock_result = MagicMock()
+        mock_result.score = 0.8
+        mock_result.metadata = {"file_path": str(p)}
+        mock_retriever.search.return_value = [mock_result]
+
+        result = match_skills_by_description(
+            "semantically related message",
+            [skill],
+            retriever=mock_retriever,
+            anima_name="test",
+        )
+        # Verify retriever.search was called with include_shared=True
+        mock_retriever.search.assert_called_once()
+        call_kwargs = mock_retriever.search.call_args
+        assert call_kwargs.kwargs.get("include_shared") is True or (
+            len(call_kwargs.args) > 4 and call_kwargs.args[4] is True
+        )
+        assert len(result) == 1
+        assert result[0].name == "my-common-skill"

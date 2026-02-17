@@ -177,20 +177,21 @@ def _match_tier3_vector(
     Searches the personal skills collection and matches results back to
     candidate SkillMeta objects by file path / name.
 
-    Note: Common skills are not indexed in ChromaDB, so Tier 3 only
-    operates on personal skills.  Common skills rely on Tier 1/2 matching.
+    Searches both the personal skills collection and the shared
+    common_skills collection (``shared_common_skills``) in ChromaDB.
     """
     from core.memory.rag.retriever import MemoryRetriever
 
     if not isinstance(retriever, MemoryRetriever):
         return []
 
-    # Search in 'skills' memory type for personal skills
+    # Search in 'skills' memory type (personal + shared common_skills)
     results = retriever.search(
         query=message,
         anima_name=anima_name,
         memory_type="skills",
         top_k=top_k,
+        include_shared=True,
     )
 
     # Build path-to-skill lookup from candidates
@@ -275,8 +276,9 @@ class MemoryManager:
             self._indexer = MemoryIndexer(vector_store, anima_name, self.anima_dir)
             logger.debug("RAG indexer initialized for anima=%s", anima_name)
 
-            # Ensure shared_common_knowledge collection exists
+            # Ensure shared collections exist
             self._ensure_shared_knowledge_indexed(vector_store)
+            self._ensure_shared_skills_indexed(vector_store)
         except ImportError:
             logger.debug("RAG dependencies not installed, indexing disabled")
         except Exception as e:
@@ -312,6 +314,37 @@ class MemoryManager:
                 )
         except Exception as e:
             logger.warning("Failed to index shared common_knowledge: %s", e)
+
+    def _ensure_shared_skills_indexed(self, vector_store) -> None:
+        """Index common_skills/ into ``shared_common_skills`` collection.
+
+        Uses the existing hash-based dedup so repeated calls (once per
+        anima process) are effectively no-ops after the first indexing.
+        """
+        cs_dir = self.common_skills_dir
+        if not cs_dir.is_dir() or not any(cs_dir.glob("*.md")):
+            logger.debug("No common_skills files found, skipping shared skills indexing")
+            return
+
+        try:
+            from core.memory.rag import MemoryIndexer
+            from core.paths import get_data_dir
+
+            data_dir = get_data_dir()
+            shared_indexer = MemoryIndexer(
+                vector_store,
+                anima_name="shared",
+                anima_dir=data_dir,
+                collection_prefix="shared",
+                embedding_model=self._indexer.embedding_model if self._indexer else None,
+            )
+            indexed = shared_indexer.index_directory(cs_dir, "common_skills")
+            if indexed > 0:
+                logger.info(
+                    "Indexed %d chunks into shared_common_skills", indexed,
+                )
+        except Exception as e:
+            logger.warning("Failed to index shared common_skills: %s", e)
 
     def _get_indexer(self):
         """Return the RAG indexer, initializing it on first call."""

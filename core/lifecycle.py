@@ -424,7 +424,7 @@ class LifecycleManager:
             logger.warning("RAG dependencies not available, skipping daily indexing")
             return
 
-        from core.paths import get_data_dir
+        from core.paths import get_common_skills_dir, get_data_dir
 
         base_dir = get_data_dir()
         animas_dir = base_dir / "animas"
@@ -480,6 +480,21 @@ class LifecycleManager:
                 total_chunks += chunks
             except Exception:
                 logger.exception("Daily indexing failed for shared_users")
+
+        # Index shared common_skills
+        common_skills_dir = get_common_skills_dir()
+        if common_skills_dir.is_dir():
+            try:
+                shared_indexer = MemoryIndexer(
+                    vector_store, "shared", base_dir,
+                    collection_prefix="shared",
+                )
+                chunks = await loop.run_in_executor(
+                    None, shared_indexer.index_directory, common_skills_dir, "common_skills",
+                )
+                total_chunks += chunks
+            except Exception:
+                logger.exception("Daily indexing failed for common_skills")
 
         logger.info(
             "System-wide daily RAG indexing complete: %d chunks indexed",

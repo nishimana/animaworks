@@ -244,7 +244,7 @@ class MemoryIndexer:
         - knowledge / common_knowledge: Markdown heading sections
         - episodes: Time-based sections (## HH:MM)
         - procedures: Whole file (don't split procedures)
-        - skills: Whole file
+        - skills / common_skills: Whole file
         - shared_users: Whole file
         """
         if memory_type in ("knowledge", "common_knowledge"):
