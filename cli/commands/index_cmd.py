@@ -39,6 +39,64 @@ def setup_index_command(subparsers: argparse._SubParsersAction) -> None:
     parser.set_defaults(func=index_command)
 
 
+def _check_model_change(base_dir: Path, full: bool) -> str:
+    """Check if the configured embedding model differs from the last indexed model.
+
+    Args:
+        base_dir: AnimaWorks data directory.
+        full: Whether ``--full`` rebuild was requested.
+
+    Returns:
+        The current configured model name.
+
+    Raises:
+        SystemExit: If the model changed but ``--full`` was not specified.
+    """
+    import json
+    import sys
+
+    from core.memory.rag.singleton import get_embedding_model_name
+
+    current_model = get_embedding_model_name()
+    meta_path = base_dir / "index_meta.json"
+
+    if meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            previous_model = meta.get("embedding_model")
+        except (json.JSONDecodeError, OSError):
+            previous_model = None
+
+        if previous_model and previous_model != current_model and not full:
+            logger.error(
+                "Embedding model changed: %s → %s.  "
+                "Run 'animaworks index --full' to rebuild the index.",
+                previous_model,
+                current_model,
+            )
+            sys.exit(1)
+
+    return current_model
+
+
+def _save_global_index_meta(base_dir: Path, model_name: str) -> None:
+    """Write the embedding model name to the global index_meta.json."""
+    import json
+
+    meta_path = base_dir / "index_meta.json"
+    meta: dict = {}
+    if meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+    meta["embedding_model"] = model_name
+    meta_path.write_text(
+        json.dumps(meta, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
 def index_command(args: argparse.Namespace) -> None:
     """Execute the index command."""
     try:
@@ -57,6 +115,10 @@ def index_command(args: argparse.Namespace) -> None:
         logger.error("Animas directory not found: %s", animas_dir)
         logger.info("Run 'animaworks init' first to set up the environment")
         return
+
+    # Check for embedding model change before proceeding
+    current_model = _check_model_change(base_dir, args.full)
+    logger.info("Embedding model: %s", current_model)
 
     # Determine which animas to index
     if args.anima:
@@ -152,3 +214,5 @@ def index_command(args: argparse.Namespace) -> None:
     else:
         logger.info("Indexing complete: %d total chunks indexed", total_chunks)
         logger.info("Vector database: %s", vector_store.persist_dir)
+        # Record the embedding model used for future change detection
+        _save_global_index_meta(base_dir, current_model)

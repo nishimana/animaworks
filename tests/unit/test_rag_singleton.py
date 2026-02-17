@@ -126,6 +126,177 @@ class TestGetEmbeddingModel:
 
         assert (tmp_path / "models").is_dir()
 
+    def test_reads_model_from_config(
+        self, tmp_path, monkeypatch, mock_sentence_transformers
+    ):
+        """get_embedding_model() with no args should read model from config."""
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+
+        mock_model = MagicMock()
+        mock_sentence_transformers.return_value = mock_model
+
+        with patch(
+            "core.memory.rag.singleton._get_configured_model_name",
+            return_value="cl-nagoya/ruri-small",
+        ):
+            from core.memory.rag.singleton import get_embedding_model
+
+            get_embedding_model()
+
+        mock_sentence_transformers.assert_called_once_with(
+            "cl-nagoya/ruri-small",
+            cache_folder=str(tmp_path / "models"),
+        )
+
+    def test_explicit_model_name_overrides_config(
+        self, tmp_path, monkeypatch, mock_sentence_transformers
+    ):
+        """Explicit model_name parameter should override config value."""
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+
+        mock_model = MagicMock()
+        mock_sentence_transformers.return_value = mock_model
+
+        with patch(
+            "core.memory.rag.singleton._get_configured_model_name",
+            return_value="intfloat/multilingual-e5-small",
+        ):
+            from core.memory.rag.singleton import get_embedding_model
+
+            get_embedding_model("pkshatech/RoSEtta-base-ja")
+
+        mock_sentence_transformers.assert_called_once_with(
+            "pkshatech/RoSEtta-base-ja",
+            cache_folder=str(tmp_path / "models"),
+        )
+
+    def test_model_switch_reloads(
+        self, tmp_path, monkeypatch, mock_sentence_transformers
+    ):
+        """Requesting a different model name should discard cache and reload."""
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+
+        model_a = MagicMock(name="model_a")
+        model_b = MagicMock(name="model_b")
+        mock_sentence_transformers.side_effect = [model_a, model_b]
+
+        from core.memory.rag.singleton import get_embedding_model
+
+        result_a = get_embedding_model("model-a")
+        result_b = get_embedding_model("model-b")
+
+        assert result_a is model_a
+        assert result_b is model_b
+        assert mock_sentence_transformers.call_count == 2
+
+    def test_same_model_does_not_reload(
+        self, tmp_path, monkeypatch, mock_sentence_transformers
+    ):
+        """Requesting the same model name should return cached instance."""
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+
+        mock_model = MagicMock()
+        mock_sentence_transformers.return_value = mock_model
+
+        from core.memory.rag.singleton import get_embedding_model
+
+        m1 = get_embedding_model("model-x")
+        m2 = get_embedding_model("model-x")
+
+        assert m1 is m2
+        mock_sentence_transformers.assert_called_once()
+
+
+# ── get_embedding_dimension ──────────────────────────────────────
+
+
+class TestGetEmbeddingDimension:
+    def test_returns_model_dimension(
+        self, tmp_path, monkeypatch, mock_sentence_transformers
+    ):
+        """get_embedding_dimension() should return model's embedding dimension."""
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+
+        mock_model = MagicMock()
+        mock_model.get_sentence_embedding_dimension.return_value = 768
+        mock_sentence_transformers.return_value = mock_model
+
+        from core.memory.rag.singleton import get_embedding_dimension
+
+        dim = get_embedding_dimension()
+        assert dim == 768
+        mock_model.get_sentence_embedding_dimension.assert_called_once()
+
+
+# ── get_embedding_model_name ─────────────────────────────────────
+
+
+class TestGetEmbeddingModelName:
+    def test_returns_loaded_model_name(
+        self, tmp_path, monkeypatch, mock_sentence_transformers
+    ):
+        """After loading, get_embedding_model_name() returns the loaded model name."""
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+
+        mock_model = MagicMock()
+        mock_sentence_transformers.return_value = mock_model
+
+        from core.memory.rag.singleton import (
+            get_embedding_model,
+            get_embedding_model_name,
+        )
+
+        get_embedding_model("cl-nagoya/ruri-small")
+        assert get_embedding_model_name() == "cl-nagoya/ruri-small"
+
+    def test_returns_config_when_not_loaded(self):
+        """Before loading, get_embedding_model_name() falls back to config."""
+        with patch(
+            "core.memory.rag.singleton._get_configured_model_name",
+            return_value="custom/model",
+        ):
+            from core.memory.rag.singleton import get_embedding_model_name
+
+            assert get_embedding_model_name() == "custom/model"
+
+
+# ── _get_configured_model_name ───────────────────────────────────
+
+
+class TestGetConfiguredModelName:
+    def test_reads_from_config(self, tmp_path, monkeypatch):
+        """Should read rag.embedding_model from config.json."""
+        import json
+
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps({
+                "rag": {"embedding_model": "cl-nagoya/ruri-small"},
+            }),
+            encoding="utf-8",
+        )
+        # Invalidate config cache
+        from core.config import invalidate_cache
+        invalidate_cache()
+
+        from core.memory.rag.singleton import _get_configured_model_name
+
+        result = _get_configured_model_name()
+        assert result == "cl-nagoya/ruri-small"
+
+    def test_fallback_on_missing_config(self, tmp_path, monkeypatch):
+        """Should fall back to default when config is unavailable."""
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+        # No config.json exists → load_config returns defaults
+        from core.config import invalidate_cache
+        invalidate_cache()
+
+        from core.memory.rag.singleton import _get_configured_model_name
+
+        result = _get_configured_model_name()
+        assert result == "intfloat/multilingual-e5-small"
+
 
 # ── _reset_for_testing ───────────────────────────────────────────
 
@@ -160,6 +331,28 @@ class TestResetForTesting:
         assert store1 is not store2
         assert store1 is mock_store_1
         assert store2 is mock_store_2
+
+    def test_reset_clears_model_name(
+        self, tmp_path, monkeypatch, mock_sentence_transformers
+    ):
+        """_reset_for_testing() should clear _embedding_model_name."""
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+
+        mock_model = MagicMock()
+        mock_sentence_transformers.return_value = mock_model
+
+        from core.memory.rag.singleton import (
+            _reset_for_testing,
+            get_embedding_model,
+            _embedding_model_name,
+        )
+        import core.memory.rag.singleton as singleton_mod
+
+        get_embedding_model("test-model")
+        assert singleton_mod._embedding_model_name == "test-model"
+
+        _reset_for_testing()
+        assert singleton_mod._embedding_model_name is None
 
 
 # ── Thread safety ────────────────────────────────────────────────
@@ -299,3 +492,26 @@ class TestMemoryIndexerEmbeddingInjection:
 
             mock_get.assert_called_once()
             assert indexer.embedding_model is mock_model
+
+    def test_embedding_model_name_default_is_none(self, tmp_path):
+        """MemoryIndexer with no embedding_model_name should pass None to singleton."""
+        mock_store = MagicMock()
+        mock_model = MagicMock()
+
+        anima_dir = tmp_path / "test-anima"
+        anima_dir.mkdir(parents=True)
+
+        with patch(
+            "core.memory.rag.singleton.get_embedding_model",
+            return_value=mock_model,
+        ) as mock_get:
+            from core.memory.rag.indexer import MemoryIndexer
+
+            MemoryIndexer(
+                vector_store=mock_store,
+                anima_name="test-anima",
+                anima_dir=anima_dir,
+            )
+
+            # Should be called with None (config-resolved)
+            mock_get.assert_called_once_with(None)

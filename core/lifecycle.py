@@ -433,6 +433,28 @@ class LifecycleManager:
             logger.warning("Animas directory not found, skipping daily indexing")
             return
 
+        # Check for embedding model change
+        import json
+        from core.memory.rag.singleton import get_embedding_model_name
+
+        current_model = get_embedding_model_name()
+        global_meta_path = base_dir / "index_meta.json"
+        if global_meta_path.is_file():
+            try:
+                meta = json.loads(global_meta_path.read_text(encoding="utf-8"))
+                previous_model = meta.get("embedding_model")
+                if previous_model and previous_model != current_model:
+                    logger.warning(
+                        "Embedding model changed: %s → %s.  "
+                        "Skipping daily indexing — run 'animaworks index --full' "
+                        "to rebuild.",
+                        previous_model,
+                        current_model,
+                    )
+                    return
+            except (json.JSONDecodeError, OSError):
+                pass
+
         loop = asyncio.get_running_loop()
         vector_store = ChromaVectorStore()
         total_chunks = 0

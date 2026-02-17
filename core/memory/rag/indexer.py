@@ -24,10 +24,6 @@ logger = logging.getLogger("animaworks.rag.indexer")
 
 # ── Configuration ───────────────────────────────────────────────────
 
-# Embedding model (sentence-transformers)
-DEFAULT_EMBEDDING_MODEL = "intfloat/multilingual-e5-small"
-EMBEDDING_DIMENSION = 384
-
 # Index metadata file
 INDEX_META_FILE = "index_meta.json"
 
@@ -58,7 +54,7 @@ class MemoryIndexer:
         vector_store,  # VectorStore instance
         anima_name: str,
         anima_dir: Path,
-        embedding_model_name: str = DEFAULT_EMBEDDING_MODEL,
+        embedding_model_name: str | None = None,
         *,
         collection_prefix: str | None = None,
         embedding_model: object | None = None,
@@ -82,7 +78,7 @@ class MemoryIndexer:
         self.anima_name = anima_name
         self.anima_dir = anima_dir
         self.collection_prefix = collection_prefix or anima_name
-        self.embedding_model_name = embedding_model_name
+        self._embedding_model_name_override = embedding_model_name
 
         # Use injected embedding model or initialize via singleton
         if embedding_model is not None:
@@ -98,7 +94,7 @@ class MemoryIndexer:
         """Initialize sentence-transformers model via process-level singleton."""
         from core.memory.rag.singleton import get_embedding_model
 
-        self.embedding_model = get_embedding_model(self.embedding_model_name)
+        self.embedding_model = get_embedding_model(self._embedding_model_name_override)
 
     def _load_index_meta(self) -> dict[str, dict[str, str]]:
         """Load index metadata (file hashes and timestamps)."""
@@ -183,8 +179,10 @@ class MemoryIndexer:
         ]
 
         # Upsert to vector store
+        from core.memory.rag.singleton import get_embedding_dimension
+
         collection_name = f"{self.collection_prefix}_{memory_type}"
-        self.vector_store.create_collection(collection_name, EMBEDDING_DIMENSION)
+        self.vector_store.create_collection(collection_name, get_embedding_dimension())
         self.vector_store.upsert(collection_name, documents)
 
         # Update index metadata
