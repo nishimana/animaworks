@@ -11,6 +11,9 @@ from pathlib import Path
 
 logger = logging.getLogger("animaworks")
 
+# Command pattern used to identify the animaworks server process.
+_SERVER_CMD_MARKER = "main.py start"
+
 
 # ── PID helpers ───────────────────────────────────────────
 
@@ -68,8 +71,47 @@ def _is_process_alive(pid: int) -> bool:
         return True
 
 
+def _find_server_pid_by_process() -> int | None:
+    """Scan /proc to find the animaworks server process by command pattern.
+
+    This is a fallback when the PID file is missing.  Looks for a process
+    owned by the current user whose cmdline contains the server marker.
+
+    Returns the PID if found, or None.
+    """
+    my_uid = os.getuid()
+    proc = Path("/proc")
+    if not proc.exists():
+        return None
+
+    for entry in proc.iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            # Only check processes owned by the current user
+            stat = entry.stat()
+            if stat.st_uid != my_uid:
+                continue
+            cmdline = (entry / "cmdline").read_bytes().decode(
+                "utf-8", errors="replace"
+            ).replace("\x00", " ")
+            if _SERVER_CMD_MARKER in cmdline:
+                pid = int(entry.name)
+                # Exclude ourselves
+                if pid == os.getpid():
+                    continue
+                return pid
+        except (OSError, ValueError, PermissionError):
+            continue
+    return None
+
+
 def _stop_server(timeout: int = 10) -> bool:
     """Send SIGTERM to the running server and wait for it to exit.
+
+    First tries the PID file.  If the file is missing, falls back to
+    scanning running processes by command pattern so that the server can
+    still be stopped even when the PID file was lost.
 
     Args:
         timeout: Maximum seconds to wait before reporting failure.
@@ -79,14 +121,19 @@ def _stop_server(timeout: int = 10) -> bool:
         it failed to stop within the timeout.
     """
     pid = _read_pid()
-    if pid is None:
-        print("No PID file found. Server is not running.")
-        return True
 
-    if not _is_process_alive(pid):
-        print(f"Stale PID file (pid={pid}). Server is not running. Cleaning up.")
-        _remove_pid_file()
-        return True
+    if pid is None:
+        # Fallback: scan processes by command pattern
+        pid = _find_server_pid_by_process()
+        if pid is None:
+            print("No PID file found and no server process detected. Server is not running.")
+            return True
+        print(f"PID file missing — found server process by scanning (pid={pid}).")
+    else:
+        if not _is_process_alive(pid):
+            print(f"Stale PID file (pid={pid}). Server is not running. Cleaning up.")
+            _remove_pid_file()
+            return True
 
     print(f"Stopping server (pid={pid})...")
     try:
@@ -114,6 +161,38 @@ def _stop_server(timeout: int = 10) -> bool:
 # ── Server commands ───────────────────────────────────────
 
 
+def _start_pid_watchdog() -> None:
+    """Start a background thread that re-creates the PID file if it vanishes.
+
+    Checks every 30 seconds.  If the file is missing or contains a stale PID,
+    it is rewritten with the current process PID.  This guards against
+    accidental deletion (e.g. by init --force, manual cleanup, etc.).
+    """
+    import threading
+
+    def _watchdog() -> None:
+        my_pid = os.getpid()
+        while True:
+            time.sleep(30)
+            try:
+                current = _read_pid()
+                if current == my_pid:
+                    continue
+                # PID file missing, empty, or pointing at a different/dead process
+                logger.warning(
+                    "PID file watchdog: file missing or stale (read=%s, expected=%d). "
+                    "Re-creating.",
+                    current, my_pid,
+                )
+                _write_pid_file()
+            except Exception:
+                # Don't let the watchdog crash; just log and retry next cycle
+                logger.debug("PID watchdog error", exc_info=True)
+
+    t = threading.Thread(target=_watchdog, daemon=True, name="pid-watchdog")
+    t.start()
+
+
 def cmd_start(args: argparse.Namespace) -> None:
     """Start the AnimaWorks server."""
     import uvicorn
@@ -131,9 +210,17 @@ def cmd_start(args: argparse.Namespace) -> None:
         logger.info("Stale PID file found (pid=%d). Cleaning up.", existing_pid)
         _remove_pid_file()
 
+    # Also check for orphaned server process without PID file
+    orphan_pid = _find_server_pid_by_process()
+    if orphan_pid is not None and _is_process_alive(orphan_pid):
+        print(f"Error: Server is already running (pid={orphan_pid}, PID file was missing).")
+        print("Use 'animaworks stop' first, or 'animaworks restart'.")
+        sys.exit(1)
+
     ensure_runtime_dir()
     _write_pid_file()
     atexit.register(_remove_pid_file)
+    _start_pid_watchdog()
 
     from core.config import load_config
 

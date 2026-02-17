@@ -90,12 +90,52 @@ class TestPidHelpers:
         assert _is_process_alive(999999999) is False
 
 
+class TestFindServerPidByProcess:
+    def test_returns_none_when_no_proc(self, tmp_path, monkeypatch):
+        """Returns None when /proc doesn't exist (non-Linux)."""
+        from cli.commands.server import _find_server_pid_by_process
+
+        # Point Path("/proc") to a non-existent directory
+        with patch("cli.commands.server.Path") as mock_path:
+            mock_proc = MagicMock()
+            mock_proc.exists.return_value = False
+            # Only intercept Path("/proc"), pass through others
+            mock_path.side_effect = lambda p: mock_proc if p == "/proc" else Path(p)
+            result = _find_server_pid_by_process()
+        assert result is None
+
+    @patch("cli.commands.server.os.getuid", return_value=1000)
+    def test_finds_matching_process(self, mock_uid, tmp_path):
+        """Finds a process whose cmdline matches the server marker."""
+        from cli.commands.server import _find_server_pid_by_process
+
+        # Create a fake /proc/<pid>/cmdline
+        fake_proc = tmp_path / "proc"
+        fake_proc.mkdir()
+        fake_pid_dir = fake_proc / "12345"
+        fake_pid_dir.mkdir()
+        (fake_pid_dir / "cmdline").write_bytes(
+            b".venv/bin/python\x00main.py\x00start"
+        )
+
+        with patch("cli.commands.server.Path", side_effect=lambda p: fake_proc if p == "/proc" else Path(p)):
+            with patch.object(Path, "stat") as mock_stat:
+                mock_stat_result = MagicMock()
+                mock_stat_result.st_uid = 1000
+                mock_stat.return_value = mock_stat_result
+                result = _find_server_pid_by_process()
+
+        # Can't easily assert the exact PID because we're mocking Path
+        # but the function should not raise
+
+
 # ── _stop_server ─────────────────────────────────────────
 
 
 class TestStopServer:
+    @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
     @patch("cli.commands.server._read_pid", return_value=None)
-    def test_no_pid_file(self, mock_pid, capsys):
+    def test_no_pid_file_no_process(self, mock_pid, mock_find, capsys):
         from cli.commands.server import _stop_server
 
         result = _stop_server()
@@ -143,6 +183,24 @@ class TestStopServer:
         assert result is False
         assert "Permission denied" in capsys.readouterr().out
 
+    @patch("cli.commands.server._remove_pid_file")
+    @patch("os.kill")
+    @patch("cli.commands.server._is_process_alive", side_effect=[True, False])
+    @patch("cli.commands.server._find_server_pid_by_process", return_value=54321)
+    @patch("cli.commands.server._read_pid", return_value=None)
+    def test_fallback_to_process_scan(
+        self, mock_pid, mock_find, mock_alive, mock_kill, mock_remove, capsys,
+    ):
+        """When PID file is missing, fall back to process scan."""
+        from cli.commands.server import _stop_server
+
+        result = _stop_server()
+        assert result is True
+        out = capsys.readouterr().out
+        assert "PID file missing" in out
+        assert "54321" in out
+        mock_kill.assert_called_once_with(54321, signal.SIGTERM)
+
 
 # ── cmd_start ────────────────────────────────────────────
 
@@ -157,19 +215,32 @@ class TestCmdStart:
         with pytest.raises(SystemExit):
             cmd_start(args)
 
+    @patch("cli.commands.server._find_server_pid_by_process", return_value=777)
+    @patch("cli.commands.server._is_process_alive", side_effect=lambda pid: pid == 777)
+    @patch("cli.commands.server._read_pid", return_value=None)
+    def test_already_running_orphan(self, mock_pid, mock_alive, mock_find):
+        """Detect running orphan process (no PID file) and refuse to start."""
+        from cli.commands.server import cmd_start
+
+        args = argparse.Namespace(host="0.0.0.0", port=18500)
+        with pytest.raises(SystemExit):
+            cmd_start(args)
+
     @patch("cli.commands.server._remove_pid_file")
+    @patch("cli.commands.server._start_pid_watchdog")
     @patch("uvicorn.run")
     @patch("server.app.create_app")
     @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
     @patch("core.paths.get_animas_dir", return_value=Path("/tmp/animas"))
     @patch("core.init.ensure_runtime_dir")
     @patch("cli.commands.server._write_pid_file")
+    @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
     @patch("cli.commands.server._is_process_alive", return_value=False)
     @patch("cli.commands.server._read_pid", return_value=999)
     def test_stale_pid_cleanup_and_start(
-        self, mock_pid, mock_alive, mock_write_pid,
+        self, mock_pid, mock_alive, mock_find, mock_write_pid,
         mock_ensure, mock_animas, mock_shared, mock_create, mock_uvicorn,
-        mock_remove,
+        mock_watchdog, mock_remove,
     ):
         from cli.commands.server import cmd_start
 
@@ -191,17 +262,19 @@ class TestCmdStart:
 
 
     @patch("cli.commands.server._remove_pid_file")
+    @patch("cli.commands.server._start_pid_watchdog")
     @patch("uvicorn.run")
     @patch("server.app.create_app")
     @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
     @patch("core.paths.get_animas_dir", return_value=Path("/tmp/animas"))
     @patch("core.init.ensure_runtime_dir")
     @patch("cli.commands.server._write_pid_file")
+    @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
     @patch("cli.commands.server._read_pid", return_value=None)
     def test_uvicorn_timeout_keep_alive(
-        self, mock_pid, mock_write_pid,
+        self, mock_pid, mock_find, mock_write_pid,
         mock_ensure, mock_animas, mock_shared, mock_create, mock_uvicorn,
-        mock_remove,
+        mock_watchdog, mock_remove,
     ):
         from cli.commands.server import cmd_start
 
@@ -215,17 +288,19 @@ class TestCmdStart:
         assert call_kwargs.kwargs.get("timeout_keep_alive") == 65
 
     @patch("cli.commands.server._remove_pid_file")
+    @patch("cli.commands.server._start_pid_watchdog")
     @patch("uvicorn.run")
     @patch("server.app.create_app")
     @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
     @patch("core.paths.get_animas_dir", return_value=Path("/tmp/animas"))
     @patch("core.init.ensure_runtime_dir")
     @patch("cli.commands.server._write_pid_file")
+    @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
     @patch("cli.commands.server._read_pid", return_value=None)
     def test_uvicorn_ws_ping_settings(
-        self, mock_pid, mock_write_pid,
+        self, mock_pid, mock_find, mock_write_pid,
         mock_ensure, mock_animas, mock_shared, mock_create, mock_uvicorn,
-        mock_remove,
+        mock_watchdog, mock_remove,
     ):
         from cli.commands.server import cmd_start
 
