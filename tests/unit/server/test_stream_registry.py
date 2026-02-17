@@ -519,3 +519,115 @@ class TestFormatSSEWithId:
         for event_type in ("text_delta", "tool_start", "tool_end", "done", "error"):
             result = format_sse_with_id(event_type, {}, "id:0")
             assert f"event: {event_type}" in result
+
+
+# ── _handle_resume integration ────────────────────────
+
+
+class TestHandleResumeLastEventId:
+    """Tests for _handle_resume correctly parsing last_event_id into after_seq."""
+
+    def _make_registry_with_events(self, n_events: int = 5) -> tuple:
+        """Create a registry with a stream containing n_events."""
+        registry = StreamRegistry()
+        stream = registry.register("alice", from_person="human")
+        for i in range(n_events):
+            stream.add_event("text_delta", {"text": f"chunk{i}"})
+        return registry, stream
+
+    @pytest.mark.asyncio
+    async def test_last_event_id_parsed_to_after_seq(self):
+        """Verify that last_event_id 'resp:2' results in replaying only events after seq 2."""
+        from server.routes.chat import _handle_resume
+
+        registry, stream = self._make_registry_with_events(5)
+        response_id = stream.response_id
+        stream.add_event("done", {"summary": "done"})
+
+        # Resume from after seq 2 — should replay seq 3, 4, and done (seq 5)
+        result = _handle_resume(
+            registry, response_id, f"{response_id}:2", "alice", from_person="human",
+        )
+        assert result.status_code == 200
+        assert result.media_type == "text/event-stream"
+
+        frames = await _collect_sse(result)
+
+        # Should contain events with seq > 2 (i.e., seq 3, 4, 5)
+        event_ids = _extract_event_ids(frames)
+        assert all(int(eid.split(":")[1]) > 2 for eid in event_ids)
+        assert len(event_ids) == 3  # seq 3, 4, 5 (done)
+
+    @pytest.mark.asyncio
+    async def test_empty_last_event_id_replays_all(self):
+        """With empty last_event_id, all events should be replayed."""
+        from server.routes.chat import _handle_resume
+
+        registry, stream = self._make_registry_with_events(3)
+        stream.add_event("done", {})
+
+        result = _handle_resume(
+            registry, stream.response_id, "", "alice", from_person="human",
+        )
+
+        frames = await _collect_sse(result)
+        event_ids = _extract_event_ids(frames)
+        assert len(event_ids) == 4  # seq 0, 1, 2, 3 (done)
+
+    @pytest.mark.asyncio
+    async def test_wrong_from_person_returns_error(self):
+        """Resume with wrong from_person should return error SSE."""
+        from server.routes.chat import _handle_resume
+
+        registry, stream = self._make_registry_with_events(2)
+
+        result = _handle_resume(
+            registry, stream.response_id, "", "alice", from_person="attacker",
+        )
+
+        frames = await _collect_sse(result)
+        combined = "".join(frames)
+        assert "STREAM_NOT_FOUND" in combined
+
+    @pytest.mark.asyncio
+    async def test_unknown_response_id_returns_error(self):
+        """Resume with unknown response_id should return error SSE."""
+        from server.routes.chat import _handle_resume
+
+        registry = StreamRegistry()
+
+        result = _handle_resume(
+            registry, "nonexistent", "", "alice", from_person="human",
+        )
+
+        frames = await _collect_sse(result)
+        combined = "".join(frames)
+        assert "STREAM_NOT_FOUND" in combined
+
+    def test_chat_request_last_event_id_field_recognized(self):
+        """Verify ChatRequest.last_event_id is a recognized Pydantic field."""
+        from server.routes.chat import ChatRequest
+
+        req = ChatRequest(
+            message="", resume="resp123", last_event_id="resp123:42",
+        )
+        assert req.last_event_id == "resp123:42"
+        assert "last_event_id" in ChatRequest.model_fields
+
+
+async def _collect_sse(response) -> list[str]:
+    """Collect all SSE frames from a StreamingResponse."""
+    frames = []
+    async for chunk in response.body_iterator:
+        frames.append(chunk)
+    return frames
+
+
+def _extract_event_ids(frames: list[str]) -> list[str]:
+    """Extract event IDs from SSE frames."""
+    ids = []
+    for frame in frames:
+        for line in frame.split("\n"):
+            if line.startswith("id: "):
+                ids.append(line[4:].strip())
+    return ids

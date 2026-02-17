@@ -26,7 +26,7 @@ class ChatRequest(BaseModel):
     message: str
     from_person: str = "human"
     resume: str | None = None
-    _lastEventId: str | None = None
+    last_event_id: str | None = None
 
 
 class ChatResponse(BaseModel):
@@ -409,7 +409,7 @@ def create_chat_router() -> APIRouter:
 
         # Handle resume request
         if body.resume:
-            last_event_id = body._lastEventId or request.headers.get("Last-Event-ID", "")
+            last_event_id = body.last_event_id or request.headers.get("Last-Event-ID", "")
             return _handle_resume(registry, body.resume, last_event_id, name, from_person=body.from_person)
 
         stream = registry.register(name, from_person=body.from_person)

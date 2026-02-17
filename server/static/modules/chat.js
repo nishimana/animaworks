@@ -234,7 +234,7 @@ export async function resumeActiveStream(animaName) {
       message: "",
       from_person: state.currentUser || "human",
       resume: active.response_id,
-      _lastEventId: progress.last_event_id || "",
+      last_event_id: progress.last_event_id || "",
     });
 
     const chatInput = dom.chatInput || document.getElementById("chatInput");

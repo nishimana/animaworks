@@ -218,7 +218,7 @@ async function _reconnectWithBackoff(animaName, responseId, lastEventId, origina
         message: "",
         from_person: fromPerson,
         resume: responseId,
-        _lastEventId: lastEventId || "",
+        last_event_id: lastEventId || "",
       });
 
       const url = `/api/animas/${encodeURIComponent(animaName)}/chat/stream`;

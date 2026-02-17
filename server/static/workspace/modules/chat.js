@@ -485,7 +485,7 @@ async function resumeActiveStream(animaName) {
       message: "",
       from_person: getState().currentUser || "human",
       resume: active.response_id,
-      _lastEventId: progress.last_event_id || "",
+      last_event_id: progress.last_event_id || "",
     });
 
     await streamChat(animaName, resumeBody, null, {
