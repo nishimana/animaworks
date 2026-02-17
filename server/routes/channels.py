@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -18,6 +19,18 @@ from core.messenger import Messenger
 from server.events import emit
 
 logger = logging.getLogger("animaworks.routes.channels")
+
+_SAFE_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,30}$")
+
+
+def _validate_name(name: str) -> JSONResponse | None:
+    """Return a 400 response if name contains unsafe characters, else None."""
+    if not _SAFE_NAME_RE.match(name):
+        return JSONResponse(
+            status_code=400,
+            content={"detail": f"Invalid name: {name!r}"},
+        )
+    return None
 
 
 class ChannelPostRequest(BaseModel):
@@ -76,6 +89,8 @@ def create_channels_router() -> APIRouter:
         offset: int = 0,
     ):
         """Get messages from a specific channel."""
+        if err := _validate_name(name):
+            return err
         shared_dir: Path = request.app.state.shared_dir
         channel_file = shared_dir / "channels" / f"{name}.jsonl"
 
@@ -119,6 +134,8 @@ def create_channels_router() -> APIRouter:
         body: ChannelPostRequest,
     ):
         """Post a message to a channel (human-originated)."""
+        if err := _validate_name(name):
+            return err
         shared_dir: Path = request.app.state.shared_dir
         channels_dir = shared_dir / "channels"
 
@@ -156,6 +173,8 @@ def create_channels_router() -> APIRouter:
         limit: int = 10,
     ):
         """Get messages mentioning a specific anima in a channel."""
+        if err := _validate_name(name):
+            return err
         shared_dir: Path = request.app.state.shared_dir
         messenger = _get_messenger(shared_dir)
         mentions = messenger.read_channel_mentions(name, name=anima, limit=limit)
@@ -209,6 +228,8 @@ def create_channels_router() -> APIRouter:
         limit: int = 50,
     ):
         """Get DM history for a specific pair."""
+        if err := _validate_name(pair):
+            return err
         shared_dir: Path = request.app.state.shared_dir
         dm_file = shared_dir / "dm_logs" / f"{pair}.jsonl"
         if not dm_file.exists():

@@ -133,6 +133,18 @@ class TestGetChannelMessages:
             resp = await client.get("/api/channels/nonexistent")
         assert resp.status_code == 404
 
+    async def test_400_for_invalid_channel_name(self, tmp_path: Path):
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+        (shared_dir / "channels").mkdir()
+
+        app = _make_test_app(shared_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            # Uppercase name violates ^[a-z][a-z0-9_-]{0,30}$
+            resp = await client.get("/api/channels/INVALID")
+        assert resp.status_code == 400
+
     async def test_empty_channel_returns_empty_list(self, tmp_path: Path):
         shared_dir = tmp_path / "shared"
         shared_dir.mkdir()
@@ -244,6 +256,19 @@ class TestPostToChannel:
                 json={},
             )
         assert resp.status_code == 422
+
+    async def test_post_400_for_invalid_channel_name(self, tmp_path: Path):
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+
+        app = _make_test_app(shared_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/channels/INVALID_NAME",
+                json={"text": "test"},
+            )
+        assert resp.status_code == 400
 
 
 # ── GET /api/channels/{name}/mentions/{anima} ────────────
@@ -370,3 +395,14 @@ class TestGetDMHistory:
         data = resp.json()
         assert len(data["messages"]) == 1
         assert data["total"] == 1
+
+    async def test_400_for_invalid_dm_pair_name(self, tmp_path: Path):
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+
+        app = _make_test_app(shared_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            # Dots and uppercase violate the safe name regex
+            resp = await client.get("/api/dm/..secret")
+        assert resp.status_code == 400
