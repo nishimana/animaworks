@@ -1,5 +1,5 @@
 // ── Frontend Unified Logger ──────────────────────────────────
-// Dual output: console + server (via navigator.sendBeacon).
+// Dual output: console + server (via fetch, with sendBeacon fallback on unload).
 // Usage:
 //   import { createLogger } from '../shared/logger.js';
 //   const logger = createLogger('websocket');
@@ -14,6 +14,7 @@ let _buffer = [];
 let _flushTimer = null;
 let _sessionId = null;
 let _flushListenersAttached = false;
+let _flushing = false;
 
 function _getSessionId() {
   if (!_sessionId) {
@@ -34,22 +35,46 @@ function _getSessionId() {
   return _sessionId;
 }
 
-function _flush() {
-  if (_buffer.length === 0) return;
+// Primary flush: fetch with response checking and buffer recovery
+async function _flush() {
+  if (_buffer.length === 0 || _flushing) return;
+  _flushing = true;
   const entries = _buffer.splice(0);
-  // navigator.sendBeacon is reliable even during page unload
-  const ok = navigator.sendBeacon(
-    SERVER_ENDPOINT,
-    new Blob([JSON.stringify(entries)], { type: 'application/json' })
-  );
-  if (!ok) {
-    // Fallback: fetch (fire-and-forget)
-    fetch(SERVER_ENDPOINT, {
+  try {
+    const res = await fetch(SERVER_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(entries),
-      keepalive: true,
-    }).catch(() => {}); // Swallow errors to prevent infinite loop
+    });
+    if (!res.ok) {
+      console.debug(`[logger] flush failed: HTTP ${res.status}`);
+      _restoreBuffer(entries);
+    }
+  } catch (err) {
+    console.debug(`[logger] flush error: ${err.message}`);
+    _restoreBuffer(entries);
+  } finally {
+    _flushing = false;
+  }
+}
+
+// Unload flush: sendBeacon (fire-and-forget, reliable during page unload)
+function _flushBeacon() {
+  if (_buffer.length === 0) return;
+  const entries = _buffer.splice(0);
+  navigator.sendBeacon(
+    SERVER_ENDPOINT,
+    new Blob([JSON.stringify(entries)], { type: 'application/json' })
+  );
+}
+
+function _restoreBuffer(entries) {
+  // Prepend failed entries back to buffer, respecting max size
+  const combined = entries.concat(_buffer);
+  _buffer.length = 0;
+  const start = Math.max(0, combined.length - MAX_BUFFER_SIZE);
+  for (let i = start; i < combined.length; i++) {
+    _buffer.push(combined[i]);
   }
 }
 
@@ -58,11 +83,11 @@ function _ensureFlushTimer() {
   _flushTimer = setInterval(_flush, FLUSH_INTERVAL);
   if (!_flushListenersAttached) {
     _flushListenersAttached = true;
-    // Flush on page hide/unload
+    // Use sendBeacon for page hide/unload (reliable during navigation)
     window.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') _flush();
+      if (document.visibilityState === 'hidden') _flushBeacon();
     });
-    window.addEventListener('beforeunload', _flush);
+    window.addEventListener('beforeunload', _flushBeacon);
   }
 }
 
