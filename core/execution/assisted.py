@@ -7,97 +7,188 @@ from __future__ import annotations
 # See LICENSES/AGPL-3.0.txt for the full license text.
 
 
-"""Mode B executor: assisted (1-shot, framework handles memory I/O).
+"""Mode B executor: text-based pseudo-tool-call loop.
 
-The framework reads memory, injects context, calls the LLM once without
-tools, then records the episode, extracts knowledge, and optionally
-sends reply/report messages on behalf of the anima.
+Instead of using the ``tools`` API parameter (which some models like
+GLM-flash don't support), this executor injects tool specifications as
+plain text into the system prompt and parses JSON code blocks from the
+LLM's response to detect tool calls.
+
+Loop:
+  1. LiteLLM acompletion (no ``tools`` parameter)
+  2. Extract tool-call JSON from response text
+  3. If tool call found → execute via ToolHandler → inject result → goto 1
+  4. If no tool call → return final response
+  5. If max_turns reached → return accumulated text
 """
 
+import ast
+import asyncio
+import json
 import logging
 import re
-from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from core.prompt.context import ContextTracker
 from core.execution.base import BaseExecutor, ExecutionResult
 from core.memory import MemoryManager
 from core.messenger import Messenger
+from core.prompt.context import ContextTracker
 from core.schemas import ModelConfig
 from core.memory.shortterm import ShortTermMemory
+from core.tooling.handler import ToolHandler
+from core.tooling.schemas import build_tool_list, to_text_format
 
 logger = logging.getLogger("animaworks.execution.assisted")
 
 
-# ── Post-call prompts ──────────────────────────────────────
-
-POST_CALL_PROMPT_MESSAGE = """\
-以下のやりとりを振り返り、回答してください。
-
-## 知識抽出
-このやりとりから学ぶべきことはありますか？
-あれば簡潔に書いてください。なければ「なし」と書いてください。
-
-## 返信判定
-受信メッセージに対して返信が必要ですか？
-- 質問・指示・依頼・確認事項がある → 「返信: （内容）」
-- お礼・挨拶・了解など会話の終了 → 「返信不要」
-"""
-
-POST_CALL_PROMPT_HEARTBEAT = """\
-以下のやりとりを振り返り、回答してください。
-
-## 知識抽出
-このやりとりから学ぶべきことはありますか？
-あれば簡潔に書いてください。なければ「なし」と書いてください。
-
-## 報告判定
-この結果を上司（{supervisor}）に報告する必要がありますか？
-- 異常・問題・重要な変化があった場合 → 「報告: （内容）」
-- 特に報告すべきことがない場合 → 「報告不要」
-"""
+# ── JSON extraction ─────────────────────────────────────────
 
 
-@dataclass
-class PostCallResult:
-    """Result of the post-call LLM judgement."""
+def extract_tool_call(text: str) -> dict | None:
+    """Extract a tool-call JSON object from LLM response text.
 
-    knowledge: str | None = None
-    send_needed: bool = False
-    send_content: str = ""
+    Uses a multi-stage fallback strategy to handle malformed JSON:
+      1. ```json code block extraction
+      2. Bare ``{"tool": ...}`` object extraction
+      3. Standard ``json.loads``
+      4. ``json_repair`` library (broken JSON repair)
+      5. ``ast.literal_eval`` (Python dict literal fallback)
+
+    Returns:
+        Parsed dict with at least a ``"tool"`` key, or ``None`` if no
+        tool call is detected.
+    """
+    json_str: str | None = None
+
+    # Step 1: ```json ... ``` code block
+    match = re.search(r"```(?:json)?\s*\n?(.*?)```", text, re.DOTALL)
+    if match:
+        json_str = match.group(1).strip()
+    else:
+        # Step 2: Bare {"tool": ...} block (non-greedy, no nesting)
+        match = re.search(r'\{[^{}]*"tool"[^{}]*\}', text, re.DOTALL)
+        if not match:
+            # Step 2b: Allow nested braces
+            match = re.search(r'(\{.*"tool".*\})', text, re.DOTALL)
+        if match:
+            json_str = match.group(1) if match.lastindex else match.group(0)
+
+    if json_str is None:
+        return None
+
+    # Step 3: Standard json.loads
+    try:
+        parsed = json.loads(json_str)
+        if isinstance(parsed, dict) and "tool" in parsed:
+            return parsed
+    except json.JSONDecodeError:
+        pass
+
+    # Step 4: json_repair (broken JSON repair)
+    try:
+        from json_repair import repair_json
+        repaired = repair_json(json_str, return_objects=True, ensure_ascii=False)
+        if isinstance(repaired, dict) and "tool" in repaired:
+            return repaired
+    except Exception:
+        pass
+
+    # Step 5: ast.literal_eval (Python dict literal)
+    try:
+        parsed = ast.literal_eval(json_str)
+        if isinstance(parsed, dict) and "tool" in parsed:
+            return parsed
+    except (ValueError, SyntaxError):
+        pass
+
+    return None
+
+
+def _strip_tool_call_block(text: str) -> str:
+    """Remove the tool-call JSON code block from response text.
+
+    Returns the surrounding text (thinking/explanation) without the
+    tool invocation itself, so it can be accumulated as narrative.
+    """
+    # Remove ```json...``` blocks
+    stripped = re.sub(r"```(?:json)?\s*\n?.*?```", "", text, flags=re.DOTALL)
+    return stripped.strip()
+
+
+# ── Executor ────────────────────────────────────────────────
 
 
 class AssistedExecutor(BaseExecutor):
-    """Execute in assisted mode (Mode B).
+    """Execute in text-based tool-call loop mode (Mode B).
 
     Flow:
-      1. Pre-call:  inject identity + recent episodes + keyword-matched knowledge
-      2. LLM 1-shot call (no tools)
-      3. Post-call: record episode
-      4. Post-call: knowledge extraction + send judgement (unified 1-shot)
-      5. If send needed: framework sends message on behalf of the anima
+      1. Build tool specification text from canonical schemas
+      2. Inject tool spec into system prompt (provided by AgentCore)
+      3. Loop: call LLM → parse tool call → execute → inject result
+      4. Return accumulated response when no more tool calls or max_turns
     """
 
     def __init__(
         self,
         model_config: ModelConfig,
         anima_dir: Path,
+        tool_handler: ToolHandler,
         memory: MemoryManager,
         messenger: Messenger | None = None,
+        tool_registry: list[str] | None = None,
+        personal_tools: dict[str, str] | None = None,
     ) -> None:
         super().__init__(model_config, anima_dir)
+        self._tool_handler = tool_handler
         self._memory = memory
         self._messenger = messenger
+        self._tool_registry = tool_registry or []
+        self._personal_tools = personal_tools or {}
+        self._known_tools = self._build_known_tools()
+
+    def _build_known_tools(self) -> set[str]:
+        """Build a whitelist of known tool names."""
+        schemas = self._build_tool_schemas()
+        return {s["name"] for s in schemas}
+
+    def _build_tool_schemas(self) -> list[dict[str, Any]]:
+        """Build canonical tool schemas for text format generation."""
+        from core.tooling.schemas import (
+            load_external_schemas,
+            load_personal_tool_schemas,
+        )
+
+        canonical = build_tool_list(
+            include_file_tools=True,
+            include_search_tools=True,
+            include_discovery_tools=False,  # Not needed in text mode
+            include_notification_tools=self._tool_handler._human_notifier is not None,
+            include_tool_management=False,  # Not needed in text mode
+        )
+
+        # Load external tool schemas
+        external = load_external_schemas(self._tool_registry)
+        if external:
+            canonical.extend(external)
+
+        # Load personal tool schemas
+        if self._personal_tools:
+            personal = load_personal_tool_schemas(self._personal_tools)
+            canonical.extend(personal)
+
+        return canonical
+
+    def _build_tool_spec_text(self) -> str:
+        """Build the tool specification text for system prompt injection."""
+        schemas = self._build_tool_schemas()
+        return to_text_format(schemas)
 
     async def _call_llm(
         self,
         messages: list[dict[str, Any]],
-        *,
-        system: str | None = None,
     ) -> Any:
-        """Call LiteLLM ``acompletion`` and return the raw response."""
+        """Call LiteLLM ``acompletion`` without tools parameter."""
         import litellm
 
         kwargs: dict[str, Any] = {
@@ -106,11 +197,6 @@ class AssistedExecutor(BaseExecutor):
             "max_tokens": self._model_config.max_tokens,
         }
 
-        if system:
-            kwargs["messages"] = [
-                {"role": "system", "content": system}
-            ] + messages
-
         api_key = self._resolve_api_key()
         if api_key:
             kwargs["api_key"] = api_key
@@ -118,53 +204,6 @@ class AssistedExecutor(BaseExecutor):
             kwargs["api_base"] = self._model_config.api_base_url
 
         return await litellm.acompletion(**kwargs)
-
-    async def _post_call(
-        self, trigger: str, prompt: str, reply: str,
-    ) -> PostCallResult:
-        """Post-call: knowledge extraction + send judgement in 1 LLM call."""
-        is_message = trigger.startswith("message:")
-        supervisor = self._model_config.supervisor or ""
-
-        if is_message:
-            post_prompt = POST_CALL_PROMPT_MESSAGE
-        else:
-            post_prompt = POST_CALL_PROMPT_HEARTBEAT.format(supervisor=supervisor)
-
-        extract_messages = [
-            {
-                "role": "user",
-                "content": (
-                    f"{post_prompt}\n\n"
-                    f"## やりとり\n質問: {prompt[:1000]}\n\n回答: {reply[:1000]}"
-                ),
-            }
-        ]
-        extract_resp = await self._call_llm(extract_messages)
-        text = extract_resp.choices[0].message.content or ""
-
-        result = PostCallResult()
-
-        # Parse knowledge extraction
-        knowledge_match = re.search(
-            r"## 知識抽出\s*\n(.+?)(?=\n## |\Z)", text, re.DOTALL,
-        )
-        if knowledge_match:
-            knowledge_text = knowledge_match.group(1).strip()
-            if knowledge_text and knowledge_text != "なし":
-                result.knowledge = knowledge_text
-
-        # Parse send judgement
-        reply_match = re.search(r"返信:\s*(.+)", text)
-        report_match = re.search(r"報告:\s*(.+)", text)
-        if reply_match:
-            result.send_needed = True
-            result.send_content = reply_match.group(1).strip()
-        elif report_match:
-            result.send_needed = True
-            result.send_content = report_match.group(1).strip()
-
-        return result
 
     async def execute(
         self,
@@ -175,96 +214,112 @@ class AssistedExecutor(BaseExecutor):
         trigger: str = "",
         images: list[dict[str, Any]] | None = None,
     ) -> ExecutionResult:
-        """Run the assisted execution flow."""
+        """Run the text-based tool-call loop.
+
+        Returns ``ExecutionResult`` with the accumulated response text.
+        """
         if images:
             logger.warning(
-                "Mode B (assisted) does not support image input; "
+                "Mode B (text-loop) does not support image input; "
                 "images will be ignored"
             )
-        logger.info("_run_assisted START prompt_len=%d trigger=%s", len(prompt), trigger)
+        logger.info(
+            "Mode B text-loop START prompt_len=%d trigger=%s",
+            len(prompt), trigger,
+        )
 
-        # ── 1. Pre-call: gather context ──────────────────
-        identity = self._memory.read_identity()
-        injection = self._memory.read_injection()
-        recent_episodes = self._memory.read_recent_episodes(days=7)
+        # ── 1. Build tool spec and augment system prompt ─────
+        tool_spec = self._build_tool_spec_text()
+        full_system = system_prompt + "\n\n" + tool_spec if system_prompt else tool_spec
 
-        # Simple keyword extraction for knowledge search
-        keywords = set(re.findall(r"[\w]{3,}", prompt))
-        knowledge_hits: list[str] = []
-        for kw in list(keywords)[:10]:
-            for fname, line in self._memory.search_memory_text(kw, scope="knowledge"):
-                knowledge_hits.append(f"[{fname}] {line}")
-        knowledge_context = "\n".join(dict.fromkeys(knowledge_hits))  # dedupe
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": full_system},
+            {"role": "user", "content": prompt},
+        ]
+        all_response_text: list[str] = []
+        max_iterations = self._model_config.max_turns
 
-        # Build enriched system prompt
-        system_parts = [identity, injection]
-        if recent_episodes:
-            system_parts.append(f"## 直近の行動ログ\n\n{recent_episodes[:4000]}")
-        if knowledge_context:
-            system_parts.append(f"## 関連知識\n\n{knowledge_context[:4000]}")
-
-        # Skills injection (personal + common)
-        skill_summaries = self._memory.list_skill_summaries()
-        common_skill_summaries = self._memory.list_common_skill_summaries()
-        if skill_summaries:
-            skill_lines = "\n".join(
-                f"| {name} | {desc} |" for name, desc in skill_summaries
-            )
-            system_parts.append(
-                f"## 個人スキル\n\n"
-                f"使用する際は skills/{{スキル名}}.md をReadで読んでから実行してください。\n\n"
-                f"| スキル名 | 概要 |\n|---------|------|\n{skill_lines}"
-            )
-        if common_skill_summaries:
-            common_skill_lines = "\n".join(
-                f"| {name} | {desc} |" for name, desc in common_skill_summaries
-            )
-            common_skills_dir = self._memory.common_skills_dir
-            system_parts.append(
-                f"## 共通スキル\n\n"
-                f"以下は全社員共通のスキルです。使用する際は "
-                f"`{common_skills_dir}/{{スキル名}}.md` をReadで読んでから実行してください。\n\n"
-                f"| スキル名 | 概要 |\n|---------|------|\n{common_skill_lines}"
+        # ── 2. Tool-call loop ────────────────────────────────
+        for iteration in range(max_iterations):
+            logger.debug(
+                "Mode B iteration=%d messages=%d",
+                iteration, len(messages),
             )
 
-        system = "\n\n---\n\n".join(p for p in system_parts if p)
+            try:
+                response = await self._call_llm(messages)
+            except Exception as e:
+                logger.exception("LiteLLM API error in Mode B")
+                return ExecutionResult(text=f"[LLM API Error: {e}]")
 
-        # ── 2. LLM 1-shot call ───────────────────────────
-        messages = [{"role": "user", "content": prompt}]
-        response = await self._call_llm(messages, system=system)
-        reply = response.choices[0].message.content or ""
-        logger.info("_run_assisted LLM replied, len=%d", len(reply))
+            content = response.choices[0].message.content or ""
 
-        # ── 3. Post-call: record episode ─────────────────
-        ts = datetime.now().strftime("%H:%M")
-        episode = f"- {ts} [assisted] prompt: {prompt[:200]}… → reply: {reply[:200]}…"
-        self._memory.append_episode(episode)
+            # ── 3. Extract tool call ─────────────────────────
+            tool_call = extract_tool_call(content)
+            if tool_call is None:
+                # No tool call → final response
+                all_response_text.append(content)
+                logger.info(
+                    "Mode B final response at iteration=%d len=%d",
+                    iteration, len(content),
+                )
+                break
 
-        # ── 4. Post-call: knowledge extraction + send judgement ─
-        try:
-            post = await self._post_call(trigger, prompt, reply)
+            # ── 4. Validate tool name ────────────────────────
+            tool_name = tool_call.get("tool", "")
+            tool_args = tool_call.get("arguments", {})
+            if not isinstance(tool_args, dict):
+                tool_args = {}
 
-            if post.knowledge:
-                topic = datetime.now().strftime("learned_%Y%m%d_%H%M%S")
-                self._memory.write_knowledge(topic, post.knowledge)
-                logger.info("Knowledge extracted: %s", post.knowledge[:100])
+            if tool_name not in self._known_tools:
+                logger.warning(
+                    "Mode B unknown tool: %s (known: %s)",
+                    tool_name, sorted(self._known_tools)[:10],
+                )
+                messages.append({"role": "assistant", "content": content})
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        f"エラー: 不明なツール '{tool_name}' です。"
+                        f"利用可能なツール: {sorted(self._known_tools)}"
+                    ),
+                })
+                continue
 
-            # ── 5. Send message on behalf of the anima ──
-            if post.send_needed and self._messenger:
-                if trigger.startswith("message:"):
-                    sender = trigger.split(":", 1)[1]
-                    self._messenger.send(to=sender, content=post.send_content)
-                    logger.info("Mode B auto-reply sent to %s", sender)
-                elif self._model_config.supervisor:
-                    self._messenger.send(
-                        to=self._model_config.supervisor,
-                        content=post.send_content,
-                    )
-                    logger.info(
-                        "Mode B auto-report sent to %s",
-                        self._model_config.supervisor,
-                    )
-        except Exception:
-            logger.warning("Post-call processing failed", exc_info=True)
+            # ── 5. Execute tool ───────────────────────────────
+            logger.info(
+                "Mode B tool call: %s args=%s",
+                tool_name, list(tool_args.keys()),
+            )
 
-        return ExecutionResult(text=reply)
+            try:
+                loop = asyncio.get_running_loop()
+                result = await loop.run_in_executor(
+                    None,
+                    self._tool_handler.handle,
+                    tool_name,
+                    tool_args,
+                )
+            except Exception as e:
+                logger.exception("Mode B tool execution error: %s", tool_name)
+                result = f"ツール実行エラー: {e}"
+
+            # ── 6. Inject result and continue ─────────────────
+            narrative = _strip_tool_call_block(content)
+            if narrative:
+                all_response_text.append(narrative)
+
+            messages.append({"role": "assistant", "content": content})
+            messages.append({
+                "role": "user",
+                "content": f"ツール実行結果:\n{result}",
+            })
+        else:
+            # max_turns reached
+            logger.warning(
+                "Mode B max iterations (%d) reached", max_iterations,
+            )
+
+        final_text = "\n".join(filter(None, all_response_text))
+        logger.info("Mode B text-loop END total_len=%d", len(final_text))
+        return ExecutionResult(text=final_text or "(max iterations reached)")

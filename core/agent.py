@@ -374,8 +374,11 @@ class AgentCore:
         return AssistedExecutor(
             model_config=self.model_config,
             anima_dir=self.anima_dir,
+            tool_handler=self._tool_handler,
             memory=self.memory,
             messenger=self.messenger,
+            tool_registry=self._tool_registry,
+            personal_tools=self._personal_tools,
         )
 
     def _resolve_api_key(self) -> str | None:
@@ -487,7 +490,7 @@ class AgentCore:
         """Run one agent cycle with autonomous memory search.
 
         Routing:
-          - Mode B  (assisted):  ``AssistedExecutor``  -- 1-shot, no tools
+          - Mode B  (assisted):  ``AssistedExecutor``  -- text-based tool loop
           - Mode A2 (autonomous): ``LiteLLMExecutor`` -- LiteLLM + tool_use
           - Mode A1 (autonomous): ``AgentSDKExecutor`` -- Claude Agent SDK
 
@@ -510,24 +513,6 @@ class AgentCore:
             trigger, len(prompt), mode,
         )
 
-        # ── Mode B: assisted (1-shot, no tools) ──────────
-        # Early return before priming to avoid unnecessary I/O and ripgrep
-        if mode == "b":
-            result = await self._executor.execute(
-                prompt=prompt, trigger=trigger, images=images,
-            )
-            duration_ms = int((time.monotonic() - start) * 1000)
-            logger.info(
-                "run_cycle END (assisted) trigger=%s duration_ms=%d",
-                trigger, duration_ms,
-            )
-            return CycleResult(
-                trigger=trigger,
-                action="responded",
-                summary=result.text,
-                duration_ms=duration_ms,
-            )
-
         # ── Priming: Automatic memory retrieval ────────────────
         priming_section = await self._run_priming(prompt, trigger)
 
@@ -549,6 +534,26 @@ class AgentCore:
         if shortterm.has_pending():
             system_prompt = inject_shortterm(system_prompt, shortterm)
             logger.info("Injected short-term memory into system prompt")
+
+        # ── Mode B: text-based tool-call loop ─────────────
+        if mode == "b":
+            result = await self._executor.execute(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                trigger=trigger,
+                images=images,
+            )
+            duration_ms = int((time.monotonic() - start) * 1000)
+            logger.info(
+                "run_cycle END (mode-b) trigger=%s duration_ms=%d response_len=%d",
+                trigger, duration_ms, len(result.text),
+            )
+            return CycleResult(
+                trigger=trigger,
+                action="responded",
+                summary=result.text,
+                duration_ms=duration_ms,
+            )
 
         # ── Mode A2: LiteLLM tool_use loop ────────────────
         if mode == "a2":
