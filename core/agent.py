@@ -472,7 +472,10 @@ class AgentCore:
     # ── Public API ─────────────────────────────────────────
 
     async def run_cycle(
-        self, prompt: str, trigger: str = "manual"
+        self,
+        prompt: str,
+        trigger: str = "manual",
+        images: list[dict[str, Any]] | None = None,
     ) -> CycleResult:
         """Run one agent cycle with autonomous memory search.
 
@@ -485,10 +488,13 @@ class AgentCore:
         externalized to short-term memory and automatically continued.
         """
         async with self._agent_lock:
-            return await self._run_cycle_inner(prompt, trigger)
+            return await self._run_cycle_inner(prompt, trigger, images=images)
 
     async def _run_cycle_inner(
-        self, prompt: str, trigger: str
+        self,
+        prompt: str,
+        trigger: str,
+        images: list[dict[str, Any]] | None = None,
     ) -> CycleResult:
         start = time.monotonic()
         mode = self._resolve_execution_mode()
@@ -500,7 +506,9 @@ class AgentCore:
         # ── Mode B: assisted (1-shot, no tools) ──────────
         # Early return before priming to avoid unnecessary I/O and ripgrep
         if mode == "b":
-            result = await self._executor.execute(prompt=prompt, trigger=trigger)
+            result = await self._executor.execute(
+                prompt=prompt, trigger=trigger, images=images,
+            )
             duration_ms = int((time.monotonic() - start) * 1000)
             logger.info(
                 "run_cycle END (assisted) trigger=%s duration_ms=%d",
@@ -542,6 +550,7 @@ class AgentCore:
                 system_prompt=system_prompt,
                 tracker=tracker,
                 shortterm=shortterm,
+                images=images,
             )
             shortterm.clear()
             duration_ms = int((time.monotonic() - start) * 1000)
@@ -562,6 +571,7 @@ class AgentCore:
             prompt=prompt,
             system_prompt=system_prompt,
             tracker=tracker,
+            images=images,
         )
         # Merge transcript-parsed replied_to for A1 mode
         if result.replied_to_from_transcript:
@@ -653,7 +663,10 @@ class AgentCore:
     # ── Streaming ──────────────────────────────────────────
 
     async def run_cycle_streaming(
-        self, prompt: str, trigger: str = "manual"
+        self,
+        prompt: str,
+        trigger: str = "manual",
+        images: list[dict[str, Any]] | None = None,
     ) -> AsyncGenerator[dict, None]:
         """Streaming version of run_cycle.
 
@@ -670,7 +683,9 @@ class AgentCore:
         # Non-streaming executors: fall back to blocking execution
         if not self._executor.supports_streaming:
             async with self._agent_lock:
-                cycle = await self._run_cycle_inner(prompt, trigger)
+                cycle = await self._run_cycle_inner(
+                    prompt, trigger, images=images,
+                )
             yield {"type": "text_delta", "text": cycle.summary}
             yield {
                 "type": "cycle_done",
@@ -718,7 +733,8 @@ class AgentCore:
 
             try:
                 async for chunk in self._executor.execute_streaming(
-                    current_system_prompt, current_prompt, tracker
+                    current_system_prompt, current_prompt, tracker,
+                    images=images,
                 ):
                     if chunk["type"] == "done":
                         full_text_parts.append(chunk["full_text"])

@@ -6,6 +6,7 @@ import { fetchConversationFull } from "./api.js";
 import { escapeHtml, renderSimpleMarkdown } from "./utils.js";
 import { streamChat } from "../../shared/chat-stream.js";
 import { createLogger } from "../../shared/logger.js";
+import { createImageInput, initLightbox, renderChatImages } from "../../shared/image-input.js";
 
 const logger = createLogger("ws-chat");
 
@@ -19,12 +20,15 @@ const PLACEHOLDER_DEFAULT = "Animaを選択してください";
 let messagesEl = null;
 let inputEl = null;
 let sendBtnEl = null;
+let imageInputManager = null;
 
 // ── Render Helpers ──────────────────────────────
 
 function renderBubble(msg) {
   if (msg.role === "user") {
-    return `<div class="chat-bubble user">${escapeHtml(msg.text)}</div>`;
+    const imagesHtml = renderChatImages(msg.images);
+    const textHtml = msg.text ? `<div class="chat-text">${escapeHtml(msg.text)}</div>` : "";
+    return `<div class="chat-bubble user">${imagesHtml}${textHtml}</div>`;
   }
 
   // Assistant bubble
@@ -133,8 +137,13 @@ export function renderChat(container) {
     <div class="chat-container">
       <div class="chat-messages"></div>
       <div class="chat-input-area">
-        <textarea class="chat-input" rows="1" placeholder="${PLACEHOLDER_DEFAULT}" disabled></textarea>
-        <button class="chat-send-btn" disabled>送信</button>
+        <div class="image-preview-bar" style="display:none"></div>
+        <div class="chat-input-row">
+          <textarea class="chat-input" rows="1" placeholder="${PLACEHOLDER_DEFAULT}" disabled></textarea>
+          <button class="chat-attach-btn" type="button" title="画像を添付">+</button>
+          <button class="chat-send-btn" disabled>送信</button>
+        </div>
+        <input type="file" class="chat-file-input" accept="image/jpeg,image/png,image/gif,image/webp" multiple style="display:none" />
       </div>
     </div>
   `;
@@ -156,6 +165,33 @@ export function initChat(container) {
   }
 
   if (!inputEl || !sendBtnEl) return;
+
+  // ── Image Input Setup ────────────────────
+  const chatContainer = container.querySelector(".chat-container");
+  const previewEl = container.querySelector(".image-preview-bar");
+  const attachBtn = container.querySelector(".chat-attach-btn");
+  const fileInput = container.querySelector(".chat-file-input");
+
+  if (attachBtn && fileInput) {
+    attachBtn.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", () => {
+      if (fileInput.files.length > 0) {
+        imageInputManager?.addFiles(fileInput.files);
+        fileInput.value = "";
+      }
+    });
+  }
+
+  if (chatContainer && inputEl && previewEl) {
+    imageInputManager = createImageInput({
+      container: chatContainer,
+      inputArea: inputEl,
+      previewContainer: previewEl,
+    });
+  }
+
+  // Initialize lightbox for image clicks
+  initLightbox();
 
   // Auto-resize textarea (100px on mobile, 200px on desktop)
   inputEl.addEventListener("input", () => {
@@ -212,12 +248,16 @@ export function initChat(container) {
  */
 export async function sendMessage(text) {
   const { selectedAnima, currentUser } = getState();
-  if (!selectedAnima || !text.trim()) return;
+  const images = imageInputManager?.getPendingImages() || [];
+  if (!selectedAnima || (!text.trim() && images.length === 0)) return;
 
   const trimmed = text.trim();
 
+  // Capture display images (with dataUrl for rendering)
+  const displayImages = imageInputManager?.getDisplayImages() || [];
+
   // Add user message + empty streaming assistant bubble (immutable)
-  const userMsg = { role: "user", text: trimmed };
+  const userMsg = { role: "user", text: trimmed, images: displayImages };
   const streamingMsg = { role: "assistant", text: "", streaming: true, activeTool: null };
   const updated = [...getState().chatMessages, userMsg, streamingMsg];
   setState({ chatMessages: updated });
@@ -227,8 +267,15 @@ export async function sendMessage(text) {
   setInputEnabled(false);
   _isSseStreaming = true;
 
+  // Clear images after capturing
+  imageInputManager?.clearImages();
+
   try {
-    const body = JSON.stringify({ message: trimmed, from_person: currentUser || "human" });
+    const bodyObj = { message: trimmed, from_person: currentUser || "human" };
+    if (images.length > 0) {
+      bodyObj.images = images;
+    }
+    const body = JSON.stringify(bodyObj);
 
     await streamChat(selectedAnima, body, null, {
       onTextDelta: (text) => {
@@ -356,7 +403,8 @@ export async function loadConversation() {
 function submitFromInput() {
   if (!inputEl) return;
   const text = inputEl.value.trim();
-  if (!text) return;
+  const hasImages = imageInputManager && imageInputManager.getImageCount() > 0;
+  if (!text && !hasImages) return;
 
   inputEl.value = "";
   inputEl.style.height = "auto";

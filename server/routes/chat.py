@@ -4,9 +4,12 @@ from __future__ import annotations
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import asyncio
+import base64
 import json
 import logging
 import re
+from datetime import datetime
+from pathlib import Path
 from typing import Any, AsyncIterator
 
 from fastapi import APIRouter, Depends, Request
@@ -19,16 +22,96 @@ from server.events import emit, emit_notification
 logger = logging.getLogger("animaworks.routes.chat")
 
 MAX_CHAT_MESSAGE_SIZE = 10 * 1024 * 1024  # 10MB
+MAX_IMAGE_PAYLOAD_SIZE = 20 * 1024 * 1024  # 20MB total base64
+
+SUPPORTED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+MIME_TO_EXT = {
+    "image/jpeg": "jpeg",
+    "image/png": "png",
+    "image/gif": "gif",
+    "image/webp": "webp",
+}
+
+
+class ImageAttachment(BaseModel):
+    """A single base64-encoded image attachment."""
+
+    data: str  # Base64 encoded string (no data: prefix)
+    media_type: str  # "image/jpeg", "image/png", "image/gif", "image/webp"
 
 
 class ChatRequest(BaseModel):
     message: str
     from_person: str = "human"
+    images: list[ImageAttachment] = []
 
 
 class ChatResponse(BaseModel):
     response: str
     anima: str
+
+
+# ── Image Helpers ─────────────────────────────────────────────
+
+def _validate_images(images: list[ImageAttachment]) -> str | None:
+    """Validate image attachments. Returns error message or None."""
+    if not images:
+        return None
+    total_size = sum(len(img.data) for img in images)
+    if total_size > MAX_IMAGE_PAYLOAD_SIZE:
+        return f"画像データが大きすぎます（{total_size // 1024 // 1024}MB / 上限20MB）"
+    for img in images:
+        if img.media_type not in SUPPORTED_IMAGE_TYPES:
+            return f"未対応の画像形式です: {img.media_type}"
+    return None
+
+
+def save_images(anima_name: str, images: list[ImageAttachment]) -> list[str]:
+    """Save base64 images to ~/.animaworks/animas/{name}/attachments/.
+
+    Returns:
+        List of relative paths (e.g. ``attachments/20260217_120000_0.jpeg``).
+    """
+    if not images:
+        return []
+    from core.paths import ANIMAWORKS_DIR
+
+    attachments_dir = ANIMAWORKS_DIR / "animas" / anima_name / "attachments"
+    attachments_dir.mkdir(parents=True, exist_ok=True)
+
+    paths: list[str] = []
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    for i, img in enumerate(images):
+        ext = MIME_TO_EXT.get(img.media_type, "png")
+        filename = f"{ts}_{i}.{ext}"
+        filepath = attachments_dir / filename
+        filepath.write_bytes(base64.b64decode(img.data))
+        paths.append(f"attachments/{filename}")
+    return paths
+
+
+def build_content_blocks(
+    message: str, images: list[ImageAttachment],
+) -> str | list[dict[str, Any]]:
+    """Convert text + images to LLM content blocks.
+
+    Returns plain string if no images are present.
+    """
+    if not images:
+        return message
+    blocks: list[dict[str, Any]] = []
+    for img in images:
+        blocks.append({
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": img.media_type,
+                "data": img.data,
+            },
+        })
+    if message.strip():
+        blocks.append({"type": "text", "text": message})
+    return blocks
 
 
 # ── SSE Helpers ───────────────────────────────────────────────
@@ -184,6 +267,9 @@ async def _stream_events(
     name: str,
     body: ChatRequest,
     request: Request,
+    *,
+    images: list[dict[str, Any]] | None = None,
+    attachment_paths: list[str] | None = None,
 ) -> AsyncIterator[str]:
     """Async generator that yields SSE frames for a streaming chat session."""
     full_response = ""
@@ -191,7 +277,8 @@ async def _stream_events(
         await emit(request, "anima.status", {"name": name, "status": "thinking"})
 
         async for chunk in anima.process_message_stream(
-            body.message, from_person=body.from_person
+            body.message, from_person=body.from_person,
+            images=images, attachment_paths=attachment_paths,
         ):
             frame, response_text = _handle_chunk(
                 chunk, request=request, anima_name=name,
@@ -234,6 +321,15 @@ def create_chat_router() -> APIRouter:
                 status_code=413,
             )
 
+        # Guard: validate image attachments
+        if body.images:
+            img_error = _validate_images(body.images)
+            if img_error:
+                return JSONResponse({"error": img_error}, status_code=413)
+
+        # Save images to disk and build IPC params
+        saved_paths = save_images(name, body.images) if body.images else []
+
         await emit(request, "anima.status", {"name": name, "status": "thinking"})
 
         try:
@@ -243,7 +339,9 @@ def create_chat_router() -> APIRouter:
                 method="process_message",
                 params={
                     "message": body.message,
-                    "from_person": body.from_person
+                    "from_person": body.from_person,
+                    "images": [img.model_dump() for img in body.images] if body.images else [],
+                    "attachment_paths": saved_paths,
                 },
                 timeout=60.0
             )
@@ -345,6 +443,16 @@ def create_chat_router() -> APIRouter:
                 detail=f"メッセージが大きすぎます（{message_size // 1024 // 1024}MB / 上限10MB）",
             )
 
+        # Guard: validate image attachments
+        if body.images:
+            img_error = _validate_images(body.images)
+            if img_error:
+                from fastapi import HTTPException
+                raise HTTPException(status_code=413, detail=img_error)
+
+        # Save images to disk
+        saved_paths = save_images(name, body.images) if body.images else []
+
         # Guard: return immediately if anima is bootstrapping
         if supervisor.is_bootstrapping(name):
             async def _bootstrap_busy() -> AsyncIterator[str]:
@@ -380,6 +488,8 @@ def create_chat_router() -> APIRouter:
                         "message": body.message,
                         "from_person": body.from_person,
                         "stream": True,
+                        "images": [img.model_dump() for img in body.images] if body.images else [],
+                        "attachment_paths": saved_paths,
                     },
                     timeout=_timeout,
                 ):

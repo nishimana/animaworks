@@ -294,11 +294,15 @@ class DigitalAnima:
             self._notify_lock_released()
 
     async def process_message(
-        self, content: str, from_person: str = "human"
+        self,
+        content: str,
+        from_person: str = "human",
+        images: list[dict[str, Any]] | None = None,
+        attachment_paths: list[str] | None = None,
     ) -> str:
         logger.info(
-            "[%s] process_message WAITING from=%s content_len=%d",
-            self.name, from_person, len(content),
+            "[%s] process_message WAITING from=%s content_len=%d images=%d",
+            self.name, from_person, len(content), len(images or []),
         )
         self._user_waiting.set()
         try:
@@ -316,12 +320,15 @@ class DigitalAnima:
                 prompt = conv_memory.build_chat_prompt(content, from_person)
 
                 # Pre-save: persist user input before agent execution
-                conv_memory.append_turn("human", content)
+                conv_memory.append_turn(
+                    "human", content, attachments=attachment_paths or [],
+                )
                 conv_memory.save()
 
                 try:
                     result = await self.agent.run_cycle(
-                        prompt, trigger=f"message:{from_person}"
+                        prompt, trigger=f"message:{from_person}",
+                        images=images,
                     )
                     self._last_activity = datetime.now()
 
@@ -353,7 +360,11 @@ class DigitalAnima:
             self._notify_lock_released()
 
     async def process_message_stream(
-        self, content: str, from_person: str = "human"
+        self,
+        content: str,
+        from_person: str = "human",
+        images: list[dict[str, Any]] | None = None,
+        attachment_paths: list[str] | None = None,
     ) -> AsyncGenerator[dict, None]:
         """Streaming version of process_message.
 
@@ -374,8 +385,8 @@ class DigitalAnima:
             return
 
         logger.info(
-            "[%s] process_message_stream WAITING from=%s content_len=%d",
-            self.name, from_person, len(content),
+            "[%s] process_message_stream WAITING from=%s content_len=%d images=%d",
+            self.name, from_person, len(content), len(images or []),
         )
         self._user_waiting.set()
         try:
@@ -434,7 +445,9 @@ class DigitalAnima:
                 prompt = conv_memory.build_chat_prompt(content, from_person)
 
                 # Pre-save: persist user input before agent execution
-                conv_memory.append_turn("human", content)
+                conv_memory.append_turn(
+                    "human", content, attachments=attachment_paths or [],
+                )
                 conv_memory.save()
 
                 partial_response = ""
@@ -442,7 +455,8 @@ class DigitalAnima:
 
                 try:
                     async for chunk in self.agent.run_cycle_streaming(
-                        prompt, trigger=f"message:{from_person}"
+                        prompt, trigger=f"message:{from_person}",
+                        images=images,
                     ):
                         if chunk.get("type") == "text_delta":
                             partial_response += chunk.get("text", "")

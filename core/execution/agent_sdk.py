@@ -218,12 +218,18 @@ class AgentSDKExecutor(BaseExecutor):
         tracker: ContextTracker | None = None,
         shortterm: ShortTermMemory | None = None,
         trigger: str = "",
+        images: list[dict[str, Any]] | None = None,
     ) -> ExecutionResult:
         """Run a session via Claude Agent SDK with context monitoring hook.
 
         Returns ``ExecutionResult`` with the response text and the SDK
         ``ResultMessage`` (used for session chaining by AgentCore).
         """
+        if images:
+            logger.warning(
+                "Agent SDK (Mode A1) does not support multimodal image input; "
+                "images will be ignored"
+            )
         from claude_agent_sdk import (
             AssistantMessage,
             ClaudeAgentOptions,
@@ -383,6 +389,7 @@ class AgentSDKExecutor(BaseExecutor):
         system_prompt: str,
         prompt: str,
         tracker: ContextTracker,
+        images: list[dict[str, Any]] | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Stream events from Claude Agent SDK.
 
@@ -392,6 +399,11 @@ class AgentSDKExecutor(BaseExecutor):
             ``{"type": "tool_end", "tool_id": "...", "tool_name": "..."}``
             ``{"type": "done", "full_text": "...", "result_message": ...}``
         """
+        if images:
+            logger.warning(
+                "Agent SDK (Mode A1) streaming does not support multimodal "
+                "image input; images will be ignored"
+            )
         from claude_agent_sdk import (
             AssistantMessage,
             ClaudeAgentOptions,

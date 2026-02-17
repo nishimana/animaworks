@@ -442,8 +442,13 @@ class AnimaRunner:
 
         message = params.get("message", "")
         from_person = params.get("from_person", "human")
+        images = params.get("images") or None
+        attachment_paths = params.get("attachment_paths") or None
 
-        result = await self.anima.process_message(message, from_person=from_person)
+        result = await self.anima.process_message(
+            message, from_person=from_person,
+            images=images, attachment_paths=attachment_paths,
+        )
 
         return {
             "response": result,
@@ -501,6 +506,8 @@ class AnimaRunner:
 
         message = request.params.get("message", "")
         from_person = request.params.get("from_person", "human")
+        images = request.params.get("images") or None
+        attachment_paths = request.params.get("attachment_paths") or None
         full_response = ""
 
         # Track bootstrap state to detect completion
@@ -532,7 +539,8 @@ class AnimaRunner:
                     ))
 
                 async for chunk in self.anima.process_message_stream(
-                    message, from_person=from_person
+                    message, from_person=from_person,
+                    images=images, attachment_paths=attachment_paths,
                 ):
                     event_type = chunk.get("type", "unknown")
 

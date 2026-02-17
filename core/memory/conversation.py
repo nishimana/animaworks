@@ -23,6 +23,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 from pathlib import Path
+from typing import Any
 
 from core.schemas import ModelConfig
 
@@ -48,6 +49,7 @@ class ConversationTurn:
     content: str
     timestamp: str = ""
     token_estimate: int = 0
+    attachments: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not self.timestamp:
@@ -148,7 +150,13 @@ class ConversationMemory:
         """Return True if *date* looks like YYYY-MM-DD."""
         return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", date))
 
-    def _append_transcript(self, role: str, content: str, timestamp: str) -> None:
+    def _append_transcript(
+        self,
+        role: str,
+        content: str,
+        timestamp: str,
+        attachments: list[str] | None = None,
+    ) -> None:
         """Append a message to the permanent daily transcript (JSONL)."""
         try:
             self._transcript_dir.mkdir(parents=True, exist_ok=True)
@@ -156,10 +164,12 @@ class ConversationMemory:
             if not self._valid_date(date_str):
                 date_str = datetime.now().strftime("%Y-%m-%d")
             path = self._transcript_dir / f"{date_str}.jsonl"
-            entry = json.dumps(
-                {"role": role, "content": content, "timestamp": timestamp},
-                ensure_ascii=False,
-            )
+            entry_data: dict[str, Any] = {
+                "role": role, "content": content, "timestamp": timestamp,
+            }
+            if attachments:
+                entry_data["attachments"] = attachments
+            entry = json.dumps(entry_data, ensure_ascii=False)
             with open(path, "a", encoding="utf-8") as f:
                 f.write(entry + "\n")
         except Exception:
@@ -195,12 +205,21 @@ class ConversationMemory:
 
     # ── Mutation ─────────────────────────────────────────────
 
-    def append_turn(self, role: str, content: str) -> None:
+    def append_turn(
+        self,
+        role: str,
+        content: str,
+        attachments: list[str] | None = None,
+    ) -> None:
         """Record a conversation turn."""
         state = self.load()
-        turn = ConversationTurn(role=role, content=content)
+        turn = ConversationTurn(
+            role=role, content=content, attachments=attachments or [],
+        )
         state.turns.append(turn)
-        self._append_transcript(role, content, turn.timestamp)
+        self._append_transcript(
+            role, content, turn.timestamp, attachments=attachments or [],
+        )
 
     def clear(self) -> None:
         """Clear all conversation history."""

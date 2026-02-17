@@ -78,6 +78,7 @@ class AnthropicFallbackExecutor(BaseExecutor):
         tracker: ContextTracker | None = None,
         shortterm: ShortTermMemory | None = None,
         trigger: str = "",
+        images: list[dict[str, Any]] | None = None,
     ) -> ExecutionResult:
         """Run Anthropic SDK with tool_use loop."""
         import anthropic
@@ -91,7 +92,23 @@ class AnthropicFallbackExecutor(BaseExecutor):
         client = anthropic.AsyncAnthropic(**client_kwargs)
 
         tools = self._build_tools()
-        messages: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
+
+        # Build initial user message with optional image content blocks
+        if images:
+            content_blocks: list[dict[str, Any]] = []
+            for img in images:
+                content_blocks.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": img["media_type"],
+                        "data": img["data"],
+                    },
+                })
+            content_blocks.append({"type": "text", "text": prompt})
+            messages: list[dict[str, Any]] = [{"role": "user", "content": content_blocks}]
+        else:
+            messages: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
         all_response_text: list[str] = []
         chain_count = 0
 

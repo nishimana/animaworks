@@ -4,8 +4,11 @@ import { state, dom, escapeHtml, renderMarkdown } from "./state.js";
 import { addActivity } from "./activity.js";
 import { streamChat } from "../shared/chat-stream.js";
 import { createLogger } from "../shared/logger.js";
+import { createImageInput, initLightbox, renderChatImages } from "../shared/image-input.js";
 
 const logger = createLogger("chat");
+
+let imageInputManager = null;
 
 // ── Render ─────────────────────────────────
 
@@ -40,7 +43,9 @@ export function renderChat() {
         : "";
       return `<div class="chat-bubble assistant${streamClass}${notifClass}">${content}${bootstrapHtml}${toolHtml}</div>`;
     }
-    return `<div class="chat-bubble user">${escapeHtml(m.text)}</div>`;
+    const imagesHtml = renderChatImages(m.images);
+    const textHtml = m.text ? `<div class="chat-text">${escapeHtml(m.text)}</div>` : "";
+    return `<div class="chat-bubble user">${imagesHtml}${textHtml}</div>`;
   }).join("");
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
@@ -84,7 +89,8 @@ function renderStreamingBubble(msg) {
 
 export async function sendChat(message) {
   const name = state.selectedAnima;
-  if (!name || !message.trim()) return;
+  const images = imageInputManager?.getPendingImages() || [];
+  if (!name || (!message.trim() && images.length === 0)) return;
 
   // Guard: block sending to bootstrapping animas
   const currentAnima = state.animas.find((p) => p.name === name);
@@ -103,8 +109,11 @@ export async function sendChat(message) {
   if (!state.chatHistories[name]) state.chatHistories[name] = [];
   const history = state.chatHistories[name];
 
+  // Capture display images (with dataUrl for rendering in chat)
+  const displayImages = imageInputManager?.getDisplayImages() || [];
+
   // Add user message + empty streaming bubble
-  history.push({ role: "user", text: message });
+  history.push({ role: "user", text: message, images: displayImages });
   const streamingMsg = { role: "assistant", text: "", streaming: true, activeTool: null };
   history.push(streamingMsg);
   renderChat();
@@ -115,8 +124,15 @@ export async function sendChat(message) {
   if (chatSendBtn) chatSendBtn.disabled = true;
   addActivity("chat", name, `ユーザー: ${message}`);
 
+  // Clear images after capturing
+  imageInputManager?.clearImages();
+
   try {
-    const body = JSON.stringify({ message, from_person: state.currentUser || "human" });
+    const bodyObj = { message, from_person: state.currentUser || "human" };
+    if (images.length > 0) {
+      bodyObj.images = images;
+    }
+    const body = JSON.stringify(bodyObj);
 
     await streamChat(name, body, null, {
       onTextDelta: (text) => {
@@ -203,4 +219,59 @@ export async function sendChat(message) {
     }
     if (chatSendBtn) chatSendBtn.disabled = false;
   }
+}
+
+// ── Image Input Initialization ──────────────
+
+export function initImageInput() {
+  const chatContainer = document.querySelector(".panel-main");
+  const chatInputForm = document.querySelector(".chat-input-form");
+  const chatInput = dom.chatInput || document.getElementById("chatInput");
+
+  if (!chatContainer || !chatInputForm || !chatInput) return;
+
+  // Create preview container above input
+  const previewEl = document.createElement("div");
+  previewEl.className = "image-preview-bar";
+  previewEl.style.display = "none";
+  chatInputForm.insertBefore(previewEl, chatInputForm.firstChild);
+
+  // Create file input + button
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.accept = "image/jpeg,image/png,image/gif,image/webp";
+  fileInput.multiple = true;
+  fileInput.style.display = "none";
+
+  const attachBtn = document.createElement("button");
+  attachBtn.type = "button";
+  attachBtn.className = "chat-attach-btn";
+  attachBtn.textContent = "+";
+  attachBtn.title = "画像を添付";
+  attachBtn.addEventListener("click", () => fileInput.click());
+
+  // Insert attach button before send button
+  const sendBtn = dom.chatSendBtn || document.getElementById("chatSendBtn");
+  if (sendBtn) {
+    chatInputForm.insertBefore(attachBtn, sendBtn);
+  } else {
+    chatInputForm.appendChild(attachBtn);
+  }
+  chatInputForm.appendChild(fileInput);
+
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files.length > 0) {
+      imageInputManager.addFiles(fileInput.files);
+      fileInput.value = "";
+    }
+  });
+
+  imageInputManager = createImageInput({
+    container: chatContainer,
+    inputArea: chatInput,
+    previewContainer: previewEl,
+  });
+
+  // Initialize lightbox for image clicks
+  initLightbox();
 }

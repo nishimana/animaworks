@@ -96,6 +96,7 @@ class BaseExecutor(ABC):
         tracker: ContextTracker | None = None,
         shortterm: ShortTermMemory | None = None,
         trigger: str = "",
+        images: list[dict[str, Any]] | None = None,
     ) -> ExecutionResult:
         """Run the execution engine and return the response.
 
@@ -110,6 +111,8 @@ class BaseExecutor(ABC):
             trigger: Trigger identifier (e.g. "message:sakura", "heartbeat").
                 Used by Mode B for post-call send judgement. Other modes
                 ignore this parameter.
+            images: Optional list of image dicts with ``data`` (base64) and
+                ``media_type`` keys. Supported by A1 Fallback and A2 modes.
 
         Returns:
             ExecutionResult with the response text and optional metadata.
@@ -121,6 +124,7 @@ class BaseExecutor(ABC):
         system_prompt: str,
         prompt: str,
         tracker: ContextTracker,
+        images: list[dict[str, Any]] | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Stream execution events from the engine.
 
@@ -135,6 +139,7 @@ class BaseExecutor(ABC):
             system_prompt: Assembled system prompt.
             prompt: The user/trigger prompt.
             tracker: Context usage tracker.
+            images: Optional list of image dicts for multimodal input.
 
         Yields:
             Dicts with at least a type key. Common types:
@@ -145,6 +150,7 @@ class BaseExecutor(ABC):
             prompt=prompt,
             system_prompt=system_prompt,
             tracker=tracker,
+            images=images,
         )
         yield {"type": "text_delta", "text": result.text}
         yield {

@@ -3,6 +3,7 @@ import { api } from "../modules/api.js";
 import { escapeHtml, renderMarkdown, timeStr, smartTimestamp } from "../modules/state.js";
 import { streamChat } from "../shared/chat-stream.js";
 import { createLogger } from "../shared/logger.js";
+import { createImageInput, initLightbox, renderChatImages } from "../shared/image-input.js";
 
 const logger = createLogger("chat-page");
 
@@ -17,6 +18,7 @@ let _activeRightTab = "state";
 let _activeMemoryTab = "episodes";
 let _intervals = [];
 let _boundListeners = [];
+let _imageInputManager = null;
 
 // ── DOM refs (local) ───────────────────────
 
@@ -60,15 +62,20 @@ export function render(container) {
 
         <!-- Chat Input -->
         <form id="chatPageForm" class="chat-input-form" style="padding:0.75rem; border-top:1px solid var(--border-color, #eee);">
-          <textarea
-            id="chatPageInput"
-            class="chat-input"
-            placeholder="メッセージを入力... (Ctrl+Enter で送信)"
-            autocomplete="off"
-            rows="1"
-            disabled
-          ></textarea>
-          <button type="submit" class="chat-send-btn" id="chatPageSendBtn" disabled>送信</button>
+          <div class="image-preview-bar" id="chatPagePreviewBar" style="display:none"></div>
+          <div class="chat-input-row">
+            <textarea
+              id="chatPageInput"
+              class="chat-input"
+              placeholder="メッセージを入力... (Ctrl+Enter で送信)"
+              autocomplete="off"
+              rows="1"
+              disabled
+            ></textarea>
+            <button type="button" class="chat-attach-btn" id="chatPageAttachBtn" title="画像を添付">+</button>
+            <button type="submit" class="chat-send-btn" id="chatPageSendBtn" disabled>送信</button>
+          </div>
+          <input type="file" id="chatPageFileInput" accept="image/jpeg,image/png,image/gif,image/webp" multiple style="display:none" />
         </form>
       </div>
 
@@ -145,6 +152,7 @@ export function destroy() {
   _selectedAnima = null;
   _chatHistories = {};
   _animaDetail = null;
+  _imageInputManager = null;
 }
 
 // ── Event Binding ──────────────────────────
@@ -208,6 +216,23 @@ function _bindEvents() {
     btn.addEventListener("click", handler);
     _boundListeners.push({ el: btn, event: "click", handler });
   });
+
+  // Image attach button + file input
+  _addListener("chatPageAttachBtn", "click", () => {
+    const fileInput = _$("chatPageFileInput");
+    if (fileInput) fileInput.click();
+  });
+
+  _addListener("chatPageFileInput", "change", () => {
+    const fileInput = _$("chatPageFileInput");
+    if (fileInput && fileInput.files.length > 0) {
+      _imageInputManager?.addFiles(fileInput.files);
+      fileInput.value = "";
+    }
+  });
+
+  // Initialize image input manager
+  _initImageInput();
 
   // Memory back button
   _addListener("chatMemoryBackBtn", "click", () => {
@@ -372,7 +397,9 @@ function _renderChat() {
         : "";
       return `<div class="chat-bubble assistant${streamClass}">${content}${toolHtml}${tsHtml}</div>`;
     }
-    return `<div class="chat-bubble user">${escapeHtml(m.text)}${tsHtml}</div>`;
+    const imagesHtml = renderChatImages(m.images);
+    const textHtml = m.text ? `<div class="chat-text">${escapeHtml(m.text)}</div>` : "";
+    return `<div class="chat-bubble user">${imagesHtml}${textHtml}${tsHtml}</div>`;
   }).join("");
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
@@ -411,7 +438,8 @@ function _submitChat() {
   const input = _$("chatPageInput");
   if (!input) return;
   const msg = input.value.trim();
-  if (!msg) return;
+  const hasImages = _imageInputManager && _imageInputManager.getImageCount() > 0;
+  if (!msg && !hasImages) return;
   input.value = "";
   input.style.height = "auto";
   _sendChat(msg);
@@ -419,7 +447,8 @@ function _submitChat() {
 
 async function _sendChat(message) {
   const name = _selectedAnima;
-  if (!name || !message.trim()) return;
+  const images = _imageInputManager?.getPendingImages() || [];
+  if (!name || (!message.trim() && images.length === 0)) return;
 
   // Guard: block sending to bootstrapping animas
   const currentAnima = _animas.find((p) => p.name === name);
@@ -438,8 +467,11 @@ async function _sendChat(message) {
   if (!_chatHistories[name]) _chatHistories[name] = [];
   const history = _chatHistories[name];
 
+  // Capture display images (with dataUrl for rendering)
+  const displayImages = _imageInputManager?.getDisplayImages() || [];
+
   const sendTs = new Date().toISOString();
-  history.push({ role: "user", text: message, timestamp: sendTs });
+  history.push({ role: "user", text: message, images: displayImages, timestamp: sendTs });
   const streamingMsg = { role: "assistant", text: "", streaming: true, activeTool: null, timestamp: sendTs };
   history.push(streamingMsg);
   _renderChat();
@@ -449,11 +481,18 @@ async function _sendChat(message) {
   if (input) input.disabled = true;
   if (sendBtn) sendBtn.disabled = true;
 
+  // Clear images after capturing
+  _imageInputManager?.clearImages();
+
   _addLocalActivity("chat", name, `ユーザー: ${message}`);
 
   try {
     const currentUser = localStorage.getItem("animaworks_user") || "human";
-    const body = JSON.stringify({ message, from_person: currentUser });
+    const bodyObj = { message, from_person: currentUser };
+    if (images.length > 0) {
+      bodyObj.images = images;
+    }
+    const body = JSON.stringify(bodyObj);
 
     await streamChat(name, body, null, {
       onTextDelta: (text) => {
@@ -887,6 +926,25 @@ async function _loadMemoryTab() {
   } catch (err) {
     fileList.innerHTML = `<div class="loading-placeholder">読み込み失敗: ${escapeHtml(err.message)}</div>`;
   }
+}
+
+// ── Image Input Initialization ──────────────
+
+function _initImageInput() {
+  const chatMain = _container?.querySelector(".chat-page-main");
+  const previewEl = _$("chatPagePreviewBar");
+  const chatInput = _$("chatPageInput");
+
+  if (!chatMain || !previewEl || !chatInput) return;
+
+  _imageInputManager = createImageInput({
+    container: chatMain,
+    inputArea: chatInput,
+    previewContainer: previewEl,
+  });
+
+  // Initialize lightbox for image clicks
+  initLightbox();
 }
 
 async function _loadMemoryContent(tab, file) {

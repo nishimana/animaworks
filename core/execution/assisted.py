@@ -173,8 +173,14 @@ class AssistedExecutor(BaseExecutor):
         tracker: ContextTracker | None = None,
         shortterm: ShortTermMemory | None = None,
         trigger: str = "",
+        images: list[dict[str, Any]] | None = None,
     ) -> ExecutionResult:
         """Run the assisted execution flow."""
+        if images:
+            logger.warning(
+                "Mode B (assisted) does not support image input; "
+                "images will be ignored"
+            )
         logger.info("_run_assisted START prompt_len=%d trigger=%s", len(prompt), trigger)
 
         # ── 1. Pre-call: gather context ──────────────────

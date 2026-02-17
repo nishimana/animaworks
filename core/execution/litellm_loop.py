@@ -220,6 +220,7 @@ class LiteLLMExecutor(BaseExecutor):
         tracker: ContextTracker | None = None,
         shortterm: ShortTermMemory | None = None,
         trigger: str = "",
+        images: list[dict[str, Any]] | None = None,
     ) -> ExecutionResult:
         """Run the LiteLLM tool-use loop.
 
@@ -229,10 +230,27 @@ class LiteLLMExecutor(BaseExecutor):
 
         tools = self._build_base_tools()
         active_categories: set[str] = set()
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt},
-        ]
+
+        # Build initial messages with optional image content (OpenAI vision format)
+        if images:
+            content_parts: list[dict[str, Any]] = []
+            for img in images:
+                content_parts.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{img['media_type']};base64,{img['data']}",
+                    },
+                })
+            content_parts.append({"type": "text", "text": prompt})
+            messages: list[dict[str, Any]] = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": content_parts},
+            ]
+        else:
+            messages: list[dict[str, Any]] = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt},
+            ]
         all_response_text: list[str] = []
         llm_kwargs = self._build_llm_kwargs()
         max_iterations = self._model_config.max_turns

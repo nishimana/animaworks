@@ -22,6 +22,7 @@ import { playReveal } from "./reveal.js";
 import { streamChat } from "../../shared/chat-stream.js";
 import { SwipeHandler } from "../../modules/touch.js";
 import { createLogger } from "../../shared/logger.js";
+import { createImageInput, initLightbox, renderChatImages } from "../../shared/image-input.js";
 
 const logger = createLogger("ws-app");
 
@@ -73,6 +74,9 @@ function cacheDom() {
   dom.convMessages = document.getElementById("wsConvMessages");
   dom.convInput = document.getElementById("wsConvInput");
   dom.convSend = document.getElementById("wsConvSend");
+  dom.convPreviewBar = document.getElementById("wsConvPreviewBar");
+  dom.convAttachBtn = document.getElementById("wsConvAttachBtn");
+  dom.convFileInput = document.getElementById("wsConvFileInput");
 
   // Mobile controls
   dom.mobileSidebarToggle = document.getElementById("wsMobileSidebarToggle");
@@ -242,6 +246,7 @@ function mapAnimaStatusToAnim(status) {
 
 let bustupInitialized = false;
 let convStreamController = null;
+let convImageInputManager = null;
 
 async function openConversation(animaName) {
   if (!dom.convOverlay) return;
@@ -363,7 +368,9 @@ function renderConvBubble(msg) {
     return `<div class="chat-visit-marker">${escapeHtml(msg.text)}${tsHtml}</div>`;
   }
   if (msg.role === "user") {
-    return `<div class="chat-bubble user">${escapeHtml(msg.text)}${tsHtml}</div>`;
+    const imagesHtml = renderChatImages(msg.images);
+    const textHtml = msg.text ? `<div class="chat-text">${escapeHtml(msg.text)}</div>` : "";
+    return `<div class="chat-bubble user">${imagesHtml}${textHtml}${tsHtml}</div>`;
   }
   const streamClass = msg.streaming ? " streaming" : "";
   let content = "";
@@ -414,10 +421,14 @@ async function loadAndRenderConvMessages(animaName) {
 
 async function sendConversationMessage() {
   const text = dom.convInput?.value?.trim();
-  if (!text) return;
+  const images = convImageInputManager?.getPendingImages() || [];
+  if (!text && images.length === 0) return;
 
   const animaName = getState().conversationAnima;
   if (!animaName) return;
+
+  // Capture display images (with dataUrl for rendering)
+  const displayImages = convImageInputManager?.getDisplayImages() || [];
 
   // Clear input
   dom.convInput.value = "";
@@ -427,17 +438,24 @@ async function sendConversationMessage() {
   // Add user message + streaming assistant placeholder
   const { chatMessages } = getState();
   const sendTs = new Date().toISOString();
-  const userMsg = { role: "user", text, timestamp: sendTs };
+  const userMsg = { role: "user", text: text || "", images: displayImages, timestamp: sendTs };
   const streamingMsg = { role: "assistant", text: "", streaming: true, activeTool: null, timestamp: sendTs };
   setState({ chatMessages: [...chatMessages, userMsg, streamingMsg] });
   renderConvMessages();
+
+  // Clear images after capturing
+  convImageInputManager?.clearImages();
 
   // Create AbortController for cancellable streaming
   convStreamController = new AbortController();
 
   try {
     const userName = getCurrentUser() || "guest";
-    const body = JSON.stringify({ message: text, from_person: userName });
+    const bodyObj = { message: text || "", from_person: userName };
+    if (images.length > 0) {
+      bodyObj.images = images;
+    }
+    const body = JSON.stringify(bodyObj);
 
     let talkingStarted = false;
 
@@ -945,6 +963,29 @@ async function startDashboard() {
     const maxH = isMobileView() ? 100 : 120;
     dom.convInput.style.height = Math.min(dom.convInput.scrollHeight, maxH) + "px";
   });
+
+  // ── Conversation Image Input Setup ────────────────
+  if (dom.convAttachBtn && dom.convFileInput) {
+    dom.convAttachBtn.addEventListener("click", () => dom.convFileInput.click());
+    dom.convFileInput.addEventListener("change", () => {
+      if (dom.convFileInput.files.length > 0) {
+        convImageInputManager?.addFiles(dom.convFileInput.files);
+        dom.convFileInput.value = "";
+      }
+    });
+  }
+
+  const convMain = document.querySelector(".ws-conv-main");
+  if (convMain && dom.convInput && dom.convPreviewBar) {
+    convImageInputManager = createImageInput({
+      container: convMain,
+      inputArea: dom.convInput,
+      previewContainer: dom.convPreviewBar,
+    });
+  }
+
+  // Initialize lightbox for image clicks
+  initLightbox();
 
   // Close popups / conversation with Escape
   document.addEventListener("keydown", (e) => {
