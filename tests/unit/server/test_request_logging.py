@@ -146,7 +146,7 @@ class TestFrontendLogEndpoints:
         log_dir = tmp_path / "logs" / "frontend"
         log_dir.mkdir(parents=True, exist_ok=True)
         today = datetime.now().strftime("%Y%m%d")
-        log_file = log_dir / f"{today}.jsonl"
+        log_file = log_dir / "frontend.jsonl"
         log_file.write_text(
             '{"level":"ERROR","module":"ws","msg":"err1"}\n'
             '{"level":"INFO","module":"ws","msg":"info1"}\n'
@@ -168,7 +168,7 @@ class TestFrontendLogEndpoints:
         log_dir = tmp_path / "logs" / "frontend"
         log_dir.mkdir(parents=True, exist_ok=True)
         today = datetime.now().strftime("%Y%m%d")
-        log_file = log_dir / f"{today}.jsonl"
+        log_file = log_dir / "frontend.jsonl"
         log_file.write_text(
             '{"level":"ERROR","module":"websocket","msg":"err1"}\n'
             '{"level":"INFO","module":"chat","msg":"info1"}\n',
