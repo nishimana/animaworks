@@ -427,7 +427,7 @@ class ToolHandler:
             )
             self._replied_to.add(to)
 
-            # Log to message_log via messenger (Activity Timeline)
+            # Log to dm_logs via messenger (Activity Timeline)
             msg = self._messenger.send(
                 to=to,
                 content=content,

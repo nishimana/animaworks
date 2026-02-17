@@ -216,6 +216,7 @@ class TestReceiveExternalChannelMirroring:
         assert channel_file.exists()
         entry = json.loads(channel_file.read_text(encoding="utf-8").strip())
         assert entry["source"] == "human"
+        assert entry["from"] == "taka"  # Human identity, not anima name
         assert "@all" in entry["text"]
 
     def test_human_without_at_all_no_mirror(self, shared_dir, messenger):
@@ -249,3 +250,30 @@ class TestReceiveExternalChannelMirroring:
             "Test", source="human", external_user_id="taka",
         )
         assert not (shared_dir / "message_log").exists()
+
+
+# ── Name validation (path traversal prevention) ─────────
+
+
+class TestNameValidation:
+    def test_post_channel_rejects_path_traversal(self, messenger):
+        with pytest.raises(ValueError, match="Invalid channel name"):
+            messenger.post_channel("../../etc", "exploit")
+
+    def test_read_channel_rejects_path_traversal(self, messenger):
+        with pytest.raises(ValueError, match="Invalid channel name"):
+            messenger.read_channel("../secrets")
+
+    def test_read_dm_history_rejects_path_traversal(self, messenger):
+        with pytest.raises(ValueError, match="Invalid peer name"):
+            messenger.read_dm_history("../../root")
+
+    def test_valid_channel_names_accepted(self, shared_dir, messenger):
+        # These should not raise
+        messenger.post_channel("general", "ok")
+        messenger.post_channel("ops", "ok")
+        messenger.post_channel("my-channel-1", "ok")
+
+    def test_uppercase_channel_rejected(self, messenger):
+        with pytest.raises(ValueError, match="Invalid channel name"):
+            messenger.post_channel("General", "not allowed")

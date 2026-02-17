@@ -173,7 +173,10 @@ class PrimingEngine:
         budget_episodes = int(_BUDGET_RECENT_EPISODES * (token_budget / _DEFAULT_MAX_PRIMING_TOKENS))
         budget_knowledge = int(_BUDGET_RELATED_KNOWLEDGE * (token_budget / _DEFAULT_MAX_PRIMING_TOKENS))
         budget_skills = int(_BUDGET_SKILL_MATCH * (token_budget / _DEFAULT_MAX_PRIMING_TOKENS))
-        budget_channel = int(_BUDGET_CHANNEL_CONTEXT * (token_budget / _DEFAULT_MAX_PRIMING_TOKENS))
+        budget_channel = int(
+            (_BUDGET_CHANNEL_CONTEXT + _BUDGET_CHANNEL_HUMAN_EXTRA)
+            * (token_budget / _DEFAULT_MAX_PRIMING_TOKENS)
+        )
 
         result = PrimingResult(
             sender_profile=self._truncate_head(sender_profile, budget_profile),

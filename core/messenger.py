@@ -9,12 +9,21 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import date, datetime
 from pathlib import Path
 
 from core.schemas import Message
 
 logger = logging.getLogger("animaworks.messenger")
+
+_SAFE_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,30}$")
+
+
+def _validate_name(name: str, kind: str = "name") -> None:
+    """Validate a channel or peer name to prevent path traversal."""
+    if not _SAFE_NAME_RE.match(name):
+        raise ValueError(f"Invalid {kind}: {name!r}")
 
 
 class Messenger:
@@ -72,14 +81,18 @@ class Messenger:
 
     # ── Channel operations ──────────────────────────────────
 
-    def post_channel(self, channel: str, text: str, source: str = "anima") -> None:
+    def post_channel(
+        self, channel: str, text: str, source: str = "anima",
+        from_name: str | None = None,
+    ) -> None:
         """Post a message to a shared channel (append-only JSONL)."""
+        _validate_name(channel, "channel name")
         channels_dir = self.shared_dir / "channels"
         channels_dir.mkdir(parents=True, exist_ok=True)
         filepath = channels_dir / f"{channel}.jsonl"
         entry = json.dumps({
             "ts": datetime.now().isoformat(),
-            "from": self.anima_name,
+            "from": from_name or self.anima_name,
             "text": text,
             "source": source,
         }, ensure_ascii=False)
@@ -94,6 +107,7 @@ class Messenger:
         self, channel: str, limit: int = 20, human_only: bool = False,
     ) -> list[dict]:
         """Read recent messages from a shared channel."""
+        _validate_name(channel, "channel name")
         filepath = self.shared_dir / "channels" / f"{channel}.jsonl"
         if not filepath.exists():
             return []
@@ -122,6 +136,7 @@ class Messenger:
         self, channel: str, name: str | None = None, limit: int = 10,
     ) -> list[dict]:
         """Read messages mentioning @name from a shared channel."""
+        _validate_name(channel, "channel name")
         target = name or self.anima_name
         mention_tag = f"@{target}"
         all_msgs = self.read_channel(channel, limit=1000)
@@ -130,6 +145,7 @@ class Messenger:
 
     def read_dm_history(self, peer: str, limit: int = 20) -> list[dict]:
         """Read DM history with a specific peer."""
+        _validate_name(peer, "peer name")
         filepath = self._get_dm_log_path(peer)
         if not filepath.exists():
             return []
@@ -281,7 +297,8 @@ class Messenger:
         )
         # Mirror to general channel if human uses @all
         if source == "human" and "@all" in content:
-            self.post_channel("general", content, source="human")
+            human_name = external_user_id or "human"
+            self.post_channel("general", content, source="human", from_name=human_name)
         return msg
 
     async def send_async(
