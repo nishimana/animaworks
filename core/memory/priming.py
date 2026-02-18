@@ -478,10 +478,10 @@ class PrimingEngine:
             return ""
 
     async def _channel_d_skill_match(self, keywords: list[str]) -> list[str]:
-        """Channel D: Skill filename matching.
+        """Channel D: Skill and procedure filename matching.
 
-        Returns list of skill names (not full content) that match keywords.
-        Searches both personal skills/ and common_skills/ directories.
+        Returns list of skill/procedure names (not full content) that match
+        keywords.  Searches personal skills/, common_skills/, and procedures/.
         """
         if not keywords:
             return []
@@ -491,13 +491,16 @@ class PrimingEngine:
         matched: list[str] = []
         keywords_lower = [kw.lower() for kw in keywords]
 
-        # Collect skill directories to search
+        # Collect skill and procedure directories to search
+        procedures_dir = self.anima_dir / "procedures"
         skill_dirs: list[Path] = []
         if self.skills_dir.is_dir():
             skill_dirs.append(self.skills_dir)
         common_dir = get_common_skills_dir()
         if common_dir.is_dir():
             skill_dirs.append(common_dir)
+        if procedures_dir.is_dir():
+            skill_dirs.append(procedures_dir)
 
         if not skill_dirs:
             return []

@@ -263,7 +263,11 @@ class MemoryIndexer:
         Chunks are numbered sequentially starting from 0.  The preamble
         (content before the first ``##`` heading) is emitted first when
         it exceeds 50 characters, followed by each heading section.
+
+        YAML frontmatter (``---`` delimited) is stripped before chunking
+        to avoid polluting vector embeddings with metadata.
         """
+        content = self._strip_frontmatter(content)
         chunks: list[MemoryChunk] = []
         sections = re.split(r"\n(##\s+.+)", content)
 
@@ -346,7 +350,12 @@ class MemoryIndexer:
         content: str,
         memory_type: str,
     ) -> list[MemoryChunk]:
-        """Return entire file as single chunk."""
+        """Return entire file as single chunk.
+
+        YAML frontmatter (``---`` delimited) is stripped before chunking
+        to avoid polluting vector embeddings with metadata.
+        """
+        content = self._strip_frontmatter(content)
         if not content.strip():
             return []
 
@@ -360,6 +369,24 @@ class MemoryIndexer:
                 metadata=metadata,
             )
         ]
+
+    # ── Frontmatter handling ─────────────────────────────────────────
+
+    @staticmethod
+    def _strip_frontmatter(content: str) -> str:
+        """Strip YAML frontmatter from content.
+
+        Args:
+            content: File content potentially starting with ``---`` YAML block
+
+        Returns:
+            Content without frontmatter, or original content if none found
+        """
+        if content.startswith("---"):
+            parts = content.split("---", 2)
+            if len(parts) >= 3:
+                return parts[2].strip()
+        return content
 
     # ── Helpers ─────────────────────────────────────────────────────
 

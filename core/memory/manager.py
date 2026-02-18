@@ -786,6 +786,63 @@ class MemoryManager:
                 continue
         return entries
 
+    # ── Knowledge frontmatter helpers ────────────────────────
+
+    def write_knowledge_with_meta(self, path: Path, content: str, metadata: dict) -> None:
+        """Write knowledge file with YAML frontmatter metadata.
+
+        Args:
+            path: Path to the knowledge file
+            content: Markdown content body (without frontmatter)
+            metadata: Dictionary of metadata to embed as YAML frontmatter
+        """
+        import yaml
+
+        frontmatter = yaml.dump(metadata, default_flow_style=False, allow_unicode=True)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"---\n{frontmatter}---\n\n{content}", encoding="utf-8")
+        logger.debug("Knowledge written with metadata path='%s' length=%d", path, len(content))
+
+    def read_knowledge_content(self, path: Path) -> str:
+        """Read knowledge file body, stripping YAML frontmatter if present.
+
+        Backward-compatible: returns full text if no frontmatter exists.
+
+        Args:
+            path: Path to the knowledge file
+
+        Returns:
+            Content body without YAML frontmatter
+        """
+        text = path.read_text(encoding="utf-8")
+        if text.startswith("---"):
+            parts = text.split("---", 2)
+            if len(parts) >= 3:
+                return parts[2].strip()
+        return text
+
+    def read_knowledge_metadata(self, path: Path) -> dict:
+        """Read YAML frontmatter metadata from a knowledge file.
+
+        Args:
+            path: Path to the knowledge file
+
+        Returns:
+            Metadata dictionary, or empty dict if no frontmatter
+        """
+        import yaml
+
+        text = path.read_text(encoding="utf-8")
+        if text.startswith("---"):
+            parts = text.split("---", 2)
+            if len(parts) >= 3:
+                try:
+                    return yaml.safe_load(parts[1]) or {}
+                except Exception:
+                    logger.warning("Failed to parse YAML frontmatter in %s", path)
+                    return {}
+        return {}
+
     def write_knowledge(self, topic: str, content: str) -> None:
         safe = re.sub(r"[^\w\-_]", "_", topic)
         path = self.knowledge_dir / f"{safe}.md"
@@ -911,3 +968,132 @@ class MemoryManager:
                     results.append((f.name, line.strip()))
         logger.debug("search_knowledge query='%s' results=%d", query, len(results))
         return results
+
+    # ── Procedure frontmatter helpers ─────────────────────
+
+    def write_procedure_with_meta(
+        self, path: Path, content: str, metadata: dict,
+    ) -> None:
+        """Write a procedure file with YAML frontmatter metadata.
+
+        Args:
+            path: Target file path (absolute or relative to procedures_dir).
+            content: Markdown body (without frontmatter).
+            metadata: Dict of frontmatter fields (description, tags, etc.).
+        """
+        import yaml
+
+        target = path if path.is_absolute() else self.procedures_dir / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+
+        fm_str = yaml.dump(metadata, default_flow_style=False, allow_unicode=True).rstrip()
+        full = f"---\n{fm_str}\n---\n\n{content}"
+        target.write_text(full, encoding="utf-8")
+        logger.debug("Procedure written with metadata: %s", target.name)
+
+    def read_procedure_content(self, path: Path) -> str:
+        """Read procedure file body, stripping YAML frontmatter.
+
+        Args:
+            path: Absolute path or path relative to procedures_dir.
+
+        Returns:
+            Body text after the frontmatter block, or empty string.
+        """
+        target = path if path.is_absolute() else self.procedures_dir / path
+        if not target.exists():
+            return ""
+        text = target.read_text(encoding="utf-8")
+        if text.startswith("---"):
+            parts = text.split("---", 2)
+            if len(parts) >= 3:
+                return parts[2].strip()
+        return text.strip()
+
+    def read_procedure_metadata(self, path: Path) -> dict:
+        """Read YAML frontmatter metadata from a procedure file.
+
+        Args:
+            path: Absolute path or path relative to procedures_dir.
+
+        Returns:
+            Parsed frontmatter dict, or empty dict if absent/unparseable.
+        """
+        import yaml
+
+        target = path if path.is_absolute() else self.procedures_dir / path
+        if not target.exists():
+            return {}
+        text = target.read_text(encoding="utf-8")
+        if not text.startswith("---"):
+            return {}
+        parts = text.split("---", 2)
+        if len(parts) < 3:
+            return {}
+        try:
+            fm = yaml.safe_load(parts[1])
+            return fm if isinstance(fm, dict) else {}
+        except Exception:
+            return {}
+
+    def list_procedure_metas(self) -> list[SkillMeta]:
+        """Return SkillMeta for each procedure file (reuses _extract_skill_meta)."""
+        return [
+            self._extract_skill_meta(f, is_common=False)
+            for f in sorted(self.procedures_dir.glob("*.md"))
+        ]
+
+    def migrate_legacy_procedures(self) -> int:
+        """Add YAML frontmatter to procedure files that lack it.
+
+        Idempotent: uses ``{procedures_dir}/.migrated`` as a marker.
+        Backs up originals to ``archive/pre_migration_procedures/``.
+
+        Returns:
+            Number of files migrated.
+        """
+        import shutil
+        from datetime import datetime as _dt
+
+        marker = self.procedures_dir / ".migrated"
+        if marker.exists():
+            logger.debug("Procedures already migrated (marker exists)")
+            return 0
+
+        md_files = sorted(self.procedures_dir.glob("*.md"))
+        if not md_files:
+            marker.write_text(_dt.now().isoformat(), encoding="utf-8")
+            return 0
+
+        backup_dir = self.anima_dir / "archive" / "pre_migration_procedures"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+
+        migrated = 0
+        for f in md_files:
+            text = f.read_text(encoding="utf-8")
+            if text.startswith("---"):
+                continue  # already has frontmatter
+
+            # Backup original
+            shutil.copy2(f, backup_dir / f.name)
+
+            # Derive description from filename (replace _ and - with spaces)
+            desc = f.stem.replace("_", " ").replace("-", " ")
+
+            metadata = {
+                "description": desc,
+                "tags": [],
+                "success_count": 0,
+                "failure_count": 0,
+                "last_used": None,
+                "confidence": 0.5,
+                "version": 1,
+                "created_at": _dt.now().isoformat(),
+            }
+            self.write_procedure_with_meta(f, text, metadata)
+            migrated += 1
+            logger.info("Migrated procedure: %s", f.name)
+
+        marker.write_text(_dt.now().isoformat(), encoding="utf-8")
+        logger.info("Migrated %d legacy procedures", migrated)
+        return migrated

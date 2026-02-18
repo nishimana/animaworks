@@ -469,6 +469,9 @@ class ConversationMemory:
         if parsed.resolved_items:
             self._record_resolutions(memory_mgr, parsed.resolved_items)
 
+        # 3.5. Auto-track procedure outcomes for injected procedures
+        self._auto_track_procedure_outcomes(memory_mgr, new_turns)
+
         # 4. Integrate recorded turns into compressed_summary
         turn_text = self._format_turns_for_compression(new_turns)
         old_summary = state.compressed_summary
@@ -690,6 +693,66 @@ class ConversationMemory:
         if updated:
             memory_mgr.update_state(current)
             logger.info("State auto-updated from session summary")
+
+    def _auto_track_procedure_outcomes(
+        self,
+        memory_mgr: "MemoryManager",
+        new_turns: list[ConversationTurn],
+    ) -> None:
+        """Auto-track outcomes for procedures that were injected during this session.
+
+        Reads ``_last_injected_procedures`` from builder.py and records a
+        success (session completed normally) or failure (error detected in
+        conversation turns) for each injected procedure.
+        """
+        try:
+            from core.prompt.builder import _last_injected_procedures
+
+            anima_name = self.anima_dir.name
+            injected = _last_injected_procedures.get(anima_name, [])
+            if not injected:
+                return
+
+            # Simple heuristic: detect errors in conversation turns
+            has_error = any(
+                "error" in t.content.lower() or "エラー" in t.content
+                or "失敗" in t.content or "failed" in t.content.lower()
+                for t in new_turns
+                if t.role == "assistant"
+            )
+
+            for proc_path in injected:
+                if not proc_path.exists():
+                    continue
+
+                meta = memory_mgr.read_procedure_metadata(proc_path)
+                if not meta:
+                    continue
+
+                if has_error:
+                    meta["failure_count"] = meta.get("failure_count", 0) + 1
+                else:
+                    meta["success_count"] = meta.get("success_count", 0) + 1
+
+                meta["last_used"] = datetime.now().isoformat()
+
+                s = meta.get("success_count", 0)
+                f = meta.get("failure_count", 0)
+                meta["confidence"] = s / max(1, s + f)
+
+                body = memory_mgr.read_procedure_content(proc_path)
+                memory_mgr.write_procedure_with_meta(proc_path, body, meta)
+
+                logger.debug(
+                    "Auto-tracked procedure outcome: %s success=%s confidence=%.2f",
+                    proc_path.name, not has_error, meta["confidence"],
+                )
+
+            # Clear tracking after processing
+            _last_injected_procedures.pop(anima_name, None)
+
+        except Exception:
+            logger.debug("Failed to auto-track procedure outcomes", exc_info=True)
 
     def _record_resolutions(
         self, memory_mgr: "MemoryManager", resolved_items: list[str],

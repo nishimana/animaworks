@@ -14,8 +14,10 @@ memories into semantic knowledge, analogous to sleep-based memory consolidation
 in the human brain.
 """
 
+import json
 import logging
 import re
+import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -48,6 +50,88 @@ class ConsolidationEngine:
         self.episodes_dir.mkdir(parents=True, exist_ok=True)
         self.knowledge_dir.mkdir(parents=True, exist_ok=True)
 
+    # ── Legacy Migration ─────────────────────────────────────────
+
+    def _migrate_legacy_knowledge(self) -> int:
+        """Migrate legacy knowledge files to YAML frontmatter format.
+
+        Detects knowledge files without frontmatter, creates backups, then
+        rewrites them with ``---`` YAML frontmatter containing estimated
+        metadata.  Controlled by a ``.migrated`` marker file so it runs
+        only once per anima.
+
+        Returns:
+            Number of files migrated
+        """
+        marker = self.knowledge_dir / ".migrated"
+        if marker.exists():
+            return 0
+
+        from core.memory.manager import MemoryManager
+
+        # Use a lightweight MemoryManager to access frontmatter helpers
+        mm = MemoryManager(self.anima_dir)
+
+        backup_dir = self.anima_dir / "archive" / "pre_migration"
+        migrated = 0
+
+        for path in sorted(self.knowledge_dir.glob("*.md")):
+            try:
+                text = path.read_text(encoding="utf-8")
+
+                # Skip files that already have frontmatter
+                if text.startswith("---"):
+                    continue
+
+                # Create backup
+                backup_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(path, backup_dir / path.name)
+
+                # Try to extract created_at from [AUTO-CONSOLIDATED: YYYY-MM-DD HH:MM]
+                created_at = datetime.now().isoformat()
+                ts_match = re.search(
+                    r"\[AUTO-CONSOLIDATED:\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})\]",
+                    text,
+                )
+                if ts_match:
+                    try:
+                        parsed = datetime.strptime(ts_match.group(1), "%Y-%m-%d %H:%M")
+                        created_at = parsed.isoformat()
+                    except ValueError:
+                        pass
+
+                # Strip code fences that LLM may have wrapped around content
+                content = re.sub(r"^```(?:markdown|md)?\s*\n", "", text, flags=re.MULTILINE)
+                content = re.sub(r"\n```\s*$", "", content, flags=re.MULTILINE)
+                content = content.strip()
+
+                metadata = {
+                    "created_at": created_at,
+                    "confidence": 0.5,
+                    "auto_consolidated": True,
+                    "migrated_from_legacy": True,
+                }
+
+                mm.write_knowledge_with_meta(path, content, metadata)
+                migrated += 1
+                logger.info("Migrated legacy knowledge file: %s", path.name)
+
+            except Exception:
+                logger.exception("Failed to migrate knowledge file: %s", path.name)
+                continue
+
+        # Write marker
+        marker.write_text(
+            datetime.now().isoformat() + "\n",
+            encoding="utf-8",
+        )
+        if migrated > 0:
+            logger.info(
+                "Legacy knowledge migration complete for anima=%s: migrated=%d",
+                self.anima_name, migrated,
+            )
+        return migrated
+
     # ── Daily Consolidation ────────────────────────────────────
 
     async def daily_consolidate(
@@ -72,6 +156,12 @@ class ConsolidationEngine:
             - skipped: True if consolidation was skipped
         """
         logger.info("Starting daily consolidation for anima=%s", self.anima_name)
+
+        # Run legacy migration (once)
+        try:
+            self._migrate_legacy_knowledge()
+        except Exception:
+            logger.exception("Legacy migration failed for anima=%s", self.anima_name)
 
         # Collect recent episodes
         episode_entries = self._collect_recent_episodes(hours=24)
@@ -100,16 +190,79 @@ class ConsolidationEngine:
         # Get existing knowledge files for context
         existing_knowledge = self._list_knowledge_files()
 
-        # Generate consolidation via LLM
+        # Format episodes text for validation context
+        episodes_text = "\n\n".join([
+            f"## {e['date']} {e['time']}\n{e['content']}"
+            for e in episode_entries
+        ])
+
+        # ── Procedural distillation: classify and split episodes ──
+        distillation_result: dict[str, Any] = {
+            "procedures_created": [],
+        }
+        semantic_entries = episode_entries
+        try:
+            from core.memory.distillation import ProceduralDistiller
+
+            distiller = ProceduralDistiller(self.anima_dir, self.anima_name)
+            semantic_text, procedural_text = distiller.classify_episode_sections(
+                episodes_text,
+            )
+
+            # Distill procedural episodes into procedure files
+            if procedural_text.strip():
+                procedures = await distiller.distill_procedures(
+                    procedural_text, model=model,
+                )
+                saved_paths: list[str] = []
+                for item in procedures:
+                    path = distiller.save_procedure(item)
+                    saved_paths.append(str(path))
+                distillation_result["procedures_created"] = saved_paths
+                logger.info(
+                    "Daily distillation: created %d procedures for anima=%s",
+                    len(saved_paths), self.anima_name,
+                )
+
+            # Filter episode_entries to semantic-only for knowledge consolidation
+            if semantic_text.strip():
+                semantic_entries = self._filter_entries_by_text(
+                    episode_entries, semantic_text,
+                )
+            elif not procedural_text.strip():
+                # Both empty — keep original entries
+                pass
+            else:
+                # All episodes were procedural — still pass originals
+                # to _summarize_episodes so knowledge extraction can
+                # find non-procedural insights
+                pass
+
+        except Exception:
+            logger.exception(
+                "Procedural distillation failed for anima=%s, "
+                "falling back to full consolidation",
+                self.anima_name,
+            )
+
+        # Generate consolidation via LLM (semantic episodes only)
         consolidation_result = await self._summarize_episodes(
-            episode_entries=episode_entries,
+            episode_entries=semantic_entries,
             existing_knowledge_files=existing_knowledge,
             model=model,
             resolved_events=resolved_events,
         )
 
+        # Sanitize and validate, then write
+        consolidation_result = self._sanitize_llm_output(consolidation_result)
+
+        # Run validation pipeline on parsed knowledge items
+        validated_result = await self._validate_consolidation(
+            consolidation_result, episodes_text, model,
+        )
+
         # Parse and write results to knowledge/
-        files_created, files_updated = self._merge_to_knowledge(consolidation_result)
+        files_created, files_updated = self._merge_to_knowledge(validated_result)
 
         # Update RAG index for affected files
         self._update_rag_index(files_created + files_updated)
@@ -128,6 +281,26 @@ class ConsolidationEngine:
         except Exception:
             logger.exception("Synaptic downscaling failed for anima=%s", self.anima_name)
 
+        # Reconsolidation: detect and apply prediction errors
+        reconsolidation_result: dict[str, Any] = {}
+        try:
+            reconsolidation_result = await self._run_reconsolidation(
+                episodes_text, model,
+            )
+        except Exception:
+            logger.exception("Reconsolidation failed for anima=%s", self.anima_name)
+
+        # Contradiction check for newly created/updated knowledge files
+        contradiction_result: dict[str, int] = {}
+        try:
+            contradiction_result = await self._run_contradiction_check(
+                files_created + files_updated, model,
+            )
+        except Exception:
+            logger.exception(
+                "Contradiction check failed for anima=%s", self.anima_name,
+            )
+
         logger.info(
             "Daily consolidation complete for anima=%s: "
             "created=%d updated=%d",
@@ -138,9 +311,87 @@ class ConsolidationEngine:
             "episodes_processed": len(episode_entries),
             "knowledge_files_created": files_created,
             "knowledge_files_updated": files_updated,
+            "distillation": distillation_result,
             "downscaling": downscaling_result,
+            "reconsolidation": reconsolidation_result,
+            "contradiction": contradiction_result,
             "skipped": False,
         }
+
+    @staticmethod
+    def _filter_entries_by_text(
+        entries: list[dict[str, str]],
+        filtered_text: str,
+    ) -> list[dict[str, str]]:
+        """Keep only episode entries whose content appears in *filtered_text*.
+
+        Used after procedural classification to pass only the semantic
+        portion of episodes to the knowledge consolidation LLM.
+
+        Args:
+            entries: Original episode entries.
+            filtered_text: Concatenated text of the desired category.
+
+        Returns:
+            Subset of *entries* whose content appears in *filtered_text*.
+        """
+        result: list[dict[str, str]] = []
+        for entry in entries:
+            # Use a prefix check (first 100 chars) to match sections
+            prefix = entry["content"][:100].strip()
+            if prefix and prefix in filtered_text:
+                result.append(entry)
+        return result if result else entries
+
+    # ── Reconsolidation ─────────────────────────────────────────
+
+    async def _run_reconsolidation(
+        self,
+        episodes_text: str,
+        model: str,
+    ) -> dict[str, Any]:
+        """Run prediction-error-based reconsolidation on today's episodes.
+
+        Detects contradictions between new episodes and existing
+        knowledge/procedures, then applies version-controlled updates.
+
+        Args:
+            episodes_text: Concatenated episode text for the day.
+            model: LLM model identifier for analysis.
+
+        Returns:
+            Dict with reconsolidation results (errors_detected, updated, etc.).
+        """
+        from core.memory.reconsolidation import ReconsolidationEngine
+
+        engine = ReconsolidationEngine(self.anima_dir, self.anima_name)
+        errors = await engine.detect_prediction_errors(episodes_text, model)
+
+        if not errors:
+            logger.info(
+                "No prediction errors detected for anima=%s",
+                self.anima_name,
+            )
+            return {"errors_detected": 0, "updated": 0, "skipped": 0}
+
+        logger.info(
+            "Detected %d prediction errors for anima=%s, applying reconsolidation",
+            len(errors), self.anima_name,
+        )
+
+        result = await engine.apply_reconsolidation(errors)
+        result["errors_detected"] = len(errors)
+
+        # Re-index updated files
+        updated_files: list[str] = []
+        for error in errors:
+            if error.updated_content and error.source_file.exists():
+                rel = error.source_file.name
+                updated_files.append(rel)
+        if updated_files:
+            self._update_rag_index(updated_files)
+
+        return result
 
     def _collect_recent_episodes(self, hours: int = 24) -> list[dict[str, str]]:
         """Collect episode entries from the past N hours.
@@ -239,6 +490,26 @@ class ConsolidationEngine:
             logger.debug("Failed to collect resolved events", exc_info=True)
             return []
 
+    # ── Sanitization ────────────────────────────────────────────
+
+    @staticmethod
+    def _sanitize_llm_output(text: str) -> str:
+        """Remove code fences from LLM output.
+
+        LLMs sometimes wrap their entire response in ```markdown fences.
+        This method strips those wrapper fences while preserving any
+        intentional code blocks within the content.
+
+        Args:
+            text: Raw LLM output
+
+        Returns:
+            Cleaned text with wrapper code fences removed
+        """
+        text = re.sub(r"^```(?:markdown|md)?\s*\n", "", text, flags=re.MULTILINE)
+        text = re.sub(r"\n```\s*$", "", text, flags=re.MULTILINE)
+        return text.strip()
+
     def _list_knowledge_files(self) -> list[str]:
         """List all existing knowledge files.
 
@@ -254,6 +525,70 @@ class ConsolidationEngine:
             files.append(str(rel_path))
 
         return sorted(files)
+
+    def _fetch_related_knowledge(
+        self,
+        episodes_text: str,
+        top_k: int = 3,
+        max_tokens: int = 2000,
+    ) -> str:
+        """Fetch related existing knowledge via RAG for consolidation context.
+
+        Searches the knowledge vector store for content related to the
+        current episode text, returning the top matches as context for the
+        consolidation LLM prompt.
+
+        Args:
+            episodes_text: Concatenated episode text to use as query
+            top_k: Maximum number of knowledge chunks to retrieve
+            max_tokens: Approximate token budget (chars / 3 heuristic)
+
+        Returns:
+            Formatted string of related knowledge, or empty string
+        """
+        try:
+            from core.memory.rag.retriever import MemoryRetriever
+            from core.memory.rag.singleton import get_vector_store
+
+            from core.memory.rag import MemoryIndexer
+
+            vector_store = get_vector_store()
+            indexer = MemoryIndexer(vector_store, self.anima_name, self.anima_dir)
+            retriever = MemoryRetriever(
+                vector_store, indexer, self.knowledge_dir,
+            )
+
+            results = retriever.search(
+                query=episodes_text[:500],
+                anima_name=self.anima_name,
+                memory_type="knowledge",
+                top_k=top_k,
+            )
+
+            if not results:
+                return ""
+
+            parts: list[str] = []
+            total_chars = 0
+            char_budget = max_tokens * 3  # rough chars-to-tokens heuristic
+
+            for r in results:
+                source = r.metadata.get("source_file", r.doc_id)
+                snippet = r.content[:1000]
+                entry = f"### {source}\n{snippet}"
+                if total_chars + len(entry) > char_budget:
+                    break
+                parts.append(entry)
+                total_chars += len(entry)
+
+            return "\n\n".join(parts)
+
+        except ImportError:
+            logger.debug("RAG not available, skipping related knowledge fetch")
+            return ""
+        except Exception as e:
+            logger.warning("Failed to fetch related knowledge: %s", e)
+            return ""
 
     async def _summarize_episodes(
         self,
@@ -284,6 +619,9 @@ class ConsolidationEngine:
         if not knowledge_list:
             knowledge_list = "(まだ知識ファイルはありません)"
 
+        # Fetch related knowledge via RAG for context
+        related_knowledge = self._fetch_related_knowledge(episodes_text)
+
         # Build consolidation prompt
         prompt = f"""以下は{self.anima_name}の過去24時間のエピソード記録です。
 
@@ -292,7 +630,16 @@ class ConsolidationEngine:
 
 【既存の知識ファイル一覧】
 {knowledge_list}
+"""
 
+        # Inject related knowledge content
+        if related_knowledge:
+            prompt += f"""
+【関連する既存知識の内容】
+{related_knowledge}
+"""
+
+        prompt += """
 タスク:
 以下のエピソードから新しい教訓・パターン・方針を抽出してください。
 
@@ -320,6 +667,7 @@ class ConsolidationEngine:
 - 挨拶のみの会話や実質的な情報を含まないやり取りは知識化不要です
 - 既存ファイルがない場合は、すべて新規ファイルとして提案してください
 - ファイル名はトピックを表すわかりやすい名前にしてください（英数字とハイフン推奨）
+- コードフェンス（```）で囲まないでください
 """
 
         # Inject resolved events into prompt
@@ -328,7 +676,6 @@ class ConsolidationEngine:
                 f"- {r.get('ts', '')[:16]}: {r.get('content', '')}" for r in resolved_events
             )
             prompt += f"""
-
 【解決済み案件】
 以下の案件は解決済みです。既存の知識ファイルに「未解決」「対応中」「調査中」等の
 記載がある場合は、「解決済み」に更新してください。
@@ -347,6 +694,50 @@ class ConsolidationEngine:
             )
 
             result = response.choices[0].message.content or ""
+
+            # Sanitize LLM output (strip code fences)
+            result = self._sanitize_llm_output(result)
+
+            # Format validation: check if parseable
+            has_sections = bool(
+                re.search(r"##\s*(既存ファイル更新|新規ファイル作成)", result)
+            )
+
+            if result and not has_sections:
+                # Retry with explicit format instruction
+                logger.info(
+                    "Consolidation output missing expected sections, retrying "
+                    "for anima=%s",
+                    self.anima_name,
+                )
+                retry_prompt = (
+                    "先ほどの出力が期待された形式と異なりました。\n"
+                    "以下の形式で再出力してください:\n\n"
+                    "## 既存ファイル更新\n"
+                    "- ファイル名: knowledge/xxx.md\n"
+                    "  追加内容: (内容)\n\n"
+                    "## 新規ファイル作成\n"
+                    "- ファイル名: knowledge/yyy.md\n"
+                    "  内容: (内容)\n\n"
+                    "コードフェンス（```）は使わないでください。\n\n"
+                    f"元の内容:\n{result[:2000]}"
+                )
+                retry_response = await litellm.acompletion(
+                    model=model,
+                    messages=[{"role": "user", "content": retry_prompt}],
+                    max_tokens=2048,
+                )
+                retry_result = retry_response.choices[0].message.content or ""
+                retry_result = self._sanitize_llm_output(retry_result)
+                if re.search(r"##\s*(既存ファイル更新|新規ファイル作成)", retry_result):
+                    result = retry_result
+                    logger.info("Format retry succeeded for anima=%s", self.anima_name)
+                else:
+                    logger.warning(
+                        "Format retry also failed for anima=%s, using original",
+                        self.anima_name,
+                    )
+
             logger.info(
                 "Consolidation LLM response for %s (%d chars): %.500s",
                 self.anima_name, len(result), result,
@@ -360,6 +751,128 @@ class ConsolidationEngine:
                 exc_info=True
             )
             return ""
+
+    async def _validate_consolidation(
+        self,
+        consolidation_result: str,
+        episodes_text: str,
+        model: str,
+    ) -> str:
+        """Run NLI+LLM validation on parsed knowledge items.
+
+        Extracts individual knowledge items from the consolidation LLM
+        output, validates each against the source episodes, and
+        reconstructs the output with only validated items.
+
+        Args:
+            consolidation_result: Raw (sanitized) consolidation LLM output
+            episodes_text: Concatenated source episode text
+            model: LLM model for validation fallback
+
+        Returns:
+            Filtered consolidation result with rejected items removed
+        """
+        if not consolidation_result.strip():
+            return consolidation_result
+
+        try:
+            from core.memory.validation import KnowledgeValidator
+
+            validator = KnowledgeValidator()
+
+            # Extract knowledge items from the consolidation output
+            items: list[dict] = []
+
+            # Parse new file items
+            create_section = re.search(
+                r"##\s*新規ファイル作成(.+)",
+                consolidation_result,
+                re.DOTALL | re.IGNORECASE,
+            )
+            if create_section:
+                for match in re.finditer(
+                    r"-\s*ファイル名:\s*(.+?)\s+内容:\s*(.+?)(?=-\s*ファイル名:|\Z)",
+                    create_section.group(1),
+                    re.DOTALL,
+                ):
+                    items.append({
+                        "filename": match.group(1).strip(),
+                        "content": match.group(2).strip(),
+                        "type": "create",
+                    })
+
+            # Parse update items
+            update_section = re.search(
+                r"##\s*既存ファイル更新(.+?)(?=##\s*新規ファイル作成|\Z)",
+                consolidation_result,
+                re.DOTALL | re.IGNORECASE,
+            )
+            if update_section:
+                for match in re.finditer(
+                    r"-\s*ファイル名:\s*(.+?)\s+追加内容:\s*(.+?)(?=-\s*ファイル名:|\Z)",
+                    update_section.group(1),
+                    re.DOTALL,
+                ):
+                    items.append({
+                        "filename": match.group(1).strip(),
+                        "content": match.group(2).strip(),
+                        "type": "update",
+                    })
+
+            if not items:
+                return consolidation_result
+
+            # Validate all items
+            validated = await validator.validate(items, episodes_text, model)
+            validated_set = {id(item) for item in validated}
+
+            # Reconstruct output with only validated items
+            update_items = [
+                item for item in validated if item["type"] == "update"
+            ]
+            create_items = [
+                item for item in validated if item["type"] == "create"
+            ]
+
+            parts: list[str] = []
+            parts.append("## 既存ファイル更新")
+            if update_items:
+                for item in update_items:
+                    parts.append(
+                        f"- ファイル名: {item['filename']}\n"
+                        f"  追加内容: {item['content']}"
+                    )
+            else:
+                parts.append("(なし)")
+
+            parts.append("\n## 新規ファイル作成")
+            if create_items:
+                for item in create_items:
+                    parts.append(
+                        f"- ファイル名: {item['filename']}\n"
+                        f"  内容: {item['content']}"
+                    )
+            else:
+                parts.append("(なし)")
+
+            result = "\n".join(parts)
+            rejected_count = len(items) - len(validated)
+            if rejected_count > 0:
+                logger.info(
+                    "Validation rejected %d/%d knowledge items for anima=%s",
+                    rejected_count, len(items), self.anima_name,
+                )
+            return result
+
+        except ImportError:
+            logger.debug("Validation module not available, skipping validation")
+            return consolidation_result
+        except Exception:
+            logger.exception(
+                "Validation failed for anima=%s, using unvalidated result",
+                self.anima_name,
+            )
+            return consolidation_result
 
     def _merge_to_knowledge(self, consolidation_result: str) -> tuple[list[str], list[str]]:
         """Parse consolidation result and write to knowledge files.
@@ -379,6 +892,10 @@ class ConsolidationEngine:
                 self.anima_name,
             )
             return files_created, files_updated
+
+        from core.memory.manager import MemoryManager
+
+        mm = MemoryManager(self.anima_dir)
 
         # Parse updates to existing files
         update_section = re.search(
@@ -403,21 +920,32 @@ class ConsolidationEngine:
 
                 filepath = self.knowledge_dir / filename
 
-                # Append to existing file with timestamp
-                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-                header = f"\n\n[AUTO-CONSOLIDATED: {timestamp}]\n\n"
-
                 if filepath.exists():
-                    with filepath.open("a", encoding="utf-8") as f:
-                        f.write(header + content)
+                    # Read existing metadata and content, then append
+                    existing_meta = mm.read_knowledge_metadata(filepath)
+                    existing_content = mm.read_knowledge_content(filepath)
+
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    updated_content = (
+                        f"{existing_content}\n\n"
+                        f"[AUTO-CONSOLIDATED: {timestamp}]\n\n{content}"
+                    )
+
+                    # Update metadata
+                    existing_meta["updated_at"] = datetime.now().isoformat()
+                    mm.write_knowledge_with_meta(filepath, updated_content, existing_meta)
                     files_updated.append(filename)
                     logger.info("Updated knowledge file: %s", filename)
                 else:
-                    # File doesn't exist, create it
-                    filepath.write_text(
-                        f"# {filepath.stem}\n\n{header}{content}",
-                        encoding="utf-8"
-                    )
+                    # File doesn't exist, create with frontmatter
+                    timestamp = datetime.now().isoformat()
+                    metadata = {
+                        "created_at": timestamp,
+                        "confidence": 0.7,
+                        "auto_consolidated": True,
+                    }
+                    body = f"# {filepath.stem}\n\n{content}"
+                    mm.write_knowledge_with_meta(filepath, body, metadata)
                     files_created.append(filename)
                     logger.info("Created knowledge file: %s", filename)
 
@@ -444,12 +972,22 @@ class ConsolidationEngine:
 
                 filepath = self.knowledge_dir / filename
 
-                # Add metadata header
-                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-                header = f"# {filepath.stem}\n\n[AUTO-CONSOLIDATED: {timestamp}]\n\n"
-
                 if not filepath.exists():
-                    filepath.write_text(header + content, encoding="utf-8")
+                    # Build source episode filenames
+                    today = datetime.now().date()
+                    source_episodes = [
+                        f"{today}.md",
+                        f"{(today - timedelta(days=1))}.md",
+                    ]
+
+                    timestamp = datetime.now().isoformat()
+                    metadata = {
+                        "created_at": timestamp,
+                        "source_episodes": source_episodes,
+                        "confidence": 0.7,
+                        "auto_consolidated": True,
+                    }
+                    mm.write_knowledge_with_meta(filepath, content, metadata)
                     files_created.append(filename)
                     logger.info("Created knowledge file: %s", filename)
                 else:
@@ -573,6 +1111,36 @@ class ConsolidationEngine:
             )
         except Exception:
             logger.exception("Neurogenesis reorganization failed for anima=%s", self.anima_name)
+
+        # Step 4: Weekly procedural pattern distillation
+        try:
+            from core.memory.distillation import ProceduralDistiller
+
+            distiller = ProceduralDistiller(self.anima_dir, self.anima_name)
+            distill_result = await distiller.weekly_pattern_distill(model=model)
+            results["weekly_distillation"] = distill_result
+            logger.info(
+                "Weekly pattern distillation: patterns=%d procedures=%d",
+                distill_result.get("patterns_detected", 0),
+                len(distill_result.get("procedures_created", [])),
+            )
+        except Exception:
+            logger.exception(
+                "Weekly pattern distillation failed for anima=%s",
+                self.anima_name,
+            )
+
+        # Step 5: Full knowledge contradiction scan
+        try:
+            contradiction_result = await self._run_contradiction_check(
+                [], model, full_scan=True,
+            )
+            results["contradiction"] = contradiction_result
+        except Exception:
+            logger.exception(
+                "Weekly contradiction scan failed for anima=%s",
+                self.anima_name,
+            )
 
         logger.info(
             "Weekly integration complete for anima=%s: merged=%d compressed=%d",
@@ -742,9 +1310,13 @@ class ConsolidationEngine:
 
                     merged_path.write_text(header + merged_content, encoding="utf-8")
 
-                    # Delete original files
-                    (self.knowledge_dir / file1).unlink(missing_ok=True)
-                    (self.knowledge_dir / file2).unlink(missing_ok=True)
+                    # Archive original files (7-day retention)
+                    archive_dir = self.anima_dir / "archive" / "merged"
+                    archive_dir.mkdir(parents=True, exist_ok=True)
+                    for orig_name in (file1, file2):
+                        orig_path = self.knowledge_dir / orig_name
+                        if orig_path.exists():
+                            shutil.move(str(orig_path), str(archive_dir / orig_name))
 
                     merged_files.append(
                         f"{file1} + {file2} → {merged_filename}"
@@ -874,12 +1446,30 @@ class ConsolidationEngine:
 
         This is the final stage of the forgetting pipeline, removing
         memories that have remained at low activation for extended periods.
+        Also cleans up old procedure version archives.
         """
         logger.info("Starting monthly forgetting for anima=%s", self.anima_name)
         try:
             from core.memory.forgetting import ForgettingEngine
             forgetter = ForgettingEngine(self.anima_dir, self.anima_name)
             result = forgetter.complete_forgetting()
+
+            # Clean up old procedure version archives
+            try:
+                archive_result = forgetter.cleanup_procedure_archives()
+                result["procedure_archive_cleanup"] = archive_result
+                logger.info(
+                    "Procedure archive cleanup for anima=%s: "
+                    "deleted=%d, kept=%d",
+                    self.anima_name,
+                    archive_result.get("deleted_count", 0),
+                    archive_result.get("kept_count", 0),
+                )
+            except Exception:
+                logger.exception(
+                    "Procedure archive cleanup failed for anima=%s",
+                    self.anima_name,
+                )
 
             # Rebuild RAG index after deletions
             self._rebuild_rag_index()
@@ -896,3 +1486,71 @@ class ConsolidationEngine:
         except Exception:
             logger.exception("Monthly forgetting failed for anima=%s", self.anima_name)
             return {"forgotten_chunks": 0, "archived_files": [], "error": True}
+
+    # ── Contradiction Detection Integration ────────────────────────
+
+    async def _run_contradiction_check(
+        self,
+        affected_files: list[str],
+        model: str,
+        *,
+        full_scan: bool = False,
+    ) -> dict[str, int]:
+        """Run contradiction detection and resolution on knowledge files.
+
+        In daily mode (``full_scan=False``), checks only the newly created
+        or updated files against existing knowledge.  In weekly mode
+        (``full_scan=True``), scans the entire knowledge directory.
+
+        Args:
+            affected_files: List of filenames (relative to knowledge/) that
+                were created or updated during this consolidation cycle
+            model: LLM model for contradiction analysis
+            full_scan: If True, scan all knowledge files (weekly mode)
+
+        Returns:
+            Resolution summary dict (superseded, merged, coexisted, errors)
+        """
+        from core.memory.contradiction import ContradictionDetector
+
+        detector = ContradictionDetector(self.anima_dir, self.anima_name)
+
+        if full_scan:
+            # Weekly: scan entire knowledge directory
+            logger.info(
+                "Running full contradiction scan for anima=%s",
+                self.anima_name,
+            )
+            contradictions = await detector.scan_contradictions(
+                target_file=None, model=model,
+            )
+        else:
+            # Daily: only check newly affected files
+            if not affected_files:
+                return {}
+
+            contradictions: list = []
+            for filename in affected_files:
+                target = self.knowledge_dir / filename
+                if not target.exists():
+                    continue
+                pairs = await detector.scan_contradictions(
+                    target_file=target, model=model,
+                )
+                contradictions.extend(pairs)
+
+        if not contradictions:
+            logger.info(
+                "No contradictions found for anima=%s", self.anima_name,
+            )
+            return {}
+
+        # Resolve detected contradictions
+        result = await detector.resolve_contradictions(contradictions, model)
+
+        logger.info(
+            "Contradiction resolution for anima=%s: %s",
+            self.anima_name, result,
+        )
+
+        return result

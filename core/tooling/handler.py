@@ -168,6 +168,54 @@ def _validate_skill_format(content: str) -> str:
     return "\n".join(messages)
 
 
+def _validate_procedure_format(content: str) -> str:
+    """Validate procedure file content format (soft validation).
+
+    Checks for YAML frontmatter with a ``description`` field.
+    Returns an empty string if everything is fine, or a newline-joined
+    string of warnings otherwise.
+
+    This is a *soft* validation -- warnings are appended to the tool
+    response but the write is never blocked.
+    """
+    messages: list[str] = []
+
+    if not content.startswith("---"):
+        messages.append(
+            "手順書ファイルにはYAMLフロントマター(---)を推奨します。"
+            "description フィールドで自動マッチングが有効になります。"
+        )
+        return "\n".join(messages)
+
+    end_idx = content.find("---", 3)
+    if end_idx == -1:
+        messages.append(
+            "手順書ファイルにはYAMLフロントマター(---)を推奨します。"
+        )
+        return "\n".join(messages)
+
+    frontmatter_raw = content[3:end_idx].strip()
+    try:
+        import yaml
+        frontmatter = yaml.safe_load(frontmatter_raw)
+        if not isinstance(frontmatter, dict):
+            frontmatter = {}
+    except Exception:
+        frontmatter = {}
+        for line in frontmatter_raw.splitlines():
+            if ":" in line:
+                key, _, val = line.partition(":")
+                frontmatter[key.strip()] = val.strip()
+
+    if "description" not in frontmatter:
+        messages.append(
+            "`description` フィールドがありません。"
+            "自動マッチングを有効にするために description を追加してください。"
+        )
+
+    return "\n".join(messages)
+
+
 def _is_protected_write(anima_dir: Path, target: Path) -> str | None:
     """Check if a write target is a protected file or outside anima_dir.
 
@@ -320,6 +368,9 @@ class ToolHandler:
                 result = self._handle_refresh_tools(args)
             elif name == "share_tool":
                 result = self._handle_share_tool(args)
+            # Procedure outcome tracking
+            elif name == "report_procedure_outcome":
+                result = self._handle_report_procedure_outcome(args)
             else:
                 # ── Background execution for eligible external tools ──
                 if self._background_manager and self._background_manager.is_eligible(name):
@@ -482,6 +533,22 @@ class ToolHandler:
             validation_msg = _validate_skill_format(args["content"])
             if validation_msg:
                 result = f"{result}\n\n⚠️ スキルフォーマット検証:\n{validation_msg}"
+
+        # Validate procedure file format (soft validation: warn but don't block)
+        if rel.startswith("procedures/") and rel.endswith(".md"):
+            validation_msg = _validate_procedure_format(args["content"])
+            if validation_msg:
+                result = f"{result}\n\n⚠️ 手順書フォーマット検証:\n{validation_msg}"
+
+        # Auto-update RAG index for skill/procedure writes
+        if rel.startswith(("skills/", "procedures/")) and rel.endswith(".md"):
+            indexer = self._memory._get_indexer()
+            if indexer:
+                memory_type = "skills" if rel.startswith("skills/") else "procedures"
+                try:
+                    indexer.index_file(path, memory_type=memory_type, force=True)
+                except Exception as e:
+                    logger.warning("Failed to update RAG index for %s: %s", rel, e)
 
         return result
 
@@ -905,6 +972,70 @@ class ToolHandler:
         shutil.copy2(src, dst)
         logger.info("share_tool: copied %s → %s", src, dst)
         return f"Shared tool '{tool_name}' to common_tools/. All animas can now use it after refresh_tools."
+
+    # ── Procedure outcome tracking ──────────────────────────
+
+    def _handle_report_procedure_outcome(self, args: dict[str, Any]) -> str:
+        """Report success/failure of a procedure and update its metadata.
+
+        Updates frontmatter fields: success_count, failure_count, last_used,
+        and recalculates confidence = success / max(1, success + failure).
+        """
+        rel = args.get("path", "")
+        success = args.get("success", True)
+        notes = args.get("notes", "")
+
+        if not rel:
+            return _error_result("InvalidArguments", "path is required")
+
+        target = self._anima_dir / rel
+        if not target.exists():
+            return _error_result(
+                "FileNotFound",
+                f"File not found: {rel}",
+                suggestion="Check the path (e.g. procedures/deploy.md)",
+            )
+
+        # Security: must be within anima_dir
+        if not target.resolve().is_relative_to(self._anima_dir.resolve()):
+            return _error_result("PermissionDenied", "Path resolves outside anima directory")
+
+        # Read existing metadata
+        meta = self._memory.read_procedure_metadata(target)
+
+        # Update counts
+        if success:
+            meta["success_count"] = meta.get("success_count", 0) + 1
+        else:
+            meta["failure_count"] = meta.get("failure_count", 0) + 1
+
+        # Update last_used
+        meta["last_used"] = datetime.now().isoformat()
+
+        # Recalculate confidence
+        s = meta.get("success_count", 0)
+        f = meta.get("failure_count", 0)
+        meta["confidence"] = s / max(1, s + f)
+
+        # Read body and rewrite with updated metadata
+        body = self._memory.read_procedure_content(target)
+        self._memory.write_procedure_with_meta(target, body, meta)
+
+        logger.info(
+            "report_procedure_outcome path=%s success=%s confidence=%.2f",
+            rel, success, meta["confidence"],
+        )
+
+        outcome_label = "成功" if success else "失敗"
+        result = (
+            f"Procedure outcome recorded: {rel} -> {outcome_label}\n"
+            f"confidence: {meta['confidence']:.2f} "
+            f"(success: {meta['success_count']}, failure: {meta['failure_count']})"
+        )
+        if notes:
+            result += f"\nnotes: {notes}"
+
+        return result
 
     # ── File operation handlers ──────────────────────────────
 

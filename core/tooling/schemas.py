@@ -428,6 +428,38 @@ ADMIN_TOOLS: list[dict[str, Any]] = [
     },
 ]
 
+PROCEDURE_TOOLS: list[dict[str, Any]] = [
+    {
+        "name": "report_procedure_outcome",
+        "description": (
+            "Report the outcome of following a procedure or skill. "
+            "Updates success/failure counts and confidence. "
+            "Call this after completing a procedure to track its reliability."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": (
+                        "Relative path to the procedure or skill file "
+                        "(e.g. 'procedures/deploy.md' or 'skills/git-flow.md')"
+                    ),
+                },
+                "success": {
+                    "type": "boolean",
+                    "description": "Whether the procedure succeeded",
+                },
+                "notes": {
+                    "type": "string",
+                    "description": "Optional notes on what worked or failed",
+                },
+            },
+            "required": ["path", "success"],
+        },
+    },
+]
+
 # ── Format converters ────────────────────────────────────────
 
 
@@ -526,6 +558,8 @@ def build_tool_list(
     tools: list[dict[str, Any]] = list(MEMORY_TOOLS)
     # Channel tools are always included (shared messaging)
     tools.extend(CHANNEL_TOOLS)
+    # Procedure outcome reporting is always included
+    tools.extend(PROCEDURE_TOOLS)
     if include_file_tools:
         tools.extend(FILE_TOOLS)
     if include_search_tools:

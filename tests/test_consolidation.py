@@ -151,7 +151,8 @@ class TestKnowledgeManagement:
         assert new_file.exists()
         content = new_file.read_text(encoding="utf-8")
         assert "テスト教訓" in content
-        assert "AUTO-CONSOLIDATED" in content
+        # New format uses YAML frontmatter instead of text marker
+        assert "auto_consolidated: true" in content or "AUTO-CONSOLIDATED" in content
 
     def test_merge_to_knowledge_update_existing(self, consolidation_engine):
         """Test updating existing knowledge files."""

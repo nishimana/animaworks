@@ -19,6 +19,10 @@ from core.schemas import SkillMeta
 
 logger = logging.getLogger("animaworks.prompt_builder")
 
+# Module-level tracking of injected procedures per anima for
+# automatic outcome tracking in Phase 3 (conversation.py reads this).
+_last_injected_procedures: dict[str, list[Path]] = {}
+
 
 # ── Skill Injection Budget ────────────────────────────────
 
@@ -431,31 +435,48 @@ def build_system_prompt(
             "目次: `common_knowledge/00_index.md`"
         )
 
-    # ── Skill injection (description-based matching) ──────
+    # ── Skill + procedure injection (description-based matching) ──────
+    procedure_metas = memory.list_procedure_metas()
     anima_name = memory.anima_dir.name if hasattr(memory, "anima_dir") else ""
+    all_metas_with_procedures = all_metas + procedure_metas
     matched_skills = match_skills_by_description(
-        message, all_metas, retriever=retriever, anima_name=anima_name,
+        message, all_metas_with_procedures, retriever=retriever, anima_name=anima_name,
     )
     matched_names: set[str] = set()
     msg_type = _classify_message_for_skill_budget(message)
     budget = SKILL_INJECTION_BUDGET.get(msg_type, 3000)
     used_tokens = 0
 
-    # Inject matched skill full text (within budget)
+    # Track injected procedures for outcome tracking (Phase 3)
+    injected_procedure_paths: list[Path] = []
+
+    # Inject matched skill/procedure full text (within budget)
+    procedure_name_set = {m.name for m in procedure_metas}
     for skill in matched_skills:
         body = _build_skill_body(skill.path)
         # Rough token estimate: 1 char ≈ 1 token for CJK text
         body_len = len(body)
         if used_tokens + body_len > budget:
             break
-        label = f"(共通スキル)" if skill.is_common else "(個人スキル)"
+        is_procedure = skill.name in procedure_name_set
+        if is_procedure:
+            label = "(手順)"
+            injected_procedure_paths.append(skill.path)
+        elif skill.is_common:
+            label = "(共通スキル)"
+        else:
+            label = "(個人スキル)"
+        section_title = "手順" if is_procedure else "スキル"
         parts.append(
-            f"## スキル: {skill.name} {label}\n\n"
-            f"以下のスキルがこのメッセージに該当します。手順に従って実行してください。\n\n"
+            f"## {section_title}: {skill.name} {label}\n\n"
+            f"以下の{section_title}がこのメッセージに該当します。手順に従って実行してください。\n\n"
             f"{body}"
         )
         matched_names.add(skill.name)
         used_tokens += body_len
+
+    # Record injected procedures for auto-outcome tracking
+    _last_injected_procedures[anima_name] = injected_procedure_paths
 
     # Non-matched personal skills → table
     unmatched_personal = [
@@ -485,6 +506,20 @@ def build_system_prompt(
             f"以下は全社員共通のスキルです。使用する際は "
             f"`{common_skills_dir}/{{スキル名}}.md` をReadで読んでから実行してください。\n\n"
             f"| スキル名 | 概要 |\n|---------|------|\n{common_skill_lines}"
+        )
+
+    # Non-matched procedures → table
+    unmatched_procedures = [
+        m for m in procedure_metas if m.name not in matched_names
+    ]
+    if unmatched_procedures:
+        proc_lines = "\n".join(
+            f"| {m.name} | {m.description} |" for m in unmatched_procedures
+        )
+        parts.append(
+            f"## 手順書\n\n"
+            f"以下は個人の手順書です。使用する際は `procedures/{{手順名}}.md` をReadで読んでから実行してください。\n\n"
+            f"| 手順名 | 概要 |\n|---------|------|\n{proc_lines}"
         )
 
     # Commander hiring guardrail: force create_anima tool/CLI usage

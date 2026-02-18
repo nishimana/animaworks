@@ -39,8 +39,15 @@ REORGANIZATION_SIMILARITY_THRESHOLD = 0.80  # Vector similarity for merging
 # Complete forgetting
 FORGETTING_LOW_ACTIVATION_DAYS = 60  # Days in low activation before deletion
 
-# Protected memory types (procedural memory has higher forgetting resistance)
-PROTECTED_MEMORY_TYPES = frozenset({"procedures", "skills", "shared_users"})
+# Protected memory types (skills and shared_users are fully protected)
+PROTECTED_MEMORY_TYPES = frozenset({"skills", "shared_users"})
+
+# Procedure-specific forgetting thresholds (more lenient than knowledge)
+PROCEDURE_INACTIVITY_DAYS = 180  # Days since last use (vs 90 for knowledge)
+PROCEDURE_MIN_USAGE = 3  # Minimum total usage to avoid downscaling
+PROCEDURE_LOW_UTILITY_THRESHOLD = 0.3  # Utility score below this is low
+PROCEDURE_LOW_UTILITY_MIN_FAILURES = 3  # Min failures for utility check
+PROCEDURE_ARCHIVE_KEEP_VERSIONS = 5  # Keep N most recent archive versions
 
 
 # ── ForgettingEngine ───────────────────────────────────────────────
@@ -55,11 +62,83 @@ class ForgettingEngine:
         self.archive_dir = anima_dir / "archive" / "forgotten"
 
     def _is_protected(self, metadata: dict) -> bool:
-        """Check if a chunk is protected from forgetting."""
+        """Check if a chunk is protected from forgetting.
+
+        Fully protected types (skills, shared_users) are always skipped.
+        Procedures use utility-based protection via ``_is_protected_procedure``.
+        The ``importance == "important"`` tag protects any memory type.
+        """
         if metadata.get("memory_type") in PROTECTED_MEMORY_TYPES:
             return True
         if metadata.get("importance") == "important":
             return True
+        # Procedures use utility-based protection instead of blanket protection
+        if metadata.get("memory_type") == "procedures":
+            return self._is_protected_procedure(metadata)
+        return False
+
+    def _is_protected_procedure(self, metadata: dict) -> bool:
+        """Procedure-specific protection check.
+
+        Returns True (protected) if any of:
+        - ``importance == "important"`` ([IMPORTANT] tag)
+        - ``protected is True`` (manual protection flag)
+        - ``version >= 3`` (mature procedure that survived reconsolidation)
+        """
+        if metadata.get("importance") == "important":
+            return True
+        if metadata.get("protected") is True:
+            return True
+        if metadata.get("version", 1) >= 3:
+            return True
+        return False
+
+    def _should_downscale_procedure(
+        self,
+        metadata: dict,
+        now: datetime,
+    ) -> bool:
+        """Procedure-specific downscaling check.
+
+        A procedure is marked low-activation if either:
+        1. Inactive for >180 days AND total usage < 3 (rarely used, old)
+        2. failure_count >= 3 AND utility score < 0.3 (high failure rate)
+
+        Args:
+            metadata: Chunk metadata from the vector store.
+            now: Current datetime for age calculation.
+
+        Returns:
+            True if the procedure should be marked as low-activation.
+        """
+        # Calculate days since last use
+        last_used_str = metadata.get("last_used") or metadata.get("last_accessed_at", "")
+        if not last_used_str:
+            last_used_str = metadata.get("updated_at", "")
+
+        if last_used_str:
+            try:
+                last_used_dt = datetime.fromisoformat(str(last_used_str))
+                days_since = (now - last_used_dt).total_seconds() / 86400.0
+            except (ValueError, TypeError):
+                days_since = float("inf")
+        else:
+            days_since = float("inf")
+
+        success_count = int(metadata.get("success_count", 0))
+        failure_count = int(metadata.get("failure_count", 0))
+        total_usage = success_count + failure_count
+
+        # Condition 1: Long inactivity + low total usage
+        if days_since > PROCEDURE_INACTIVITY_DAYS and total_usage < PROCEDURE_MIN_USAGE:
+            return True
+
+        # Condition 2: High failure rate (utility < 0.3 with >= 3 failures)
+        if failure_count >= PROCEDURE_LOW_UTILITY_MIN_FAILURES:
+            utility = success_count / max(1, total_usage)
+            if utility < PROCEDURE_LOW_UTILITY_THRESHOLD:
+                return True
+
         return False
 
     def _get_vector_store(self):
@@ -102,8 +181,8 @@ class ForgettingEngine:
         total_marked = 0
         store = self._get_vector_store()
 
-        # Scan all relevant collections
-        for memory_type in ("knowledge", "episodes"):
+        # Scan all relevant collections (including procedures)
+        for memory_type in ("knowledge", "episodes", "procedures"):
             collection_name = f"{self.anima_name}_{memory_type}"
             chunks = self._get_all_chunks(collection_name)
             total_scanned += len(chunks)
@@ -120,6 +199,16 @@ class ForgettingEngine:
 
                 # Skip already low
                 if meta.get("activation_level") == "low":
+                    continue
+
+                # Procedure-specific downscaling logic
+                if meta.get("memory_type") == "procedures":
+                    if self._should_downscale_procedure(meta, now):
+                        ids_to_mark.append(chunk["id"])
+                        metas_to_mark.append({
+                            "activation_level": "low",
+                            "low_activation_since": now_iso,
+                        })
                     continue
 
                 # Check access recency
@@ -192,7 +281,7 @@ class ForgettingEngine:
         total_merged = 0
         merged_pairs: list[str] = []
 
-        for memory_type in ("knowledge", "episodes"):
+        for memory_type in ("knowledge", "episodes", "procedures"):
             collection_name = f"{self.anima_name}_{memory_type}"
             chunks = self._get_all_chunks(collection_name)
 
@@ -403,7 +492,7 @@ class ForgettingEngine:
         total_forgotten = 0
         archived_files: list[str] = []
 
-        for memory_type in ("knowledge", "episodes"):
+        for memory_type in ("knowledge", "episodes", "procedures"):
             collection_name = f"{self.anima_name}_{memory_type}"
             chunks = self._get_all_chunks(collection_name)
 
@@ -488,3 +577,60 @@ class ForgettingEngine:
             logger.info("Archived forgotten file: %s -> %s", relative_path, dest_path.name)
         except Exception as e:
             logger.warning("Failed to archive %s: %s", relative_path, e)
+
+    # ── Procedure Archive Cleanup ──────────────────────────────────
+
+    def cleanup_procedure_archives(self) -> dict[str, Any]:
+        """Clean up old procedure version archives (monthly).
+
+        Keeps only the ``PROCEDURE_ARCHIVE_KEEP_VERSIONS`` most recent
+        versions per procedure stem in ``archive/versions/``.
+
+        Returns:
+            Dict with ``deleted_count`` and ``kept_count`` keys.
+        """
+        archive_dir = self.anima_dir / "archive" / "versions"
+        if not archive_dir.exists():
+            return {"deleted_count": 0, "kept_count": 0}
+
+        import re
+
+        # Group archived files by procedure stem.
+        # Naming convention from reconsolidation: {stem}_v{N}_{timestamp}.md
+        stem_files: dict[str, list[Path]] = {}
+        pattern = re.compile(r"^(.+?)_v\d+_\d{8}_\d{6}\.md$")
+
+        for path in archive_dir.iterdir():
+            if not path.is_file():
+                continue
+            m = pattern.match(path.name)
+            if m:
+                stem = m.group(1)
+                stem_files.setdefault(stem, []).append(path)
+
+        deleted_count = 0
+        kept_count = 0
+
+        for stem, files in stem_files.items():
+            # Sort by modification time descending (newest first)
+            files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+
+            keep = files[:PROCEDURE_ARCHIVE_KEEP_VERSIONS]
+            delete = files[PROCEDURE_ARCHIVE_KEEP_VERSIONS:]
+
+            kept_count += len(keep)
+            for path in delete:
+                try:
+                    path.unlink()
+                    deleted_count += 1
+                    logger.debug("Deleted old procedure archive: %s", path.name)
+                except Exception as e:
+                    logger.warning("Failed to delete archive %s: %s", path.name, e)
+
+        if deleted_count > 0:
+            logger.info(
+                "Procedure archive cleanup for anima=%s: deleted=%d, kept=%d",
+                self.anima_name, deleted_count, kept_count,
+            )
+
+        return {"deleted_count": deleted_count, "kept_count": kept_count}

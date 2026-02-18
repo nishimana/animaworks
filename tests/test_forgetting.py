@@ -87,10 +87,15 @@ def _make_chunk(
 class TestIsProtected:
     """Test _is_protected() classification of chunks."""
 
-    def test_is_protected_procedures(self, forgetting_engine):
-        """Verify that memory_type='procedures' is protected from forgetting."""
-        meta = {"memory_type": "procedures", "importance": "normal"}
-        assert forgetting_engine._is_protected(meta) is True
+    def test_is_protected_procedures_not_blanket(self, forgetting_engine):
+        """Verify that memory_type='procedures' is NOT blanket-protected.
+
+        Procedures are no longer in PROTECTED_MEMORY_TYPES. They use
+        utility-based protection via _is_protected_procedure instead.
+        A basic procedure with importance='normal' and version=1 is not protected.
+        """
+        meta = {"memory_type": "procedures", "importance": "normal", "version": 1}
+        assert forgetting_engine._is_protected(meta) is False
 
     def test_is_protected_skills(self, forgetting_engine):
         """Verify that memory_type='skills' is protected from forgetting."""
@@ -275,13 +280,16 @@ class TestSynapticDownscaling:
         assert result["marked_low"] == 0
         mock_store.update_metadata.assert_not_called()
 
-    def test_synaptic_downscaling_scans_knowledge_and_episodes(self, forgetting_engine):
-        """Test that downscaling scans both knowledge and episodes collections."""
+    def test_synaptic_downscaling_scans_knowledge_episodes_procedures(self, forgetting_engine):
+        """Test that downscaling scans knowledge, episodes, and procedures."""
         chunks_knowledge = [
             _make_chunk(doc_id="k1", memory_type="knowledge"),
         ]
         chunks_episodes = [
             _make_chunk(doc_id="e1", memory_type="episodes"),
+        ]
+        chunks_procedures = [
+            _make_chunk(doc_id="p1", memory_type="procedures"),
         ]
 
         call_count = {"n": 0}
@@ -290,7 +298,9 @@ class TestSynapticDownscaling:
             call_count["n"] += 1
             if "knowledge" in collection_name:
                 return chunks_knowledge
-            return chunks_episodes
+            if "episodes" in collection_name:
+                return chunks_episodes
+            return chunks_procedures
 
         mock_store = MagicMock()
         mock_store.update_metadata = MagicMock()
@@ -301,9 +311,9 @@ class TestSynapticDownscaling:
             ):
                 result = forgetting_engine.synaptic_downscaling()
 
-        # Should have been called for both collections
-        assert call_count["n"] == 2
-        assert result["scanned"] == 2
+        # Should have been called for all three collections
+        assert call_count["n"] == 3
+        assert result["scanned"] == 3
 
 
 # ── Complete Forgetting Tests ───────────────────────────────────────
