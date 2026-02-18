@@ -192,16 +192,17 @@ async function _loadAuthSettings() {
       <strong>認証モード:</strong> <code>${escapeHtml(modeLabel[me.auth_mode] || me.auth_mode || "不明")}</code>
     </div>`;
 
-    // Password change form
+    // Password change / initial setup form
+    const isInitial = me.auth_mode === "local_trust";
     html += `
       <div style="margin-bottom: 1.5rem;">
-        <h4 style="margin-bottom: 0.5rem;">パスワード変更</h4>
+        <h4 style="margin-bottom: 0.5rem;">${isInitial ? "パスワード設定" : "パスワード変更"}</h4>
         <form id="changePasswordForm" style="display:flex; flex-direction:column; gap:0.5rem; max-width:300px;">
-          <input type="password" id="currentPassword" placeholder="現在のパスワード" required>
+          ${isInitial ? "" : '<input type="password" id="currentPassword" placeholder="現在のパスワード" required>'}
           <input type="password" id="newPassword" placeholder="新しいパスワード" required>
           <input type="password" id="confirmPassword" placeholder="新しいパスワード（確認）" required>
           <div id="pwChangeResult" class="login-error hidden"></div>
-          <button type="submit" class="btn-login" style="width:auto;">変更</button>
+          <button type="submit" class="btn-login" style="width:auto;">${isInitial ? "設定" : "変更"}</button>
         </form>
       </div>
     `;
@@ -257,21 +258,23 @@ async function _loadAuthSettings() {
         }
 
         try {
+          const curPwEl = document.getElementById("currentPassword");
           const res = await fetch("/api/users/me/password", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             credentials: "same-origin",
             body: JSON.stringify({
-              current_password: document.getElementById("currentPassword").value,
+              current_password: curPwEl ? curPwEl.value : "",
               new_password: newPw,
             }),
           });
           const data = await res.json();
           if (res.ok) {
-            result.textContent = "パスワードを変更しました";
+            result.textContent = isInitial ? "パスワードを設定しました。ページをリロードします…" : "パスワードを変更しました";
             result.style.color = "#22c55e";
             result.classList.remove("hidden");
             pwForm.reset();
+            if (isInitial) setTimeout(() => location.reload(), 1000);
           } else {
             result.style.color = "#ef4444";
             result.textContent = data.error || "変更に失敗しました";

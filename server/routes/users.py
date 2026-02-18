@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from core.auth.manager import (
+    create_session,
     find_user,
     get_all_users,
     hash_password,
@@ -179,25 +180,27 @@ def create_users_router() -> APIRouter:
 
     @router.put("/users/me/password")
     async def change_password(body: ChangePasswordRequest, request: Request):
-        """Change the current user's password."""
+        """Change (or initially set) the current user's password."""
         caller = getattr(request.state, "user", None)
+        auth_config = load_auth()
+
+        # In local_trust mode, middleware skips auth — use owner directly
         if not caller:
-            return JSONResponse(
-                {"error": "Not authenticated"},
-                status_code=401,
-            )
+            if auth_config.auth_mode == "local_trust" and auth_config.owner:
+                caller = auth_config.owner
+            else:
+                return JSONResponse(
+                    {"error": "Not authenticated"},
+                    status_code=401,
+                )
 
-        if not caller.password_hash:
-            return JSONResponse(
-                {"error": "No password set for this account"},
-                status_code=400,
-            )
-
-        if not verify_password(body.current_password, caller.password_hash):
-            return JSONResponse(
-                {"error": "Current password is incorrect"},
-                status_code=401,
-            )
+        if caller.password_hash:
+            # Existing password — require current password verification
+            if not verify_password(body.current_password, caller.password_hash):
+                return JSONResponse(
+                    {"error": "Current password is incorrect"},
+                    status_code=401,
+                )
 
         if len(body.new_password) < 4:
             return JSONResponse(
@@ -211,7 +214,6 @@ def create_users_router() -> APIRouter:
             )
 
         # Update password
-        auth_config = load_auth()
         user = find_user(auth_config, caller.username)
         if not user:
             return JSONResponse(
@@ -219,8 +221,29 @@ def create_users_router() -> APIRouter:
                 status_code=404,
             )
 
+        initial_setup = not user.password_hash
         user.password_hash = hash_password(body.new_password)
+
+        # Upgrade auth mode on initial password setup
+        if initial_setup and auth_config.auth_mode == "local_trust":
+            auth_config.auth_mode = "password"
+
         save_auth(auth_config)
+
+        # Create session so user stays logged in after initial setup
+        if initial_setup:
+            token = create_session(auth_config, user.username)
+            save_auth(auth_config)
+            response = JSONResponse({"status": "ok"})
+            response.set_cookie(
+                key="session_token",
+                value=token,
+                httponly=True,
+                samesite="strict",
+                path="/",
+            )
+            logger.info("User '%s' set initial password", caller.username)
+            return response
 
         logger.info("User '%s' changed their password", caller.username)
         return {"status": "ok"}
