@@ -120,13 +120,20 @@ async function _processStream(res, callbacks, setResponseId, setLastEventId, sig
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let chunkCount = 0;
+
+  logger.debug("_processStream: reader opened");
 
   try {
     while (true) {
       if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        logger.debug(`_processStream: reader done after ${chunkCount} chunks`);
+        break;
+      }
+      chunkCount++;
 
       buffer += decoder.decode(value, { stream: true });
       const { parsed, remaining } = parseConvSSE(buffer);
@@ -139,49 +146,66 @@ async function _processStream(res, callbacks, setResponseId, setLastEventId, sig
         switch (event) {
           case "stream_start":
             if (data.response_id) setResponseId(data.response_id);
+            logger.debug(`SSE stream_start response_id=${data.response_id}`);
             break;
 
           case "text_delta":
+            logger.debug(`SSE text_delta len=${(data.text || "").length}`);
             callbacks.onTextDelta?.(data.text || "");
             break;
 
           case "tool_start":
+            logger.debug(`SSE tool_start tool=${data.tool_name}`);
             callbacks.onToolStart?.(data.tool_name);
             break;
 
           case "tool_end":
+            logger.debug(`SSE tool_end tool=${data.tool_name || "?"}`);
             callbacks.onToolEnd?.();
             break;
 
-          case "done":
+          case "done": {
+            const summaryLen = (data.summary || "").length;
+            logger.debug(`SSE done summary_len=${summaryLen} emotion=${data.emotion || "neutral"}`);
             callbacks.onDone?.({
               summary: data.summary || null,
               emotion: data.emotion || "neutral",
             });
             break;
+          }
 
           case "error":
+            logger.debug(`SSE error: ${getErrorMessage(data)}`);
             callbacks.onError?.({ message: getErrorMessage(data) });
             break;
 
           case "bootstrap":
+            logger.debug(`SSE bootstrap status=${data.status}`);
             callbacks.onBootstrap?.(data);
             break;
 
           case "chain_start":
+            logger.debug("SSE chain_start");
             callbacks.onChainStart?.();
             break;
 
           case "heartbeat_relay_start":
+            logger.debug(`SSE heartbeat_relay_start msg=${data.message || ""}`);
             callbacks.onHeartbeatRelayStart?.({ message: data.message || "" });
             break;
 
           case "heartbeat_relay":
+            logger.debug(`SSE heartbeat_relay len=${(data.text || "").length}`);
             callbacks.onHeartbeatRelay?.({ text: data.text || "" });
             break;
 
           case "heartbeat_relay_done":
+            logger.debug("SSE heartbeat_relay_done");
             callbacks.onHeartbeatRelayDone?.();
+            break;
+
+          default:
+            logger.debug(`SSE unknown event=${event}`);
             break;
         }
       }

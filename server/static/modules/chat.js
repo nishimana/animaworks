@@ -136,20 +136,24 @@ export async function sendChat(message) {
     }
     const body = JSON.stringify(bodyObj);
 
+    logger.debug(`sendChat: starting stream for ${name} msg_len=${message.length}`);
     await streamChat(name, body, null, {
       onTextDelta: (text) => {
         streamingMsg.afterHeartbeatRelay = false;
         streamingMsg.text += text;
+        logger.debug(`onTextDelta: delta_len=${text.length} total_len=${streamingMsg.text.length}`);
         renderStreamingBubble(streamingMsg);
       },
       onToolStart: (toolName) => {
+        logger.debug(`onToolStart: ${toolName}`);
         streamingMsg.activeTool = toolName;
         renderStreamingBubble(streamingMsg);
       },
       onToolEnd: () => {
-        // Keep last tool indicator visible — cleared on done
+        logger.debug("onToolEnd");
       },
       onBootstrap: (data) => {
+        logger.debug(`onBootstrap: status=${data.status}`);
         if (data.status === "started") {
           streamingMsg.bootstrapping = true;
           renderStreamingBubble(streamingMsg);
@@ -164,8 +168,11 @@ export async function sendChat(message) {
           addActivity("system", name, "ブートストラップ中のため応答保留");
         }
       },
-      onChainStart: () => {},
+      onChainStart: () => {
+        logger.debug("onChainStart");
+      },
       onHeartbeatRelayStart: ({ message }) => {
+        logger.debug(`onHeartbeatRelayStart: ${message}`);
         streamingMsg.heartbeatRelay = true;
         streamingMsg.heartbeatText = "";
         streamingMsg.text = "";
@@ -174,20 +181,26 @@ export async function sendChat(message) {
       },
       onHeartbeatRelay: ({ text }) => {
         streamingMsg.heartbeatText = (streamingMsg.heartbeatText || "") + text;
+        logger.debug(`onHeartbeatRelay: delta_len=${text.length} total_len=${(streamingMsg.heartbeatText || "").length}`);
         renderStreamingBubble(streamingMsg);
       },
       onHeartbeatRelayDone: () => {
+        logger.debug(`onHeartbeatRelayDone: transitioning to afterHeartbeatRelay, text_len=${streamingMsg.text.length}`);
         streamingMsg.heartbeatRelay = false;
         streamingMsg.heartbeatText = "";
         streamingMsg.afterHeartbeatRelay = true;
         renderStreamingBubble(streamingMsg);
       },
       onError: ({ message: errorMsg }) => {
+        logger.debug(`onError: ${errorMsg}`);
         streamingMsg.text += `\n[エラー] ${errorMsg}`;
         streamingMsg.streaming = false;
         renderChat();
       },
       onDone: ({ summary }) => {
+        const summaryLen = (summary || "").length;
+        const textLen = streamingMsg.text.length;
+        logger.debug(`onDone: summary_len=${summaryLen} text_len=${textLen} afterRelay=${streamingMsg.afterHeartbeatRelay}`);
         const text = summary || streamingMsg.text;
         streamingMsg.text = text || "(空の応答)";
         streamingMsg.streaming = false;
@@ -195,6 +208,7 @@ export async function sendChat(message) {
         streamingMsg.heartbeatRelay = false;
         streamingMsg.heartbeatText = "";
         streamingMsg.afterHeartbeatRelay = false;
+        logger.debug(`onDone: final text_len=${streamingMsg.text.length}`);
         renderChat();
         addActivity("chat", name, `応答: ${streamingMsg.text.slice(0, 100)}`);
       },
@@ -202,6 +216,7 @@ export async function sendChat(message) {
 
     // Ensure streaming is finalized if stream ended without done event
     if (streamingMsg.streaming) {
+      logger.debug(`sendChat: finalize fallback — text_len=${streamingMsg.text.length} afterRelay=${streamingMsg.afterHeartbeatRelay}`);
       streamingMsg.streaming = false;
       if (!streamingMsg.text) {
         streamingMsg.text = streamingMsg.afterHeartbeatRelay
@@ -211,10 +226,12 @@ export async function sendChat(message) {
       streamingMsg.afterHeartbeatRelay = false;
       renderChat();
     }
+    logger.debug(`sendChat: stream completed for ${name}`);
   } catch (err) {
     if (err.name !== "AbortError") {
       logger.error("Chat stream error", { anima: name, error: err.message, name: err.name });
     }
+    logger.debug(`sendChat: catch — error=${err.message} name=${err.name}`);
     streamingMsg.text = `[エラー] ${err.message}`;
     streamingMsg.streaming = false;
     streamingMsg.activeTool = null;

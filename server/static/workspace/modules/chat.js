@@ -363,23 +363,27 @@ export async function sendMessage(text) {
     }
     const body = JSON.stringify(bodyObj);
 
+    logger.debug(`sendMessage: starting stream for ${selectedAnima} msg_len=${trimmed.length}`);
     await streamChat(selectedAnima, body, null, {
       onTextDelta: (text) => {
         streamingMsg.afterHeartbeatRelay = false;
         streamingMsg.text += text;
+        logger.debug(`onTextDelta: delta_len=${text.length} total_len=${streamingMsg.text.length}`);
         scheduleStreamingUpdate(streamingMsg);
       },
       onToolStart: (toolName) => {
+        logger.debug(`onToolStart: ${toolName}`);
         streamingMsg.activeTool = toolName;
         updateStreamingBubble(streamingMsg);
       },
       onToolEnd: () => {
-        // Keep last tool indicator visible — cleared on done
+        logger.debug("onToolEnd");
       },
       onChainStart: () => {
-        // Session continuation — stream continues
+        logger.debug("onChainStart");
       },
       onHeartbeatRelayStart: ({ message }) => {
+        logger.debug(`onHeartbeatRelayStart: ${message}`);
         streamingMsg.heartbeatRelay = true;
         streamingMsg.heartbeatText = "";
         streamingMsg.text = "";
@@ -387,15 +391,18 @@ export async function sendMessage(text) {
       },
       onHeartbeatRelay: ({ text }) => {
         streamingMsg.heartbeatText = (streamingMsg.heartbeatText || "") + text;
+        logger.debug(`onHeartbeatRelay: delta_len=${text.length} total_len=${(streamingMsg.heartbeatText || "").length}`);
         scheduleStreamingUpdate(streamingMsg);
       },
       onHeartbeatRelayDone: () => {
+        logger.debug(`onHeartbeatRelayDone: transitioning to afterHeartbeatRelay, text_len=${streamingMsg.text.length}`);
         streamingMsg.heartbeatRelay = false;
         streamingMsg.heartbeatText = "";
         streamingMsg.afterHeartbeatRelay = true;
         scheduleStreamingUpdate(streamingMsg);
       },
       onError: ({ message: errorMsg }) => {
+        logger.debug(`onError: ${errorMsg}`);
         streamingMsg.text += `\n[エラー] ${errorMsg}`;
         streamingMsg.streaming = false;
         streamingMsg.activeTool = null;
@@ -403,6 +410,9 @@ export async function sendMessage(text) {
         renderAllMessages();
       },
       onDone: ({ summary }) => {
+        const summaryLen = (summary || "").length;
+        const textLen = streamingMsg.text.length;
+        logger.debug(`onDone: summary_len=${summaryLen} text_len=${textLen} afterRelay=${streamingMsg.afterHeartbeatRelay}`);
         if (summary) {
           streamingMsg.text = summary;
         }
@@ -414,6 +424,7 @@ export async function sendMessage(text) {
         streamingMsg.heartbeatRelay = false;
         streamingMsg.heartbeatText = "";
         streamingMsg.afterHeartbeatRelay = false;
+        logger.debug(`onDone: final text_len=${streamingMsg.text.length}`);
         setState({ chatMessages: [...getState().chatMessages] });
         renderAllMessages();
       },
@@ -421,6 +432,7 @@ export async function sendMessage(text) {
 
     // Ensure finalized if stream ended without done event
     if (streamingMsg.streaming) {
+      logger.debug(`sendMessage: finalize fallback — text_len=${streamingMsg.text.length} afterRelay=${streamingMsg.afterHeartbeatRelay}`);
       streamingMsg.streaming = false;
       if (!streamingMsg.text) {
         streamingMsg.text = streamingMsg.afterHeartbeatRelay
@@ -431,10 +443,12 @@ export async function sendMessage(text) {
       setState({ chatMessages: [...getState().chatMessages] });
       renderAllMessages();
     }
+    logger.debug(`sendMessage: stream completed for ${selectedAnima}`);
   } catch (err) {
     if (err.name !== "AbortError") {
       logger.error("Chat stream error", { anima: selectedAnima, error: err.message, name: err.name });
     }
+    logger.debug(`sendMessage: catch — error=${err.message} name=${err.name}`);
     streamingMsg.text = `[エラー] ${err.message}`;
     streamingMsg.streaming = false;
     streamingMsg.activeTool = null;
