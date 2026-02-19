@@ -950,7 +950,7 @@ class DigitalAnima:
 
         # Record received message content to episodes so that
         # inter-Anima communications survive in episodic memory.
-        _msg_ts = datetime.now().strftime("%H:%M")
+        _msg_ts = now_jst().strftime("%H:%M")
         _recordable = [m for m in messages if m.type != "ack"]
         if len(_recordable) > 50:
             logger.warning(
@@ -1001,7 +1001,7 @@ class DigitalAnima:
         checkpoint_path = self.anima_dir / "state" / "heartbeat_checkpoint.json"
         try:
             checkpoint_data = {
-                "ts": datetime.now().isoformat(),
+                "ts": now_iso(),
                 "trigger": "heartbeat",
                 "unread_count": unread_count,
             }
@@ -1065,7 +1065,7 @@ class DigitalAnima:
                     summary=accumulated_text or "(no result)",
                 )
 
-            self._last_activity = datetime.now()
+            self._last_activity = now_jst()
 
             # Activity log: heartbeat end
             try:
@@ -1083,7 +1083,7 @@ class DigitalAnima:
 
             # A-3: Record important heartbeat actions to episodes
             if result.summary and "HEARTBEAT_OK" not in result.summary:
-                ts = datetime.now().strftime("%H:%M")
+                ts = now_jst().strftime("%H:%M")
                 episode_entry = (
                     f"## {ts} ハートビート活動\n\n"
                     f"{result.summary[:500]}"
@@ -1219,7 +1219,7 @@ class DigitalAnima:
                 f"### エラー情報\n\n"
                 f"- エラー種別: {type(error).__name__}\n"
                 f"- エラー内容: {str(error)[:200]}\n"
-                f"- 発生日時: {datetime.now().isoformat()}\n"
+                f"- 発生日時: {now_iso()}\n"
                 f"- 未処理メッセージ数: {unread_count}\n"
             )
             recovery_path.write_text(recovery_content, encoding="utf-8")
