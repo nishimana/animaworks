@@ -288,14 +288,14 @@ def create_app(animas_dir: Path, shared_dir: Path) -> FastAPI:
     app.add_middleware(RequestLoggingMiddleware)
 
     # ── Static asset cache control ─────────────────────────
-    # Prevent aggressive browser caching of JS/CSS modules so code
+    # Prevent aggressive browser caching of static assets so code
     # updates are picked up without clearing browser cache.
     @app.middleware("http")
     async def static_cache_control(request: Request, call_next):  # type: ignore[no-untyped-def]
         response = await call_next(request)
         path = request.url.path
-        if path.endswith((".js", ".css")):
-            response.headers["Cache-Control"] = "no-cache"
+        if path.endswith((".js", ".css", ".html")) or path == "/" or path == "/workspace":
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         return response
 
     # ── Setup guard middleware ──────────────────────────────

@@ -40,19 +40,23 @@ export function navigateTo(hash) {
 
 // ── Route Registration ──────────────────────
 
+// Cache-bust suffix for ES module dynamic imports.
+// Increment on code changes to force browser re-fetch.
+const _v = "?v=20260219a";
+
 function registerRoutes() {
-  routes["/"] = () => import("../pages/home.js");
-  routes["/activity"] = () => import("../pages/activity.js");
-  routes["/chat"] = () => import("../pages/chat.js");
-  routes["/board"] = () => import("../pages/board.js");
-  routes["/setup"] = () => import("../pages/setup.js");
-  routes["/users"] = () => import("../pages/users.js");
-  routes["/animas"] = () => import("../pages/animas.js");
-  routes["/processes"] = () => import("../pages/processes.js");
-  routes["/server"] = () => import("../pages/server-page.js");
-  routes["/memory"] = () => import("../pages/memory.js");
-  routes["/logs"] = () => import("../pages/logs.js");
-  routes["/assets"] = () => import("../pages/assets.js");
+  routes["/"] = () => import("../pages/home.js" + _v);
+  routes["/activity"] = () => import("../pages/activity.js" + _v);
+  routes["/chat"] = () => import("../pages/chat.js" + _v);
+  routes["/board"] = () => import("../pages/board.js" + _v);
+  routes["/setup"] = () => import("../pages/setup.js" + _v);
+  routes["/users"] = () => import("../pages/users.js" + _v);
+  routes["/animas"] = () => import("../pages/animas.js" + _v);
+  routes["/processes"] = () => import("../pages/processes.js" + _v);
+  routes["/server"] = () => import("../pages/server-page.js" + _v);
+  routes["/memory"] = () => import("../pages/memory.js" + _v);
+  routes["/logs"] = () => import("../pages/logs.js" + _v);
+  routes["/assets"] = () => import("../pages/assets.js" + _v);
 }
 
 // ── Route Handler ───────────────────────────

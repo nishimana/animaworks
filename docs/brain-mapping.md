@@ -1,174 +1,178 @@
-# AnimaWorks Brain Mapping — 人間の脳とのアーキテクチャ対応
+# AnimaWorks Brain Mapping — Architecture Mapped to the Human Brain
 
-> 作成日: 2026-02-19
-> 関連: [vision.ja.md](vision.ja.md), [memory.ja.md](memory.ja.md)
+**[日本語版](brain-mapping.ja.md)**
 
----
+> Created: 2026-02-19
+> Related: [vision.md](vision.md), [memory.md](memory.md)
 
-## 背景
-
-AnimaWorksの設計者は精神科医であり、30年以上のプログラミング経験を持つエンジニアでもある。AnimaWorksの記憶システム・自律機構・実行アーキテクチャは、神経科学の臨床的知見に基づいて**意図的に**人間の脳の構造をマッピングしている。これは単なるメタファーではなく、脳の情報処理アーキテクチャを設計パターンとして再利用する試みである。
-
-精神科の臨床では、記憶障害・注意障害・実行機能障害など、脳の各サブシステムの機能不全を日常的に観察する。どのサブシステムが欠けると何が起きるかを知っているからこそ、AIエージェントに必要なサブシステムを同定し、それぞれの役割を明確に分離する設計が可能になった。
+> **Note:** Diagrams and illustrations will be added in a future update.
 
 ---
 
-## 全体マッピング
+## Background
 
-### 大脳新皮質 — LLMモデル
+The designer of AnimaWorks is a psychiatrist with over 30 years of programming experience. AnimaWorks' memory system, autonomic mechanisms, and execution architecture are **intentionally** mapped to the structure of the human brain, grounded in clinical neuroscience. This is not merely a metaphor -- it is an attempt to reuse the brain's information-processing architecture as a design pattern.
 
-| LLMの機能 | 脳領域 | 説明 |
+In psychiatric practice, one routinely observes dysfunctions of the brain's various subsystems: memory disorders, attention disorders, executive function disorders, and more. Knowing what happens when each subsystem is impaired made it possible to identify the subsystems an AI agent requires and to design a clear separation of their respective roles.
+
+---
+
+## Overall Mapping
+
+### Neocortex -- The LLM
+
+| LLM Function | Brain Region | Description |
 |---|---|---|
-| 推論・意思決定 | 前頭前野（PFC） | 実行機能。プライミングで注入された記憶を受け取り、判断する |
-| 言語理解 | ウェルニッケ野（側頭葉） | 入力メッセージの意味理解 |
-| 言語生成 | ブローカ野（前頭葉） | 応答テキストの産出 |
-| 事前学習済み知識 | 側頭皮質の結晶化パターン | LLMの重みに焼き込まれた世界知識。ファイルベース記憶とは別系統の「生まれ持った知性」 |
-| Transformer Attention | 頭頂連合野 + PFCの選択的注意 | コンテキスト内の関連情報への注意配分 |
+| Reasoning & decision-making | Prefrontal cortex (PFC) | Executive function. Receives memories injected by priming and makes judgments |
+| Language comprehension | Wernicke's area (temporal lobe) | Semantic understanding of input messages |
+| Language production | Broca's area (frontal lobe) | Generation of response text |
+| Pre-trained knowledge | Crystallized patterns in temporal cortex | World knowledge baked into LLM weights. A separate system from file-based memory -- "innate intelligence" |
+| Transformer Attention | Parietal association cortex + PFC selective attention | Allocation of attention to relevant information within the context |
 
-LLMはその能力全体としては**大脳新皮質（neocortex）全体**に相当する。ただしAnimaWorksの設計では、フレームワークが皮質下構造（記憶の固定化・忘却・覚醒維持）を代行するため、LLMに残された役割は実質的に**前頭前野（PFC）の意識的処理**に純化されている。
+The LLM in its entirety corresponds to the **neocortex** as a whole. However, in AnimaWorks' design, because the framework handles subcortical functions (memory consolidation, forgetting, arousal maintenance), the role left to the LLM is effectively distilled into the **conscious processing of the prefrontal cortex (PFC)**.
 
-memory.ja.mdが述べる通り：
+As memory.md states:
 
-> エージェント（LLM）は「考える人」であり、「自分の脳の管理者」ではない。
+> The agent (LLM) is "the one who thinks," not "the administrator of its own brain."
 
-### 事前学習知識とファイルベース記憶の二重性
+### Duality of Pre-trained Knowledge and File-based Memory
 
-LLMの事前学習済み重みに焼き込まれた知識と、AnimaWorksのファイルベース記憶は**別系統**である。人間の脳でも、大脳皮質に結晶化されたパターン（暗黙知・結晶性知能）と海馬経由のエピソード記憶は独立した系統として機能する。
+The knowledge baked into the LLM's pre-trained weights and AnimaWorks' file-based memory are **separate systems**. In the human brain as well, patterns crystallized in the cerebral cortex (implicit knowledge / crystallized intelligence) and episodic memory via the hippocampus function as independent systems.
 
-| 知識の種類 | 人間の脳 | AnimaWorks |
+| Type of Knowledge | Human Brain | AnimaWorks |
 |---|---|---|
-| 生まれ持った知性 | 結晶性知能（大脳皮質のパターン） | LLMの事前学習済み重み |
-| 経験で獲得した知識 | 流動性知能 + エピソード記憶 | ファイルベース記憶（episodes/, knowledge/, procedures/） |
+| Innate intelligence | Crystallized intelligence (cortical patterns) | LLM pre-trained weights |
+| Experientially acquired knowledge | Fluid intelligence + episodic memory | File-based memory (episodes/, knowledge/, procedures/) |
 
-この区別はvision.ja.mdの「不完全な個」の設計思想と整合する。事前学習知識だけでは足りないからこそ、経験に基づく記憶システムが必要になる。
+This distinction aligns with the "imperfect individual" design philosophy described in vision.md. Precisely because pre-trained knowledge alone is insufficient, an experience-based memory system is necessary.
 
 ---
 
-### 記憶システム — 海馬・大脳皮質・基底核
+### Memory System -- Hippocampus, Cerebral Cortex, & Basal Ganglia
 
-| 人間の記憶 | 脳領域 | AnimaWorks実装 | 特性 |
+| Human Memory | Brain Region | AnimaWorks Implementation | Characteristics |
 |---|---|---|---|
-| **ワーキングメモリ** | 前頭前皮質 | LLMコンテキストウィンドウ | 容量制限あり。「今考えていること」の一時保持 |
-| **エピソード記憶** | 海馬 → 新皮質 | `episodes/` | 「いつ何があったか」の時系列記録 |
-| **意味記憶** | 側頭葉皮質 | `knowledge/` | 文脈から切り離された教訓・知識 |
-| **手続き記憶** | 基底核・小脳 | `procedures/`, `skills/` | 「どうやるか」。繰り返しで強化される |
-| **対人記憶** | 紡錘状回・側頭極 | `shared/users/` | 「この人は誰か」の自動想起 |
+| **Working memory** | Prefrontal cortex | LLM context window | Capacity-limited. Temporary holding of "what is currently being thought about" |
+| **Episodic memory** | Hippocampus -> neocortex | `episodes/` | Chronological record of "when and what happened" |
+| **Semantic memory** | Temporal cortex | `knowledge/` | Lessons and knowledge decoupled from context |
+| **Procedural memory** | Basal ganglia, cerebellum | `procedures/`, `skills/` | "How to do it." Strengthened through repetition |
+| **Person memory** | Fusiform gyrus, temporal pole | `shared/users/` | Automatic recall of "who is this person" |
 
-### ワーキングメモリの内部構造 — Baddeleyモデル
+### Internal Structure of Working Memory -- Baddeley's Model
 
-Baddeley (2000) のワーキングメモリモデルに基づく：
+Based on Baddeley (2000):
 
-| Baddeleyの構成要素 | 機能 | AnimaWorks実装 |
+| Baddeley's Component | Function | AnimaWorks Implementation |
 |---|---|---|
-| **中央実行系** | 注意制御・長期記憶からの取得統括 | エージェントオーケストレーター |
-| **エピソードバッファ** | 複数ソースの統一表象への統合 | コンテキスト組立層（プライミング結果 + 会話履歴） |
-| **音韻ループ** | 言語情報の一時保持 | テキストバッファ（直近の会話ターン） |
+| **Central executive** | Attentional control; orchestration of retrieval from long-term memory | Agent orchestrator |
+| **Episodic buffer** | Integration of multiple sources into a unified representation | Context assembly layer (priming results + conversation history) |
+| **Phonological loop** | Temporary holding of verbal information | Text buffer (recent conversation turns) |
 
-Cowan (2005) の知見に従い、ワーキングメモリを「活性化された長期記憶のスポットライト」として捉える。コンテキストウィンドウは独立したストアではなく、長期記憶のうち現在注意が向いている部分である。
+Following Cowan (2005), working memory is understood as a "spotlight on activated long-term memory." The context window is not an independent store, but rather the portion of long-term memory that currently has attention directed toward it.
 
 ---
 
-### 記憶の想起 — 二重経路
+### Memory Recall -- Dual Pathways
 
-| 想起経路 | 脳のプロセス | AnimaWorks実装 |
+| Recall Pathway | Brain Process | AnimaWorks Implementation |
 |---|---|---|
-| **自動想起** | 海馬CA3の自己連合ネットワークによるパターン補完。無意識的・高速（250-500ms）・抑制不可 | プライミングレイヤー（4チャネル並列検索） |
-| **意図的想起** | 前頭前皮質（PFC）による戦略的検索。意識的・遅い | `search_memory` / `read_memory_file` ツール |
+| **Automatic recall** | Pattern completion by the CA3 auto-associative network of the hippocampus. Unconscious, fast (250-500 ms), unsuppressible | Priming layer (4-channel parallel search) |
+| **Deliberate recall** | Strategic search by the prefrontal cortex (PFC). Conscious, slow | `search_memory` / `read_memory_file` tools |
 
-### 拡散活性化 — Collins & Loftus (1975)
+### Spreading Activation -- Collins & Loftus (1975)
 
-| 検索信号 | 脳の対応 | AnimaWorks実装 |
+| Search Signal | Brain Counterpart | AnimaWorks Implementation |
 |---|---|---|
-| 意味的近傍の発見 | 概念ノード間の拡散活性化 | 密ベクトル類似度検索（ChromaDB） |
-| 最近の記憶の優先 | 近時効果 | 時間減衰関数（半減期30日） |
-| 頻用記憶の強化 | ヘブの法則・長期増強（LTP） | アクセス頻度ブースト |
-| 多ホップ連想 | 連想ネットワークの伝播 | ナレッジグラフ + Personalized PageRank |
+| Semantic neighborhood discovery | Spreading activation among concept nodes | Dense vector similarity search (ChromaDB) |
+| Prioritization of recent memories | Recency effect | Time-decay function (half-life: 30 days) |
+| Strengthening of frequently used memories | Hebb's rule / Long-term potentiation (LTP) | Access frequency boost |
+| Multi-hop association | Propagation through associative networks | Knowledge graph + Personalized PageRank |
 
 ---
 
-### 記憶の固定化 — 睡眠と統合
+### Memory Consolidation -- Sleep and Integration
 
-| AnimaWorks | 脳のプロセス | 説明 |
+| AnimaWorks | Brain Process | Description |
 |---|---|---|
-| **即時符号化**（セッション境界） | 海馬の高速1ショット符号化 | 会話終了時に差分要約をepisodes/に記録 |
-| **日次固定化**（深夜cron） | NREM睡眠の徐波-紡錘波-リップルカスケード | episodes/ → knowledge/への知識抽出・バリデーション |
-| **週次統合** | 新皮質の長期統合 | knowledge/の重複排除・マージ、パターン蒸留 |
-| **NLI+LLMバリデーション** | 海馬のパターン分離 | ハルシネーション排除。エピソードと抽出知識の整合性検証 |
-| **予測誤差ベース再固定化** | Nader et al. (2000) の再固定化理論 | 既存記憶と矛盾する新情報で記憶を更新 |
+| **Immediate encoding** (session boundary) | Hippocampal rapid one-shot encoding | At conversation end, a differential summary is recorded in episodes/ |
+| **Daily consolidation** (midnight cron) | NREM slow-wave -- spindle -- ripple cascade | Knowledge extraction and validation from episodes/ to knowledge/ |
+| **Weekly integration** | Neocortical long-term consolidation | Deduplication and merging of knowledge/, pattern distillation |
+| **NLI + LLM validation** | Hippocampal pattern separation | Hallucination elimination. Consistency verification between episodes and extracted knowledge |
+| **Prediction-error-based reconsolidation** | Reconsolidation theory, Nader et al. (2000) | Updating memory when new information contradicts existing memory |
 
 ---
 
-### 忘却 — シナプスホメオスタシス
+### Forgetting -- Synaptic Homeostasis
 
-Tononi & Cirelli (2003) のシナプスホメオスタシス仮説に基づく：
+Based on the synaptic homeostasis hypothesis of Tononi & Cirelli (2003):
 
-| AnimaWorks | 脳のプロセス | 説明 |
+| AnimaWorks | Brain Process | Description |
 |---|---|---|
-| **日次ダウンスケーリング** | NREM睡眠のシナプスダウンスケーリング | 低活性チャンクのマーク |
-| **神経新生的再編** | 海馬歯状回の神経新生による記憶回路再編 | 低活性+類似チャンクのLLM統合 |
-| **完全忘却** | 閾値以下のシナプス消失 | アーカイブ→削除 |
-| **忘却耐性**（procedures, skills） | 基底核の手続き記憶は忘却に強い | version >= 3 や protected: true で保護 |
+| **Daily downscaling** | Synaptic downscaling during NREM sleep | Marking of low-activity chunks |
+| **Neurogenesis-inspired reorganization** | Memory circuit reorganization via neurogenesis in the hippocampal dentate gyrus | LLM-driven merging of low-activity + similar chunks |
+| **Complete forgetting** | Elimination of sub-threshold synapses | Archive -> deletion |
+| **Forgetting resistance** (procedures, skills) | Procedural memory in basal ganglia is resistant to forgetting | Protected by version >= 3 or protected: true |
 
 ---
 
-### 覚醒・自律機構
+### Arousal & Autonomic Mechanisms
 
-| AnimaWorks | 脳領域 | 説明 |
+| AnimaWorks | Brain Region | Description |
 |---|---|---|
-| **Heartbeat**（定期巡回） | **網様体賦活系（ARAS）** | 覚醒状態の維持。意識の内容は指定せず、意識の前提条件を提供する。律動的に発火し、なければ休眠（昏睡）に陥る |
-| **Cron**（定時タスク） | 視床下部の概日リズム（SCN） | 時刻に基づく定期的な行動トリガー。睡眠-覚醒サイクル、日次/週次/月次の生体リズム |
-| **ProcessSupervisor** | 自律神経系 | プロセスの生死を管理。意識外で動作し、各Animaの起動・監視・再起動を担う |
-| **Unix Domain Socket IPC** | 神経線維束（白質路） | Anima間プロセスの物理的な通信路 |
-| **Messenger** | シナプス伝達 | メッセージの送受信。カプセル化された個の間をテキストで接続する |
+| **Heartbeat** (periodic patrol) | **Reticular activating system (ARAS)** | Maintenance of arousal. Does not specify the content of consciousness; provides the precondition for consciousness. Fires rhythmically -- without it, dormancy (coma) ensues |
+| **Cron** (scheduled tasks) | Hypothalamic circadian rhythm (SCN) | Time-based periodic action triggers. Sleep-wake cycle, daily/weekly/monthly biorhythms |
+| **ProcessSupervisor** | Autonomic nervous system | Manages process life and death. Operates outside consciousness, handling startup, monitoring, and restart of each Anima |
+| **Unix Domain Socket IPC** | Nerve fiber bundles (white matter tracts) | Physical communication pathways between Anima processes |
+| **Messenger** | Synaptic transmission | Sending and receiving messages. Connecting encapsulated individuals through text |
 
-#### Heartbeat = 網様体賦活系（ARAS）の詳細
+#### Heartbeat = Reticular Activating System (ARAS) in Detail
 
-上行性網様体賦活系（Ascending Reticular Activating System）は脳幹の網様体から視床を経由して大脳皮質全体に投射し、覚醒状態を維持する。その特性とAnimaWorksのheartbeatは以下の点で対応する：
+The Ascending Reticular Activating System (ARAS) projects from the brainstem's reticular formation through the thalamus to the entire cerebral cortex, maintaining the state of arousal. Its characteristics correspond to AnimaWorks' heartbeat as follows:
 
-| ARAS の特性 | Heartbeat の特性 |
+| ARAS Characteristic | Heartbeat Characteristic |
 |---|---|
-| 覚醒状態を維持する（意識の内容は指定しない） | Animaを周期的に起動する（何を考えるかは heartbeat.md に委ねる） |
-| 自動的・律動的に発火する | 設定された間隔で自動実行される |
-| 機能停止すると昏睡に陥る | heartbeatがなければ外部刺激（メッセージ）がないと休眠する |
-| 意識の前提条件であり、意識そのものではない | 自律行動の前提条件であり、判断そのものではない |
-| 感覚入力で覚醒レベルが変動する | メッセージ受信で即座に起動する（heartbeat周期外でも） |
+| Maintains arousal (does not specify the content of consciousness) | Periodically activates the Anima (what to think about is delegated to heartbeat.md) |
+| Fires automatically and rhythmically | Executes automatically at configured intervals |
+| Functional cessation leads to coma | Without heartbeat, the Anima remains dormant unless externally stimulated (by messages) |
+| A precondition for consciousness, not consciousness itself | A precondition for autonomous action, not the judgment itself |
+| Arousal level fluctuates with sensory input | Activates immediately upon receiving a message (even outside the heartbeat cycle) |
 
 ---
 
-### 組織構造 — 社会脳
+### Organizational Structure -- The Social Brain
 
-| AnimaWorks | 脳/心理学の対応 | 説明 |
+| AnimaWorks | Brain / Psychology Counterpart | Description |
 |---|---|---|
-| **supervisor-subordinate階層** | 社会的階層の神経基盤（PFC-扁桃体回路） | 指示と報告の流れ |
-| **カプセル化（内部不可視）** | 心の理論（Theory of Mind） | 他者の内部状態は推測するしかない |
-| **メッセージング通信** | 言語コミュニケーション | テキストのみで繋がる。共有メモリや直接参照はしない |
-| **identity.md（人格）** | パーソナリティ（前頭前野-辺縁系の安定パターン） | 不変のベースライン。判断の基盤 |
-| **injection.md（役割）** | 社会的役割・職業的アイデンティティ | 可変。組織内での行動指針 |
+| **Supervisor-subordinate hierarchy** | Neural basis of social hierarchy (PFC-amygdala circuit) | Flow of instructions and reports |
+| **Encapsulation (internal state invisible)** | Theory of Mind (ToM) | The internal state of others can only be inferred |
+| **Message-based communication** | Linguistic communication | Connected only through text. No shared memory or direct references |
+| **identity.md (personality)** | Personality (stable PFC-limbic patterns) | Immutable baseline. Foundation for judgment |
+| **injection.md (role)** | Social role / occupational identity | Mutable. Behavioral guidelines within the organization |
 
 ---
 
-## 設計原則の神経科学的根拠
+## Neuroscientific Rationale for Design Principles
 
-### なぜコンテキストウィンドウの制限は「機能」なのか
+### Why Context Window Limits Are a "Feature"
 
-人間のワーキングメモリ容量は 4±1 チャンク（Cowan, 2001）に制限される。これは欠陥ではなく、**選択的注意を強制することで判断の質を担保する進化的適応**である。全ての記憶が同時に意識に上ると、関連情報の選別ができず、判断が劣化する。
+Human working memory capacity is limited to 4 +/- 1 chunks (Cowan, 2001). This is not a defect but an **evolutionary adaptation that enforces selective attention, thereby ensuring quality of judgment**. If all memories surfaced in consciousness simultaneously, relevant information could not be selected, and judgment would deteriorate.
 
-AnimaWorksはこの原則を「設計上の特徴」として採用している。必要な情報だけをプライミングで想起し、すっきりしたコンテキストで判断させる。
+AnimaWorks adopts this principle as a "design feature." Only the necessary information is recalled through priming, enabling judgment within a clean context.
 
-### なぜ忘却が必要なのか
+### Why Forgetting Is Necessary
 
-睡眠中のシナプスダウンスケーリングは、覚醒時に強化されたシナプスを全体的に弱め、信号対雑音比（S/N比）を維持する。忘却なしには記憶の蓄積がノイズとなり、検索精度が劣化する。
+Synaptic downscaling during sleep globally weakens synapses that were strengthened during wakefulness, maintaining the signal-to-noise ratio (SNR). Without forgetting, accumulated memories become noise, degrading search precision.
 
-AnimaWorksの能動的忘却は、この生物学的メカニズムを再現し、ベクトル検索の精度を長期的に維持する。
+AnimaWorks' active forgetting reproduces this biological mechanism, maintaining vector search accuracy over the long term.
 
-### なぜ「不完全な個」の協働が全能の個体より堅牢なのか
+### Why Collaboration Among "Imperfect Individuals" Is More Robust Than Omniscient Individuals
 
-人間の組織が機能するのは、各メンバーが限られた視野と記憶で判断し、不完全な情報を自分の言葉で伝え合うからである（vision.ja.md）。これは認知負荷理論（Sweller, 1988）と分散認知（Hutchins, 1995）の知見と整合する。
+Human organizations function because each member makes judgments with limited perspective and memory, communicating imperfect information in their own words (vision.md). This aligns with Cognitive Load Theory (Sweller, 1988) and Distributed Cognition (Hutchins, 1995).
 
 ---
 
-## まとめ
+## Summary
 
-AnimaWorksは、精神科医の臨床的知見とエンジニアリング経験の交差点から生まれた設計である。脳の情報処理アーキテクチャは、生物学的基質（ニューロン）に依存しない**汎用的な設計パターン**として再利用可能であり、AnimaWorksはそれを実証するシステムである。
+AnimaWorks is a design born at the intersection of a psychiatrist's clinical knowledge and engineering experience. The brain's information-processing architecture is a **universal design pattern** that can be reused independently of its biological substrate (neurons), and AnimaWorks is a system that demonstrates this.
 
-LLMを大脳新皮質、記憶システムを海馬-皮質系、heartbeatを網様体賦活系、忘却をシナプスホメオスタシスとしてマッピングし、これらが統合的に動作することで、「自律的に考え、学び、忘れ、協働する存在」を実現する。
+By mapping the LLM to the neocortex, the memory system to the hippocampal-cortical system, heartbeat to the reticular activating system, and forgetting to synaptic homeostasis -- and by having these operate in an integrated manner -- AnimaWorks realizes "an entity that autonomously thinks, learns, forgets, and collaborates."
