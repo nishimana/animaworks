@@ -22,6 +22,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from core.paths import load_prompt
+
 logger = logging.getLogger("animaworks.consolidation")
 
 
@@ -651,65 +653,29 @@ class ConsolidationEngine:
         related_knowledge = self._fetch_related_knowledge(episodes_text)
 
         # Build consolidation prompt
-        prompt = f"""以下は{self.anima_name}の過去24時間のエピソード記録です。
-
-【エピソード】
-{episodes_text}
-
-【既存の知識ファイル一覧】
-{knowledge_list}
-"""
+        prompt = load_prompt(
+            "memory/daily_consolidation",
+            anima_name=self.anima_name,
+            episodes_text=episodes_text,
+            knowledge_list=knowledge_list,
+        )
 
         # Inject related knowledge content
         if related_knowledge:
-            prompt += f"""
-【関連する既存知識の内容】
-{related_knowledge}
-"""
-
-        prompt += """
-タスク:
-以下のエピソードから新しい教訓・パターン・方針を抽出してください。
-
-1. **新しい教訓やパターン**: エピソードから学んだことで、今後の判断に役立つもの
-2. **既存知識の更新**: 既存の知識ファイルに追加・修正すべき内容
-3. **新規知識ファイル**: 新しいトピックとして独立した知識ファイルが必要な場合
-
-出力形式:
-## 既存ファイル更新
-- ファイル名: knowledge/xxx.md
-  追加内容: (具体的な内容をMarkdown形式で記述)
-
-## 新規ファイル作成
-- ファイル名: knowledge/yyy.md
-  内容: (ファイル全体の内容をMarkdown形式で記述)
-
-注意事項:
-- 以下の情報は必ず抽出してください:
-  - 具体的な設定値・APIキー・認証情報の格納場所
-  - ユーザーやシステムの識別情報（ID、名前、役割）
-  - 手順・ワークフロー・プロセスの記録
-  - チーム構成・役割分担・指揮系統
-  - 技術的な判断とその理由
-- 完全に同一内容の繰り返しのみスキップしてください
-- 挨拶のみの会話や実質的な情報を含まないやり取りは知識化不要です
-- 既存ファイルがない場合は、すべて新規ファイルとして提案してください
-- ファイル名はトピックを表すわかりやすい名前にしてください（英数字とハイフン推奨）
-- コードフェンス（```）で囲まないでください
-"""
+            prompt += load_prompt(
+                "memory/daily_consolidation_related",
+                related_knowledge=related_knowledge,
+            )
 
         # Inject resolved events into prompt
         if resolved_events:
             resolved_text = "\n".join(
                 f"- {r.get('ts', '')[:16]}: {r.get('content', '')}" for r in resolved_events
             )
-            prompt += f"""
-【解決済み案件】
-以下の案件は解決済みです。既存の知識ファイルに「未解決」「対応中」「調査中」等の
-記載がある場合は、「解決済み」に更新してください。
-
-{resolved_text}
-"""
+            prompt += load_prompt(
+                "memory/daily_consolidation_resolved",
+                resolved_text=resolved_text,
+            )
 
         # Call LLM
         try:
@@ -738,17 +704,9 @@ class ConsolidationEngine:
                     "for anima=%s",
                     self.anima_name,
                 )
-                retry_prompt = (
-                    "先ほどの出力が期待された形式と異なりました。\n"
-                    "以下の形式で再出力してください:\n\n"
-                    "## 既存ファイル更新\n"
-                    "- ファイル名: knowledge/xxx.md\n"
-                    "  追加内容: (内容)\n\n"
-                    "## 新規ファイル作成\n"
-                    "- ファイル名: knowledge/yyy.md\n"
-                    "  内容: (内容)\n\n"
-                    "コードフェンス（```）は使わないでください。\n\n"
-                    f"元の内容:\n{result[:2000]}"
+                retry_prompt = load_prompt(
+                    "memory/consolidation_retry",
+                    previous_result=result[:2000],
                 )
                 retry_response = await litellm.acompletion(
                     model=model,
@@ -1278,30 +1236,15 @@ class ConsolidationEngine:
                 content2 = (self.knowledge_dir / file2).read_text(encoding="utf-8")
 
                 # Build merge prompt
-                prompt = f"""以下は{self.anima_name}の類似した2つの知識ファイルです。
-
-【ファイル1: {file1}】
-{content1}
-
-【ファイル2: {file2}】
-{content2}
-
-類似度: {similarity:.2f}
-
-タスク:
-この2つのファイルを1つに統合してください。
-
-1. 重複する内容は1つにまとめる
-2. 矛盾する記述があれば、より新しい/詳細な方を採用
-3. 両方の情報を失わないように統合する
-
-出力形式:
-## 統合ファイル名
-(file1とfile2を統合した適切なファイル名を提案。knowledge/は不要)
-
-## 統合内容
-(統合後のファイル全体の内容をMarkdown形式で記述)
-"""
+                prompt = load_prompt(
+                    "memory/knowledge_merge",
+                    anima_name=self.anima_name,
+                    file1=file1,
+                    content1=content1,
+                    file2=file2,
+                    content2=content2,
+                    similarity=f"{similarity:.2f}",
+                )
 
                 # Call LLM
                 import litellm
@@ -1408,21 +1351,12 @@ class ConsolidationEngine:
                     continue
 
                 # Compress with LLM
-                prompt = f"""以下は{self.anima_name}の{date_str}のエピソード記録です。
-
-【エピソード】
-{content}
-
-タスク:
-主要な出来事のみを抽出し、簡潔に要約してください。
-些細な会話や定型的なやり取りは省略してください。
-
-出力形式:
-## {date_str} 要約
-- (要点1)
-- (要点2)
-...
-"""
+                prompt = load_prompt(
+                    "memory/episode_compression",
+                    anima_name=self.anima_name,
+                    date_str=date_str,
+                    content=content,
+                )
 
                 import litellm
 

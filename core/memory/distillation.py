@@ -24,75 +24,11 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+from core.paths import load_prompt
+
 logger = logging.getLogger("animaworks.distillation")
 
 RAG_DUPLICATE_THRESHOLD = 0.85
-
-# ── Classification Prompt ──────────────────────────────────────
-
-CLASSIFICATION_PROMPT = """\
-以下のエピソード（行動記録）の内容を分類し、知識と手順を抽出してください。
-
-【分類基準】
-- **knowledge**: 教訓、方針、事実、パターン認識、原則（「なぜ」「何が」の知識）
-- **procedures**: 手順、ワークフロー、チェックリスト、作業フロー（「どうやるか」の手順）
-- **skip**: 固定化不要（雑談、一時的な情報、挨拶のみの会話）
-
-【エピソード】
-{episodes_text}
-
-【既存の手順書（重複避け）】
-{existing_procedures}
-
-【出力形式】
-以下のセクションに分けて出力してください。該当がなければ「(なし)」と記載。
-
-## knowledge抽出
-- ファイル名: knowledge/xxx.md
-  内容: (知識の本文をMarkdown形式で記述)
-
-## procedure抽出
-- ファイル名: procedures/zzz.md
-  description: この手順の概要（1行）
-  tags: tag1, tag2
-  内容: (手順の本文をMarkdown形式で記述。具体的なステップを含むこと)
-
-【ルール】
-- 既存手順と重複する場合はスキップ
-- 汎用的で再利用価値の高い手順のみ抽出
-- 手順が曖昧な場合は抽出しない
-- 空の結果でも構わない（「(なし)」と記載）
-- コードフェンス（```）で囲まないでください
-"""
-
-WEEKLY_PATTERN_PROMPT = """\
-以下は7日間のアクティビティログから抽出した、類似する行動パターンのクラスタです。
-各クラスタには3回以上繰り返された類似の行動が含まれています。
-
-繰り返しパターンを特定し、再利用可能な手順書として蒸留してください。
-
-【行動パターン】
-{clusters_text}
-
-【既存手順】
-{existing_procedures}
-
-出力形式（JSON配列）:
-[
-  {{
-    "title": "手順名（英語ファイル名向け）",
-    "description": "手順の概要（1-2文）",
-    "tags": ["tag1", "tag2"],
-    "content": "# 手順名\\n\\n## 概要\\n...\\n\\n## 手順\\n1. ...\\n2. ...\\n\\n## 注意点\\n..."
-  }}
-]
-
-ルール:
-- 繰り返しパターンがない場合は空配列 [] を返してください
-- 既存手順と重複する場合はスキップ
-- 具体的な手順ステップを含めること
-- 空配列 [] を返しても構わない
-"""
 
 
 # ── ProceduralDistiller ────────────────────────────────────────
@@ -156,7 +92,8 @@ class ProceduralDistiller:
 
         existing = self._load_existing_procedures()
 
-        prompt = CLASSIFICATION_PROMPT.format(
+        prompt = load_prompt(
+            "memory/classification",
             episodes_text=episodes_text[:6000],
             existing_procedures=existing[:2000],
         )
@@ -312,7 +249,8 @@ class ProceduralDistiller:
         existing = self._load_existing_procedures()
         clusters_text = self._format_clusters_for_prompt(clusters)
 
-        prompt = WEEKLY_PATTERN_PROMPT.format(
+        prompt = load_prompt(
+            "memory/weekly_pattern",
             clusters_text=clusters_text[:6000],
             existing_procedures=existing[:2000],
         )

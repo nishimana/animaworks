@@ -28,6 +28,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from core.paths import load_prompt
+
 logger = logging.getLogger("animaworks.reconsolidation")
 
 
@@ -198,25 +200,13 @@ class ReconsolidationEngine:
         confidence = meta.get("confidence", 0.5)
         description = meta.get("description", "")
 
-        prompt = f"""以下の手順書が繰り返し失敗しています。改善してください。
-
-【手順書の説明】
-{description}
-
-【現在の手順書】
-{content[:3000]}
-
-【メタデータ】
-- 失敗回数: {failure_count}
-- 信頼度: {confidence}
-
-タスク:
-1. なぜこの手順書が失敗しているか考察してください
-2. 改善された手順書を出力してください
-
-出力形式:
-改善後の手順書テキストのみを出力してください（説明やコメントは不要）。
-コードフェンス（```）で囲まないでください。"""
+        prompt = load_prompt(
+            "memory/procedure_revision",
+            description=description,
+            content=content[:3000],
+            failure_count=failure_count,
+            confidence=confidence,
+        )
 
         try:
             import litellm

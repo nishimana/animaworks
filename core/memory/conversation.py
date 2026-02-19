@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from core.memory._io import atomic_write_text
+from core.paths import load_prompt
 from core.schemas import ModelConfig
 
 if TYPE_CHECKING:
@@ -459,21 +460,7 @@ class ConversationMemory:
         self, old_summary: str, new_turns: str
     ) -> str:
         """Call the LLM to produce a compressed conversation summary."""
-        system = (
-            "あなたは会話の要約者です。以下の会話を簡潔に要約してください。\n"
-            "保持すべき情報:\n"
-            "- 議論された主なトピック\n"
-            "- 下された判断・合意事項\n"
-            "- アクションアイテム・未解決の問題\n"
-            "- 重要な事実・数値\n"
-            "- 会話の感情的なトーン\n"
-            "- 相手の名前・関係性\n\n"
-            "不要な情報:\n"
-            "- 挨拶・フィラー\n"
-            "- 重複する内容\n"
-            "- タイムスタンプの詳細\n\n"
-            "要約は日本語で、箇条書きで、簡潔に書いてください。"
-        )
+        system = load_prompt("memory/conversation_compression")
 
         user_content = ""
         if old_summary:
@@ -664,26 +651,7 @@ class ConversationMemory:
         """
         conversation_text = self._format_turns_for_compression(turns)
 
-        system = (
-            "あなたは会話記録の要約者です。以下の会話をエピソード記憶として記録し、"
-            "同時にステート変更を抽出してください。\n\n"
-            "出力形式:\n"
-            "## エピソード要約\n"
-            "{会話の要約タイトル（20文字以内）}\n\n"
-            "**相手**: {相手の名前}\n"
-            "**トピック**: {主なトピック、カンマ区切り}\n"
-            "**要点**:\n"
-            "- {要点1}\n"
-            "- {要点2}\n\n"
-            "**決定事項**: {あれば記載}\n\n"
-            "## ステート変更\n"
-            "### 解決済み\n"
-            "- {解決した課題があればリスト。なければ「なし」}\n"
-            "### 新規タスク\n"
-            "- {新たに発生したタスク。なければ「なし」}\n"
-            "### 現在の状態\n"
-            "{「idle」または現在取り組み中の内容}\n"
-        )
+        system = load_prompt("memory/session_summary")
 
         user_content = conversation_text
         if activity_context:

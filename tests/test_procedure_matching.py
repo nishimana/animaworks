@@ -123,6 +123,12 @@ class TestBuilderProcedureInjection:
 
         # Mock load_prompt to avoid needing template files
         def mock_load_prompt(name, **kwargs):
+            if name == "builder/skill_injection":
+                return (
+                    f"## {kwargs.get('section_title', '')}: "
+                    f"{kwargs.get('skill_name', '')} {kwargs.get('label', '')}\n\n"
+                    f"{kwargs.get('body', '')}"
+                )
             return f"[{name}]"
 
         monkeypatch.setattr("core.prompt.builder.load_prompt", mock_load_prompt)
@@ -152,6 +158,15 @@ class TestBuilderProcedureInjection:
         )
 
         def mock_load_prompt(name, **kwargs):
+            if name == "builder/procedures_header":
+                proc_lines = kwargs.get("proc_lines", "")
+                return f"## 手順書\n\n| 手順名 | 概要 |\n|---------|------|\n{proc_lines}"
+            if name == "builder/skill_injection":
+                return (
+                    f"## {kwargs.get('section_title', '')}: "
+                    f"{kwargs.get('skill_name', '')} {kwargs.get('label', '')}\n\n"
+                    f"{kwargs.get('body', '')}"
+                )
             return f"[{name}]"
 
         monkeypatch.setattr("core.prompt.builder.load_prompt", mock_load_prompt)
@@ -180,6 +195,12 @@ class TestBuilderProcedureInjection:
         )
 
         def mock_load_prompt(name, **kwargs):
+            if name == "builder/skill_injection":
+                return (
+                    f"## {kwargs.get('section_title', '')}: "
+                    f"{kwargs.get('skill_name', '')} {kwargs.get('label', '')}\n\n"
+                    f"{kwargs.get('body', '')}"
+                )
             return f"[{name}]"
 
         monkeypatch.setattr("core.prompt.builder.load_prompt", mock_load_prompt)

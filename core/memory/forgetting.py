@@ -25,6 +25,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from core.paths import load_prompt
+
 logger = logging.getLogger("animaworks.forgetting")
 
 # ── Configuration ──────────────────────────────────────────────────
@@ -409,22 +411,12 @@ class ForgettingEngine:
         model: str,
     ) -> str | None:
         """Merge two chunks using LLM."""
-        prompt = f"""以下は同一人物の記憶システムにある、類似した2つの記憶断片です。
-
-【記憶断片1】
-{chunk_a['content']}
-
-【記憶断片2】
-{chunk_b['content']}
-
-類似度: {similarity:.2f}
-
-タスク: この2つの記憶を1つに統合してください。
-- 重複する情報は1つにまとめる
-- 両方の重要な情報を保持する
-- 簡潔にまとめる
-
-統合された記憶のみを出力してください（説明不要）:"""
+        prompt = load_prompt(
+            "memory/forgetting_merge",
+            content_a=chunk_a["content"],
+            content_b=chunk_b["content"],
+            similarity=f"{similarity:.2f}",
+        )
 
         try:
             import litellm

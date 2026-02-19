@@ -22,6 +22,8 @@ import json
 import logging
 import re
 
+from core.paths import load_prompt
+
 logger = logging.getLogger("animaworks.validation")
 
 
@@ -194,21 +196,11 @@ class KnowledgeValidator:
         """
         import litellm
 
-        prompt = f"""以下の「知識」が「エピソード」から正しく導出されているか検証してください。
-
-【エピソード（原文）】
-{episodes[:3000]}
-
-【抽出された知識】
-{knowledge}
-
-判定:
-- この知識はエピソードの内容から正しく導出されていますか？
-- エピソードに記載のない情報が追加されていませんか？
-- 事実関係に誤りはありませんか？
-
-回答は以下のJSON形式のみで出力してください:
-{{"valid": true/false, "reason": "理由"}}"""
+        prompt = load_prompt(
+            "memory/knowledge_validation",
+            episodes=episodes[:3000],
+            knowledge=knowledge,
+        )
 
         try:
             response = await litellm.acompletion(
