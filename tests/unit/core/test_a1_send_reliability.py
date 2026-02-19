@@ -116,8 +116,8 @@ class TestEnsureSendScripts:
             assert send.exists(), f"send script missing for {name}"
             assert send.stat().st_mode & 0o100, f"send script not executable for {name}"
 
-    def test_does_not_overwrite_existing_scripts(self, tmp_path: Path) -> None:
-        """Existing send scripts must not be replaced."""
+    def test_overwrites_existing_scripts(self, tmp_path: Path) -> None:
+        """Existing send scripts are overwritten to ensure template tracking."""
         animas_dir = tmp_path / "animas"
         alice_dir = animas_dir / "alice"
         alice_dir.mkdir(parents=True)
@@ -134,7 +134,8 @@ class TestEnsureSendScripts:
         with patch("core.anima_factory.BLANK_TEMPLATE_DIR", blank_dir):
             ensure_send_scripts(animas_dir)
 
-        assert existing.read_text(encoding="utf-8") == "#!/bin/bash\ncustom-send"
+        # Script should now match the template (overwritten)
+        assert existing.read_text(encoding="utf-8") == "#!/bin/bash\ntemplate-send"
 
     def test_skips_dirs_without_identity(self, tmp_path: Path) -> None:
         """Directories without identity.md are not anima dirs; skip them."""

@@ -19,10 +19,19 @@ class TestSendScript:
         content = (BLANK_TEMPLATE_DIR / "send").read_text(encoding="utf-8")
         assert content.startswith("#!/")
 
-    def test_send_script_uses_basename_pwd(self):
-        """The send script should derive anima name from pwd."""
+    def test_send_script_uses_animaworks_anima_dir(self):
+        """The send script should derive anima name from ANIMAWORKS_ANIMA_DIR env var."""
         content = (BLANK_TEMPLATE_DIR / "send").read_text(encoding="utf-8")
-        assert "$(basename" in content or "basename" in content
+        assert "ANIMAWORKS_ANIMA_DIR" in content
+        # Should fallback to pwd when env var is not set
+        assert "$(pwd)" in content
+
+    def test_send_script_cwd_independent(self):
+        """The SELF variable should NOT depend solely on cwd."""
+        content = (BLANK_TEMPLATE_DIR / "send").read_text(encoding="utf-8")
+        # The old bug: SELF="$(basename "$(pwd)")"
+        # This should NOT be present
+        assert 'SELF="$(basename "$(pwd)")"' not in content
 
     def test_send_script_calls_main_py_send(self):
         """The send script must invoke main.py send subcommand."""
