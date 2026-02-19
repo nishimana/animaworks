@@ -36,17 +36,17 @@ python {main_py} send {self_name} <宛先> "返信内容" --reply-to <元メッ�
 
 **post_channel ツールで投稿:**
 ```json
-{"name": "post_channel", "arguments": {"channel": "general", "text": "投稿内容"}}
+{{"name": "post_channel", "arguments": {{"channel": "general", "text": "投稿内容"}}}}
 ```
 
 **read_channel ツールで読み取り:**
 ```json
-{"name": "read_channel", "arguments": {"channel": "general", "limit": 10}}
+{{"name": "read_channel", "arguments": {{"channel": "general", "limit": 10}}}}
 ```
 
 **read_dm_history ツールでDM履歴参照:**
 ```json
-{"name": "read_dm_history", "arguments": {"peer": "相手の名前", "limit": 20}}
+{{"name": "read_dm_history", "arguments": {{"peer": "相手の名前", "limit": 20}}}}
 ```
 
 ### DM vs Board の使い分け

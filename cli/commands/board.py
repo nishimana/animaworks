@@ -74,7 +74,7 @@ def cmd_board_dm_history(args: argparse.Namespace) -> None:
 # ── Mention Fanout ────────────────────────────────────────
 
 def _fanout_board_mentions(
-    messenger: object, from_anima: str, channel: str, text: str,
+    messenger: Messenger, from_anima: str, channel: str, text: str,
 ) -> None:
     """Send DM notifications to mentioned Animas.
 
@@ -82,8 +82,6 @@ def _fanout_board_mentions(
     so that CLI board posts trigger the same @mention notifications
     as tool_use-based posts.
     """
-    from core.messenger import Messenger as _Messenger
-
     mentions = re.findall(r"@(\w+)", text)
     if not mentions:
         return
@@ -115,7 +113,6 @@ def _fanout_board_mentions(
         f'返信するには post_channel(channel="{channel}", text="返信内容") を使ってください。'
     )
 
-    assert isinstance(messenger, _Messenger)
     for target in sorted(targets):
         try:
             messenger.send(
