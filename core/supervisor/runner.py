@@ -208,7 +208,7 @@ class AnimaRunner:
                 )
                 saved_text = (
                     recovery.recovered_text
-                    + "\n[プロセスクラッシュにより応答が中断されました]"
+                    + "\n[応答が中断されました]"
                 )
                 conv_memory.append_turn("assistant", saved_text)
                 conv_memory.save()
@@ -233,7 +233,7 @@ class AnimaRunner:
             activity = ActivityLogger(self._anima_dir)
             activity.log(
                 "error",
-                summary="プロセスクラッシュにより応答が中断されました",
+                summary="応答が中断されました（前回セッションの未完了ストリームを回復）",
                 meta={
                     "recovered_chars": len(recovery.recovered_text),
                     "trigger": recovery.trigger,

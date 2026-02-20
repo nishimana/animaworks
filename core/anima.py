@@ -1309,6 +1309,22 @@ class DigitalAnima:
         except Exception:
             logger.debug("[%s] Failed to save recovery note", self.name, exc_info=True)
 
+        # Clean up orphaned streaming journal in-process so that
+        # the next restart does not misreport it as a "crash recovery".
+        # The partial heartbeat text is intentionally discarded:
+        # heartbeat output is internal monologue, not a user-facing
+        # response.  Side effects (tool calls, messages sent) are
+        # already persisted independently.
+        try:
+            if StreamingJournal.has_orphan(self.anima_dir):
+                StreamingJournal.confirm_recovery(self.anima_dir)
+                logger.info("[%s] Cleaned up orphaned streaming journal", self.name)
+        except Exception:
+            logger.debug(
+                "[%s] Failed to clean up streaming journal",
+                self.name, exc_info=True,
+            )
+
         # Send sentinel to close the relay queue on error
         queue = self._heartbeat_stream_queue
         if queue is not None:
