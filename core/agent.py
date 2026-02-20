@@ -16,6 +16,7 @@ execution is delegated to engines in ``core.execution``, tool dispatch to
 """
 
 import asyncio
+import json as _json
 import logging
 import re
 import time
@@ -45,6 +46,47 @@ logger = logging.getLogger("animaworks.agent")
 # on top of the raw text, so we use conservative byte limits.
 _PROMPT_SOFT_LIMIT_BYTES = 600_000   # Force compression
 _PROMPT_HARD_LIMIT_BYTES = 1_200_000  # Fall back to A1 Fallback
+
+
+def _save_prompt_log(
+    anima_dir: Path,
+    *,
+    trigger: str,
+    sender: str,
+    model: str,
+    mode: str,
+    system_prompt: str,
+    user_message: str,
+    tools: list[str],
+    session_id: str,
+) -> None:
+    """Persist the full prompt payload to a JSONL log for post-hoc debugging.
+
+    Writes to ``{anima_dir}/prompt_logs/{date}.jsonl``.
+    Failures are silently logged -- prompt logging must never break execution.
+    """
+    try:
+        log_dir = anima_dir / "prompt_logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        today = now_iso()[:10]  # YYYY-MM-DD
+        entry = {
+            "ts": now_iso(),
+            "trigger": trigger,
+            "from": sender,
+            "model": model,
+            "mode": mode,
+            "system_prompt_length": len(system_prompt),
+            "system_prompt": system_prompt,
+            "user_message": user_message,
+            "tools": tools,
+            "session_id": session_id,
+        }
+        log_file = log_dir / f"{today}.jsonl"
+        with log_file.open("a", encoding="utf-8") as f:
+            f.write(_json.dumps(entry, ensure_ascii=False) + "\n")
+        logger.debug("Prompt log saved: %s (%d bytes)", log_file, len(system_prompt))
+    except Exception:
+        logger.warning("Failed to save prompt log", exc_info=True)
 
 
 class AgentCore:
@@ -120,6 +162,13 @@ class AgentCore:
     def replied_to(self) -> set[str]:
         """Anima names this agent has sent messages to in the current cycle."""
         return self._tool_handler.replied_to
+
+    @staticmethod
+    def _extract_sender(prompt: str, trigger: str) -> str:
+        """Extract sender name from trigger string."""
+        if trigger.startswith("message:"):
+            return trigger.split(":", 1)[1]
+        return trigger  # heartbeat, cron, manual, etc.
 
     # ── Human notification ─────────────────────────────────
 
@@ -656,6 +705,19 @@ class AgentCore:
             system_prompt = inject_shortterm(system_prompt, shortterm)
             logger.info("Injected short-term memory into system prompt")
 
+        # ── Prompt log: save full payload for debugging ───
+        _save_prompt_log(
+            self.anima_dir,
+            trigger=trigger,
+            sender=self._extract_sender(prompt, trigger),
+            model=self.model_config.model,
+            mode=mode,
+            system_prompt=system_prompt,
+            user_message=prompt,
+            tools=self._tool_registry,
+            session_id=self._tool_handler.session_id,
+        )
+
         # ── Mode B: text-based tool-call loop ─────────────
         if mode == "b":
             result = await self._executor.execute(
@@ -898,6 +960,19 @@ class AgentCore:
                 "cycle_result": cycle.model_dump(mode="json"),
             }
             return
+
+        # ── Prompt log: save full payload for debugging ───
+        _save_prompt_log(
+            self.anima_dir,
+            trigger=trigger,
+            sender=self._extract_sender(prompt, trigger),
+            model=self.model_config.model,
+            mode=mode,
+            system_prompt=system_prompt,
+            user_message=prompt,
+            tools=self._tool_registry,
+            session_id=self._tool_handler.session_id,
+        )
 
         # ── Stream retry configuration ────────────────────
         retry_cfg = self._load_stream_retry_config()
