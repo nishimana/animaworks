@@ -471,7 +471,10 @@ class ProcessHandle:
     async def _cleanup(self) -> None:
         """Clean up resources."""
         if self.ipc_client:
-            await self.ipc_client.close()
+            try:
+                await self.ipc_client.close()
+            except OSError:
+                logger.debug("IPC close error during cleanup", exc_info=True)
             self.ipc_client = None
 
         if self._stderr_file:

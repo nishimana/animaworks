@@ -212,7 +212,7 @@ class StreamingJournal:
         is_complete = False
 
         try:
-            raw = path.read_text(encoding="utf-8")
+            raw = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             logger.warning("Failed to read orphan journal: %s", path)
             return None
