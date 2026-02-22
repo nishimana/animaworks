@@ -268,6 +268,8 @@ class ProcessHandle:
             RuntimeError: If process is not running
             asyncio.TimeoutError: If timeout exceeded
         """
+        if self.state == ProcessState.RESTARTING:
+            raise RuntimeError(f"Process restarting: {self.anima_name}")
         if self.state != ProcessState.RUNNING:
             raise RuntimeError(f"Process not running: {self.state}")
 
@@ -308,6 +310,8 @@ class ProcessHandle:
             RuntimeError: If process is not running
             asyncio.TimeoutError: If timeout exceeded
         """
+        if self.state == ProcessState.RESTARTING:
+            raise RuntimeError(f"Process restarting: {self.anima_name}")
         if self.state != ProcessState.RUNNING:
             raise RuntimeError(f"Process not running: {self.state}")
 

@@ -175,6 +175,14 @@ class AnimaRunner:
             logger.exception("Fatal error in AnimaRunner: %s", e)
             sys.exit(1)
 
+        except BaseException as e:
+            # 全内部ハンドラをすり抜けた BaseException の最終安全弁。
+            logger.critical(
+                "FATAL BaseException in AnimaRunner (%s): %s: %s",
+                self.anima_name, type(e).__name__, e,
+            )
+            sys.exit(getattr(e, "code", 1) if isinstance(e, SystemExit) else 1)
+
         finally:
             await self._cleanup()
 

@@ -542,6 +542,10 @@ class ProcessSupervisor:
                 )
             return
 
+        # RESTARTING 状態ならヘルスチェックをスキップ
+        if handle.state == ProcessState.RESTARTING:
+            return
+
         # During streaming: skip ping (IPC lock held) but still check
         # process liveness and streaming duration timeout.
         if handle.is_streaming:
@@ -652,6 +656,9 @@ class ProcessSupervisor:
         if anima_name in self._restarting:
             return
         self._restarting.add(anima_name)
+
+        # リスタート中であることをハンドルに反映
+        handle.state = ProcessState.RESTARTING
 
         try:
             # Check restart count (supervisor-level, survives handle recreation)

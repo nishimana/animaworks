@@ -869,11 +869,20 @@ class AgentSDKExecutor(BaseExecutor):
                                 else:
                                     logger.info("MCP server '%s' connected successfully", name)
             logger.debug("ClaudeSDKClient disconnected")
-        except Exception as e:
-            logger.exception("Agent SDK streaming error")
+        except BaseException as e:
+            # BaseException を捕捉して StreamDisconnectedError に変換。
+            # Agent SDK hook callback の "Stream closed" が SystemExit を
+            # 発生させ、except Exception をすり抜ける問題への対策。
+            if not isinstance(e, Exception):
+                logger.critical(
+                    "Agent SDK raised %s during streaming: %s",
+                    type(e).__name__, e,
+                )
+            else:
+                logger.exception("Agent SDK streaming error")
             partial = "\n".join(response_text)
             raise StreamDisconnectedError(
-                f"Agent SDK stream error: {e}",
+                f"Agent SDK stream error ({type(e).__name__}): {e}",
                 partial_text=partial,
             ) from e
         finally:
