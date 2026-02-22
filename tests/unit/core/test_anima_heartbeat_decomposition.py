@@ -384,7 +384,7 @@ class TestBuildHeartbeatPrompt:
 
                 parts = await dp._build_heartbeat_prompt()
 
-            delegation_parts = [p for p in parts if "heartbeat_delegation_check" in p]
+            delegation_parts = [p for p in parts if "heartbeat_subordinate_check" in p]
             assert len(delegation_parts) == 1
         finally:
             _stop_patches(mocks)
@@ -405,7 +405,7 @@ class TestBuildHeartbeatPrompt:
 
                 parts = await dp._build_heartbeat_prompt()
 
-            delegation_parts = [p for p in parts if "heartbeat_delegation_check" in p]
+            delegation_parts = [p for p in parts if "heartbeat_subordinate_check" in p]
             assert len(delegation_parts) == 0
         finally:
             _stop_patches(mocks)
@@ -426,7 +426,7 @@ class TestBuildHeartbeatPrompt:
                 # Should not raise
                 parts = await dp._build_heartbeat_prompt()
 
-            delegation_parts = [p for p in parts if "heartbeat_delegation_check" in p]
+            delegation_parts = [p for p in parts if "heartbeat_subordinate_check" in p]
             assert len(delegation_parts) == 0
         finally:
             _stop_patches(mocks)

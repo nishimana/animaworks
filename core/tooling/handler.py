@@ -1692,6 +1692,20 @@ class ToolHandler:
                     return err
             return None
 
+        # Supervisor can read direct subordinate's activity_log (work records)
+        if not write:
+            try:
+                from core.config.models import load_config
+                from core.paths import get_animas_dir
+                _cfg = load_config()
+                for _sub_name, _sub_cfg in _cfg.animas.items():
+                    if _sub_cfg.supervisor == self._anima_name:
+                        sub_activity = (get_animas_dir() / _sub_name / "activity_log").resolve()
+                        if resolved.is_relative_to(sub_activity):
+                            return None
+            except Exception:
+                logger.debug("supervisor_activity_check failed anima=%s", self._anima_name, exc_info=True)
+
         permissions = self._memory.read_permissions()
         if "ファイル操作" not in permissions:
             logger.warning("permission_denied anima=%s path=%s reason=file_ops_not_enabled", self._anima_name, path)

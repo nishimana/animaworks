@@ -883,9 +883,10 @@ class DigitalAnima:
         # NOTE: Task queue is injected via builder.py (system prompt)
         # and priming Channel E. No separate heartbeat injection needed.
 
-        # ── Delegation check for animas with subordinates ──
+        # ── Subordinate management check for animas with subordinates ──
         try:
             from core.config.models import load_config
+            from core.paths import get_animas_dir
             _cfg = load_config()
             _subordinates = [
                 _name for _name, _pcfg in _cfg.animas.items()
@@ -893,8 +894,9 @@ class DigitalAnima:
             ]
             if _subordinates:
                 parts.append(load_prompt(
-                    "heartbeat_delegation_check",
+                    "heartbeat_subordinate_check",
                     subordinates=", ".join(_subordinates),
+                    animas_dir=str(get_animas_dir()),
                 ))
         except Exception:
             logger.debug(
