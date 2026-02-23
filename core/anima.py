@@ -407,8 +407,8 @@ class DigitalAnima:
                 mode = self.agent.execution_mode
                 prior_messages = None
                 if mode == "s":
-                    # S mode: SDK manages conversation history internally.
-                    # AnimaWorks only sends the current user message.
+                    # S mode: SDK manages conversation history internally,
+                    # but we still save turns for downstream memory processes.
                     prompt = content
                 elif mode == "a":
                     # A mode: AnimaWorks manages history via structured messages
@@ -422,12 +422,10 @@ class DigitalAnima:
                     prompt = conv_memory.build_chat_prompt(content, from_person)
 
                 # Pre-save: persist user input before agent execution
-                # (skip for S mode — SDK manages history)
-                if mode != "s":
-                    conv_memory.append_turn(
-                        "human", content, attachments=attachment_paths or [],
-                    )
-                    conv_memory.save()
+                conv_memory.append_turn(
+                    "human", content, attachments=attachment_paths or [],
+                )
+                conv_memory.save()
 
                 # Activity log: message received
                 self._activity.log("message_received", content=content, summary=content[:100], from_person=from_person, channel="chat")
@@ -446,12 +444,11 @@ class DigitalAnima:
                         ToolRecord.from_dict(r)
                         for r in result.tool_call_records
                     ]
-                    if mode != "s":
-                        conv_memory.append_turn(
-                            "assistant", result.summary,
-                            tool_records=tool_records,
-                        )
-                        conv_memory.save()
+                    conv_memory.append_turn(
+                        "assistant", result.summary,
+                        tool_records=tool_records,
+                    )
+                    conv_memory.save()
 
                     # Activity log: response sent
                     self._activity.log("response_sent", content=result.summary, to_person=from_person, channel="chat")
@@ -470,11 +467,10 @@ class DigitalAnima:
                         meta={"phase": "process_message", "error": str(exc)[:200]},
                     )
                     # Save error marker so the failed exchange is visible
-                    if mode != "s":
-                        conv_memory.append_turn(
-                            "assistant", "[ERROR: エージェント実行中にエラーが発生しました]"
-                        )
-                        conv_memory.save()
+                    conv_memory.append_turn(
+                        "assistant", "[ERROR: エージェント実行中にエラーが発生しました]"
+                    )
+                    conv_memory.save()
                     raise
                 finally:
                     self._status = "idle"
@@ -572,7 +568,8 @@ class DigitalAnima:
                 mode = self.agent.execution_mode
                 prior_messages = None
                 if mode == "s":
-                    # S mode: SDK manages conversation history internally.
+                    # S mode: SDK manages conversation history internally,
+                    # but we still save turns for downstream memory processes.
                     prompt = content
                 elif mode == "a":
                     # A mode: AnimaWorks manages history via structured messages
@@ -586,12 +583,10 @@ class DigitalAnima:
                     prompt = conv_memory.build_chat_prompt(content, from_person)
 
                 # Pre-save: persist user input before agent execution
-                # (skip for S mode — SDK manages history)
-                if mode != "s":
-                    conv_memory.append_turn(
-                        "human", content, attachments=attachment_paths or [],
-                    )
-                    conv_memory.save()
+                conv_memory.append_turn(
+                    "human", content, attachments=attachment_paths or [],
+                )
+                conv_memory.save()
 
                 # Activity log: message received
                 self._activity.log("message_received", content=content, summary=content[:100], from_person=from_person, channel="chat")
@@ -639,12 +634,11 @@ class DigitalAnima:
                                 ToolRecord.from_dict(r)
                                 for r in cycle_result.get("tool_call_records", [])
                             ]
-                            if mode != "s":
-                                conv_memory.append_turn(
-                                    "assistant", summary,
-                                    tool_records=tool_records,
-                                )
-                                conv_memory.save()
+                            conv_memory.append_turn(
+                                "assistant", summary,
+                                tool_records=tool_records,
+                            )
+                            conv_memory.save()
 
                             # Activity log: response sent
                             self._activity.log("response_sent", content=summary, to_person=from_person, channel="chat")
@@ -689,13 +683,12 @@ class DigitalAnima:
                 finally:
                     # Save partial response if cycle_done was never received
                     if not cycle_done:
-                        if mode != "s":
-                            if partial_response:
-                                saved_text = partial_response + "\n[応答が中断されました]"
-                            else:
-                                saved_text = "[応答が中断されました]"
-                            conv_memory.append_turn("assistant", saved_text)
-                            conv_memory.save()
+                        if partial_response:
+                            saved_text = partial_response + "\n[応答が中断されました]"
+                        else:
+                            saved_text = "[応答が中断されました]"
+                        conv_memory.append_turn("assistant", saved_text)
+                        conv_memory.save()
                     # Close journal (no-op if already finalized)
                     journal.close()
                     self._status = "idle"
@@ -1457,18 +1450,20 @@ class DigitalAnima:
 
     # ── Consolidation helpers ──────────────────────────────────
 
-    def _collect_episodes_summary(self) -> tuple[str, str]:
-        """Collect recent episodes and resolved events as formatted text.
+    def _collect_episodes_summary(self) -> tuple[str, str, str]:
+        """Collect recent episodes, resolved events, and activity log as formatted text.
 
         Returns:
-            Tuple of (episodes_summary, resolved_events_summary).
-            If no episodes are found, returns a placeholder message.
+            Tuple of (episodes_summary, resolved_events_summary, activity_log_summary).
+            If no episodes are found, returns a placeholder message for episodes
+            with empty strings for the other summaries.
         """
         from core.memory.consolidation import ConsolidationEngine
 
         engine = ConsolidationEngine(self.anima_dir, self.name)
         episodes = engine._collect_recent_episodes(hours=24)
         resolved = engine._collect_resolved_events(hours=24)
+        activity_log_summary = engine._collect_activity_entries(hours=24)
 
         # Format episodes
         if episodes:
@@ -1477,7 +1472,7 @@ class DigitalAnima:
                 for e in episodes
             )
         else:
-            return ("(本日のエピソードはありません)", "")
+            return ("(本日のエピソードはありません)", "", activity_log_summary)
 
         # Format resolved events
         if resolved:
@@ -1487,7 +1482,7 @@ class DigitalAnima:
         else:
             resolved_events_summary = ""
 
-        return (episodes_summary, resolved_events_summary)
+        return (episodes_summary, resolved_events_summary, activity_log_summary)
 
     def count_recent_episodes(self, hours: int = 24) -> int:
         """Count recent episode entries within the given time window.
@@ -1535,12 +1530,15 @@ class DigitalAnima:
                 try:
                     # Build consolidation prompt
                     if consolidation_type == "daily":
-                        episodes_summary, resolved_events_summary = self._collect_episodes_summary()
+                        episodes_summary, resolved_events_summary, activity_log_summary = (
+                            self._collect_episodes_summary()
+                        )
                         prompt = load_prompt(
                             "memory/consolidation_instruction",
                             anima_name=self.name,
                             episodes_summary=episodes_summary,
                             resolved_events_summary=resolved_events_summary,
+                            activity_log_summary=activity_log_summary or "(アクティビティログなし)",
                         )
                     else:
                         prompt = load_prompt(

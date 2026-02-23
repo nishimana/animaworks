@@ -10,6 +10,15 @@
 
 {resolved_events_summary}
 
+## 今日のアクティビティログ（行動記録）
+{activity_log_summary}
+
+※ アクティビティログは行動の記録であり、推論過程は含まれません。
+ここから知識を抽出する場合は以下に注意してください:
+- 確実に事実と判断できるもののみ knowledge/ に記録
+- 推測や解釈が必要なものは confidence: 0.5 で記録
+- frontmatter に `source: "activity_log"` を付与
+
 ## 作業手順
 
 ### 1. エピソード確認

@@ -230,6 +230,184 @@ class MemoryIndexer:
         )
         return total_chunks
 
+    def index_conversation_summary(
+        self,
+        conversation_path: Path,
+        anima_name: str,
+        force: bool = False,
+    ) -> int:
+        """Index compressed_summary from conversation.json into RAG.
+
+        Reads the ``compressed_summary`` field from ``conversation.json``,
+        chunks it by ``### `` headings (the format used by conversation
+        compression), and indexes each chunk into the
+        ``{anima_name}_conversation_summary`` collection with
+        ``source: "conversation_gist"`` metadata.
+
+        Args:
+            conversation_path: Path to the ``state/`` directory containing
+                ``conversation.json``
+            anima_name: Anima name (for collection naming)
+            force: Force re-indexing even if content hasn't changed
+
+        Returns:
+            Number of chunks indexed
+        """
+        conv_file = conversation_path / "conversation.json"
+        if not conv_file.exists():
+            logger.debug("conversation.json not found at %s", conv_file)
+            return 0
+
+        try:
+            with open(conv_file, encoding="utf-8") as f:
+                conv_data = json.load(f)
+        except Exception as e:
+            logger.warning("Failed to read conversation.json: %s", e)
+            return 0
+
+        summary = conv_data.get("compressed_summary", "")
+        if not summary or len(summary) < 50:
+            logger.debug("compressed_summary too short or empty, skipping")
+            return 0
+
+        # Check if content has changed via hash
+        content_hash = hashlib.sha256(summary.encode("utf-8")).hexdigest()
+        meta_key = "conversation_summary"
+        if not force and meta_key in self.index_meta:
+            if self.index_meta[meta_key].get("hash") == content_hash:
+                logger.debug("compressed_summary unchanged, skipping")
+                return 0
+
+        logger.info("Indexing compressed_summary for %s", anima_name)
+
+        # Chunk by ### headings
+        source_id = f"{self.collection_prefix}/conversation_summary"
+        chunks = self._chunk_markdown_text(summary, source_id)
+
+        if not chunks:
+            logger.debug("No chunks extracted from compressed_summary")
+            return 0
+
+        # Generate embeddings
+        embeddings = self._generate_embeddings([c.content for c in chunks])
+
+        # Build documents and upsert
+        from core.memory.rag.store import Document
+        from core.memory.rag.singleton import get_embedding_dimension
+
+        collection_name = f"{self.collection_prefix}_conversation_summary"
+        self.vector_store.create_collection(collection_name, get_embedding_dimension())
+
+        documents = [
+            Document(
+                id=chunk.id,
+                content=chunk.content,
+                embedding=embeddings[i],
+                metadata=chunk.metadata,
+            )
+            for i, chunk in enumerate(chunks)
+        ]
+        self.vector_store.upsert(collection_name, documents)
+
+        # Update index metadata
+        self.index_meta[meta_key] = {
+            "hash": content_hash,
+            "indexed_at": now_iso(),
+            "chunks": len(chunks),
+        }
+        self._save_index_meta()
+
+        logger.info("Indexed %d conversation_summary chunks for %s", len(chunks), anima_name)
+        return len(chunks)
+
+    def _chunk_markdown_text(
+        self,
+        text: str,
+        source_id: str,
+    ) -> list[MemoryChunk]:
+        """Chunk a markdown text string by ``### `` headings.
+
+        Used for compressed_summary which uses ``### heading`` sections.
+        Returns MemoryChunk list compatible with ``_generate_embeddings()``
+        and vector store upsert.
+
+        Args:
+            text: Markdown text to chunk
+            source_id: Base ID for chunk naming (e.g. ``anima/conversation_summary``)
+
+        Returns:
+            List of MemoryChunk instances
+        """
+        chunks: list[MemoryChunk] = []
+        sections = re.split(r"\n(###\s+.+)", text)
+
+        chunk_idx = 0
+
+        # Preamble (content before first ### heading)
+        preamble = sections[0].strip()
+        if preamble and len(preamble) > 50:
+            chunk_id = f"{source_id}#{chunk_idx}"
+            metadata: dict[str, str | int | float | list[str]] = {
+                "anima": self.collection_prefix,
+                "memory_type": "conversation_summary",
+                "source": "conversation_gist",
+                "source_file": "state/conversation.json",
+                "chunk_index": chunk_idx,
+                "importance": "normal",
+                "access_count": 0,
+                "last_accessed_at": "",
+                "activation_level": "normal",
+                "low_activation_since": "",
+                "valid_until": "",
+            }
+            chunks.append(MemoryChunk(id=chunk_id, content=preamble, metadata=metadata))
+            chunk_idx += 1
+
+        # Heading sections
+        for i in range(1, len(sections), 2):
+            if i + 1 < len(sections):
+                heading = sections[i].strip()
+                body = sections[i + 1].strip()
+                section_content = f"{heading}\n\n{body}"
+
+                if section_content.strip():
+                    chunk_id = f"{source_id}#{chunk_idx}"
+                    metadata = {
+                        "anima": self.collection_prefix,
+                        "memory_type": "conversation_summary",
+                        "source": "conversation_gist",
+                        "source_file": "state/conversation.json",
+                        "chunk_index": chunk_idx,
+                        "importance": "normal",
+                        "access_count": 0,
+                        "last_accessed_at": "",
+                        "activation_level": "normal",
+                        "low_activation_since": "",
+                        "valid_until": "",
+                    }
+                    chunks.append(MemoryChunk(id=chunk_id, content=section_content, metadata=metadata))
+                    chunk_idx += 1
+
+        # Fallback: if no ### headings found, treat entire text as one chunk
+        if not chunks and text.strip():
+            chunk_id = f"{source_id}#0"
+            metadata = {
+                "anima": self.collection_prefix,
+                "memory_type": "conversation_summary",
+                "source": "conversation_gist",
+                "source_file": "state/conversation.json",
+                "chunk_index": 0,
+                "importance": "normal",
+                "access_count": 0,
+                "last_accessed_at": "",
+                "activation_level": "normal",
+                "low_activation_since": "",
+                "valid_until": "",
+            }
+            chunks.append(MemoryChunk(id=chunk_id, content=text.strip(), metadata=metadata))
+
+        return chunks
+
     # ── Chunking strategies ─────────────────────────────────────────
 
     def _chunk_file(

@@ -3,6 +3,7 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
+import json
 import logging
 from pathlib import Path
 
@@ -59,6 +60,21 @@ class RAGMemorySearch:
                         )
                 except Exception as e:
                     logger.warning("Failed to index procedures: %s", e)
+
+            # Index conversation summary (compressed_summary)
+            state_dir = self._anima_dir / "state"
+            conv_file = state_dir / "conversation.json"
+            if conv_file.is_file():
+                try:
+                    indexed = self._indexer.index_conversation_summary(
+                        state_dir, anima_name,
+                    )
+                    if indexed > 0:
+                        logger.debug(
+                            "Indexed %d chunks from conversation_summary", indexed,
+                        )
+                except Exception as e:
+                    logger.warning("Failed to index conversation_summary: %s", e)
 
             # Ensure shared collections exist
             self._ensure_shared_knowledge_indexed(vector_store)
@@ -167,9 +183,24 @@ class RAGMemorySearch:
                     if q in line.lower():
                         results.append((f.name, line.strip()))
 
+        # Search compressed_summary from conversation.json
+        if scope in ("all", "conversation_summary"):
+            conv_file = self._anima_dir / "state" / "conversation.json"
+            if conv_file.is_file():
+                try:
+                    conv_data = json.loads(conv_file.read_text(encoding="utf-8"))
+                    summary = conv_data.get("compressed_summary", "")
+                    if summary and q in summary.lower():
+                        # Return matching lines from compressed_summary
+                        for line in summary.splitlines():
+                            if q in line.lower() and line.strip():
+                                results.append(("conversation_summary", line.strip()))
+                except Exception as e:
+                    logger.debug("Failed to search conversation_summary: %s", e)
+
         # Hybrid: append vector search results when RAG is available
         if self._indexer is not None and scope in (
-            "knowledge", "common_knowledge", "procedures", "all",
+            "knowledge", "common_knowledge", "procedures", "conversation_summary", "all",
         ):
             try:
                 vector_hits = self._vector_search_memory(query, scope, knowledge_dir)
@@ -192,8 +223,10 @@ class RAGMemorySearch:
             return ["procedures"]
         if scope == "common_knowledge":
             return ["knowledge"]
+        if scope == "conversation_summary":
+            return ["conversation_summary"]
         if scope == "all":
-            return ["knowledge", "procedures"]
+            return ["knowledge", "procedures", "conversation_summary"]
         return ["knowledge"]
 
     def _vector_search_memory(
