@@ -219,6 +219,42 @@ function renderTurns(data) {
   body.scrollTop = body.scrollHeight;
 }
 
+function renderConversationSessions(data) {
+  const body = getDetailBody();
+  if (!body) return;
+
+  if (!data || !data.sessions || data.sessions.length === 0) {
+    body.innerHTML = '<div class="loading-placeholder">会話データがありません</div>';
+    return;
+  }
+
+  let html = "";
+  for (const session of data.sessions) {
+    const startTs = session.session_start ? timeStr(session.session_start) : "";
+    const triggerLabel = session.trigger === "heartbeat" ? "定期巡回"
+      : session.trigger === "cron" ? "定時タスク" : "";
+    html += `<div class="session-divider">${triggerLabel ? `<span class="session-trigger">${escapeHtml(triggerLabel)}</span> ` : ""}${startTs}</div>`;
+
+    if (session.messages) {
+      for (const msg of session.messages) {
+        const ts = msg.ts ? timeStr(msg.ts) : "";
+        const roleClass = msg.role === "assistant" ? "assistant" : msg.role === "system" ? "system" : "user";
+        const roleLabel = msg.role === "human" ? "ユーザー" : msg.role === "system" ? "システム" : msg.role;
+        const content = msg.role === "assistant" ? renderSimpleMarkdown(msg.content || "") : escapeHtml(msg.content || "");
+        html += `
+          <div class="session-turn">
+            <div class="session-turn-meta">${ts} - ${escapeHtml(roleLabel)}</div>
+            <div class="session-turn-bubble ${roleClass}">${content}</div>
+          </div>`;
+      }
+    }
+  }
+
+  if (!html) html = '<div class="loading-placeholder">会話データがありません</div>';
+  body.innerHTML = html;
+  body.scrollTop = body.scrollHeight;
+}
+
 async function loadActiveConversation() {
   const { selectedAnima } = getState();
   if (!selectedAnima) return;
@@ -228,8 +264,8 @@ async function loadActiveConversation() {
   if (body) body.innerHTML = '<div class="loading-placeholder">読み込み中...</div>';
 
   try {
-    const data = await api.fetchConversationFull(selectedAnima);
-    renderTurns(data);
+    const data = await api.fetchConversationHistory(selectedAnima);
+    renderConversationSessions(data);
   } catch (err) {
     console.error("Failed to load active conversation:", err);
     if (body) body.innerHTML = `<div class="loading-placeholder">読み込み失敗: ${escapeHtml(err.message)}</div>`;

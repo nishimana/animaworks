@@ -2,7 +2,7 @@
 // Initialization, screen switching, and event delegation.
 
 import { getState, setState, subscribe } from "./state.js";
-import { fetchSystemStatus, fetchConversationFull, greetAnima } from "./api.js";
+import { fetchSystemStatus, fetchConversationHistory, greetAnima } from "./api.js";
 import { connect, onEvent } from "./websocket.js";
 import { initLogin, getCurrentUser, logout } from "./login.js";
 import { initAnima, loadAnimas, selectAnima, renderAnimaSelector, renderStatus } from "./anima.js";
@@ -428,13 +428,18 @@ function renderConvMessages() {
 async function loadAndRenderConvMessages(animaName) {
   if (!animaName) return;
   try {
-    const data = await fetchConversationFull(animaName);
-    if (data.turns && data.turns.length > 0) {
-      const messages = data.turns.map((t) => ({
-        role: t.role === "human" ? "user" : t.role === "system" ? "system" : "assistant",
-        text: t.content || "",
-        timestamp: t.timestamp || "",
-      }));
+    const data = await fetchConversationHistory(animaName);
+    if (data.sessions && data.sessions.length > 0) {
+      const messages = [];
+      for (const session of data.sessions) {
+        for (const msg of (session.messages || [])) {
+          messages.push({
+            role: msg.role === "human" ? "user" : msg.role === "system" ? "system" : "assistant",
+            text: msg.content || "",
+            timestamp: msg.ts || "",
+          });
+        }
+      }
       setState({ chatMessages: messages });
     } else {
       setState({ chatMessages: [] });
