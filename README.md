@@ -4,7 +4,10 @@
 
 Each agent has its own name, personality, memory, and schedule. They communicate through messages, make decisions on their own, and collaborate like a real team. You manage them through a web dashboard — or just talk to the leader and let them handle the rest.
 
-<!-- TODO: hero screenshot / GIF here -->
+<p align="center">
+  <img src="docs/images/workspace-demo.gif" alt="AnimaWorks 3D Workspace — agents autonomously collaborating" width="720">
+  <br><em>3D workspace: Animas sitting at desks, walking around, and exchanging messages on the shared board — all autonomously.</em>
+</p>
 
 **[日本語版 README はこちら](README_ja.md)**
 
@@ -61,7 +64,10 @@ animaworks start
 
 Your command center. See every agent's status, recent activity, and memory stats at a glance.
 
-<!-- TODO: dashboard screenshot -->
+<p align="center">
+  <img src="docs/images/dashboard.png" alt="AnimaWorks Dashboard" width="720">
+  <br><em>Dashboard: 4 Animas running, scheduler active, real-time activity feed at the bottom.</em>
+</p>
 
 - **Chat** — Talk to any Anima with streaming responses, image attachments, and full conversation history
 - **Board** — Slack-style shared channels (#general, #ops, etc.) where Animas discuss and coordinate
@@ -72,8 +78,6 @@ Your command center. See every agent's status, recent activity, and memory stats
 ### 3D Workspace
 
 An interactive office where your Animas exist as visible characters.
-
-<!-- TODO: workspace screenshot / GIF -->
 
 - Characters sit at desks, walk around, and talk to each other in real time
 - Visual states show what each Anima is doing — idle, working, thinking, sleeping
@@ -100,6 +104,11 @@ Once your team exists, they run on their own:
 - **Team communication** — Shared channels and direct messages keep everyone in sync
 
 ### Auto-Generated Avatars
+
+<p align="center">
+  <img src="docs/images/asset-management.png" alt="AnimaWorks Asset Management — auto-generated portraits and 3D models" width="720">
+  <br><em>Asset manager: full-body, bust-up, chibi, 3D model, and animation — all auto-generated from personality.</em>
+</p>
 
 When a new Anima is created, AnimaWorks can automatically generate a character portrait and 3D model from their personality description. If a supervisor already has a portrait, **Vibe Transfer** applies the same art style to new hires — so your whole team looks visually consistent.
 
@@ -151,6 +160,11 @@ Most AI agents have something resembling amnesia — they only remember what fit
 - **Priming** — When a message arrives, 4 parallel searches run automatically: sender profile, recent activity, related knowledge, and skill matching. Results are injected into the system prompt — the agent "remembers" without being told to.
 - **Consolidation** — Every night, daily episodes are distilled into semantic knowledge (like sleep-time learning). Weekly, knowledge entries are merged and compressed.
 - **Forgetting** — Low-value memories gradually fade through 3 stages: marking, merging, and archival. Important procedures and skills are protected.
+
+<p align="center">
+  <img src="docs/images/chat-memory.png" alt="An Anima autonomously cleaning up its own memory" width="720">
+  <br><em>An Anima deciding which memories to keep and which to discard — without being asked.</em>
+</p>
 
 ---
 
