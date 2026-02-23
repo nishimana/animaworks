@@ -257,6 +257,8 @@ class HeartbeatConfig(BaseModel):
     depth_window_s: int = 600  # bilateral depth limiter window
     max_depth: int = 6  # max bilateral exchange depth
     actionable_intents: list[str] = ["delegation", "report", "question"]
+    enable_read_ack: bool = False  # Send read-receipt ACK to message senders (disabled by default to prevent gratitude loops)
+    channel_post_cooldown_s: int = 300  # Min seconds between board posts per Anima (0 = no limit)
 
 
 class AnimaWorksConfig(BaseModel):
