@@ -70,9 +70,11 @@ class ShortTermMemory:
           └── archive/            # Completed / superseded states
     """
 
-    def __init__(self, anima_dir: Path) -> None:
+    def __init__(self, anima_dir: Path, session_type: str = "chat") -> None:
         self.anima_dir = anima_dir
-        self.shortterm_dir = anima_dir / "shortterm"
+        self._session_type = session_type
+        self.shortterm_dir = anima_dir / "shortterm" / session_type
+        self.shortterm_dir.mkdir(parents=True, exist_ok=True)
         self._archive_dir = self.shortterm_dir / "archive"
 
     # ── Query ───────────────────────────────────────────────

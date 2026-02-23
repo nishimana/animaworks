@@ -67,10 +67,11 @@ class StreamingJournal:
     recovered on the next startup.
     """
 
-    def __init__(self, anima_dir: Path) -> None:
+    def __init__(self, anima_dir: Path, session_type: str = "chat") -> None:
         self._anima_dir = anima_dir
         self._shortterm_dir = anima_dir / "shortterm"
-        self._journal_path = self._shortterm_dir / _JOURNAL_FILENAME
+        self._session_type = session_type
+        self._journal_path = self._shortterm_dir / f"streaming_journal_{session_type}.jsonl"
         self._fd: TextIOWrapper | None = None
         self._buffer: str = ""
         self._last_flush: float = 0.0
@@ -92,7 +93,7 @@ class StreamingJournal:
         self._shortterm_dir.mkdir(parents=True, exist_ok=True)
         # Recover orphaned journal before overwriting — persist to episode log
         if self._journal_path.exists():
-            recovery = StreamingJournal.recover(self._anima_dir)
+            recovery = StreamingJournal.recover(self._anima_dir, self._session_type)
             if recovery and recovery.recovered_text:
                 logger.warning(
                     "Orphaned journal recovered on open: %d chars, trigger=%s",
@@ -208,19 +209,19 @@ class StreamingJournal:
     # ── Recovery (class methods) ──────────────────────────────
 
     @classmethod
-    def has_orphan(cls, anima_dir: Path) -> bool:
+    def has_orphan(cls, anima_dir: Path, session_type: str = "chat") -> bool:
         """Check whether an orphaned journal exists."""
-        path = anima_dir / "shortterm" / _JOURNAL_FILENAME
+        path = anima_dir / "shortterm" / f"streaming_journal_{session_type}.jsonl"
         return path.exists()
 
     @classmethod
-    def recover(cls, anima_dir: Path) -> JournalRecovery | None:
+    def recover(cls, anima_dir: Path, session_type: str = "chat") -> JournalRecovery | None:
         """Read and delete an orphaned journal.
 
         Returns ``None`` if no journal exists.  Corrupted JSONL lines
         are silently skipped.
         """
-        path = anima_dir / "shortterm" / _JOURNAL_FILENAME
+        path = anima_dir / "shortterm" / f"streaming_journal_{session_type}.jsonl"
         if not path.exists():
             return None
 
@@ -326,9 +327,9 @@ class StreamingJournal:
         return recovery
 
     @classmethod
-    def confirm_recovery(cls, anima_dir: Path) -> None:
+    def confirm_recovery(cls, anima_dir: Path, session_type: str = "chat") -> None:
         """Delete journal after recovery data has been safely persisted."""
-        path = anima_dir / "shortterm" / _JOURNAL_FILENAME
+        path = anima_dir / "shortterm" / f"streaming_journal_{session_type}.jsonl"
         try:
             path.unlink(missing_ok=True)
         except OSError:
