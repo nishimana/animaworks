@@ -79,6 +79,7 @@ def _ensure_tool_prompt_db(data_dir: Path) -> None:
     # Apply incremental migrations for existing DBs
     _migrate_memory_prompts_v1(tool_store, prompts_dir)
     _migrate_praise_loop_prevention_v1(tool_store, prompts_dir)
+    _migrate_behavior_rules_must_v1(tool_store, prompts_dir)
 
     logger.info("Tool prompt DB initialised: %s", tool_db_path)
 
@@ -201,6 +202,52 @@ def _migrate_praise_loop_prevention_v1(
         )
         conn.commit()
         logger.info("Applied migration: praise_loop_prevention_v1")
+    finally:
+        conn.close()
+
+
+def _migrate_behavior_rules_must_v1(
+    tool_store: "ToolPromptStore",  # noqa: F821
+    prompts_dir: Path,
+) -> None:
+    """One-shot migration: upgrade behavior_rules to MUST-level memory search constraints.
+
+    Replaces the soft "検索してから行動" guidance with mandatory search_memory
+    obligations and explicit hallucination prohibition.
+
+    Idempotent — records migration key ``behavior_rules_must_v1`` in a
+    ``migrations`` table and skips if already applied.
+    """
+    from core.tooling.prompt_db import SECTION_CONDITIONS
+
+    conn = tool_store._connect()
+    try:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS migrations "
+            "(key TEXT PRIMARY KEY, applied_at TEXT)"
+        )
+        row = conn.execute(
+            "SELECT 1 FROM migrations WHERE key = ?",
+            ("behavior_rules_must_v1",),
+        ).fetchone()
+        if row:
+            return  # already applied
+
+        br_path = prompts_dir / "behavior_rules.md"
+        if br_path.exists():
+            content = br_path.read_text(encoding="utf-8").strip()
+            if content:
+                condition = SECTION_CONDITIONS.get("behavior_rules")
+                tool_store.set_section("behavior_rules", content, condition)
+
+        from core.time_utils import now_jst
+
+        conn.execute(
+            "INSERT INTO migrations (key, applied_at) VALUES (?, ?)",
+            ("behavior_rules_must_v1", now_jst().isoformat()),
+        )
+        conn.commit()
+        logger.info("Applied migration: behavior_rules_must_v1")
     finally:
         conn.close()
 

@@ -123,7 +123,8 @@ class PrimingConfig(BaseModel):
     budget_greeting: int = 500
     budget_question: int = 1500
     budget_request: int = 3000
-    budget_heartbeat: int = 200
+    budget_heartbeat: int = 200  # fallback when context_window is unknown
+    heartbeat_context_pct: float = 0.05  # fraction of context_window for HB budget
 
 
 class ConsolidationConfig(BaseModel):

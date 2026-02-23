@@ -599,7 +599,16 @@ class AgentCore:
         try:
             if not hasattr(self, "_priming_engine"):
                 from core.paths import get_shared_dir
-                self._priming_engine = PrimingEngine(self.anima_dir, get_shared_dir())
+                from core.prompt.context import resolve_context_window as _rcw_priming
+                ctx_window = _rcw_priming(
+                    self.model_config.model,
+                    overrides=self._load_context_window_overrides(),
+                )
+                self._priming_engine = PrimingEngine(
+                    self.anima_dir,
+                    get_shared_dir(),
+                    context_window=ctx_window,
+                )
             channel = (
                 "heartbeat" if trigger == "heartbeat"
                 else "cron" if trigger.startswith("cron")
@@ -623,6 +632,7 @@ class AgentCore:
                 channel=channel,
                 intent=message_intent,
                 overflow_files=overflow_files,
+                enable_dynamic_budget=True,
             )
 
             if result.is_empty():

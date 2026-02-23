@@ -107,15 +107,28 @@ class PrimingEngine:
       E. Pending tasks (persistent task queue summary)
     """
 
-    def __init__(self, anima_dir: Path, shared_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        anima_dir: Path,
+        shared_dir: Path | None = None,
+        context_window: int = 0,
+    ) -> None:
         self.anima_dir = anima_dir
         self.shared_dir = shared_dir
+        self.context_window = context_window
         self.episodes_dir = anima_dir / "episodes"
         self.knowledge_dir = anima_dir / "knowledge"
         self.skills_dir = anima_dir / "skills"
         # Lazily initialized by _get_or_create_retriever(); shared by C & D
         self._retriever: object | None = None
         self._retriever_initialized: bool = False
+        # Budget values loaded lazily from config.json
+        self._config_loaded: bool = False
+        self._budget_greeting: int = _BUDGET_GREETING
+        self._budget_question: int = _BUDGET_QUESTION
+        self._budget_request: int = _BUDGET_REQUEST
+        self._budget_heartbeat: int = _BUDGET_HEARTBEAT
+        self._heartbeat_context_pct: float = 0.05
 
     # ── Main entry point ────────────────────────────────────────
 
@@ -793,6 +806,25 @@ class PrimingEngine:
             logger.debug("Channel E (pending_tasks) failed", exc_info=True)
             return ""
 
+    # ── Config loading ──────────────────────────────────────────
+
+    def _load_config_budgets(self) -> None:
+        """Load budget values from config.json (lazy, once per instance)."""
+        if self._config_loaded:
+            return
+        self._config_loaded = True
+        try:
+            from core.config.models import load_config
+            config = load_config()
+            p = config.priming
+            self._budget_greeting = p.budget_greeting
+            self._budget_question = p.budget_question
+            self._budget_request = p.budget_request
+            self._budget_heartbeat = p.budget_heartbeat
+            self._heartbeat_context_pct = p.heartbeat_context_pct
+        except Exception:
+            logger.debug("Failed to load priming config; using defaults")
+
     # ── Dynamic budget adjustment (Phase 3) ─────────────────────
 
     def _classify_message_type(self, message: str, channel: str, *, intent: str = "") -> str:
@@ -849,6 +881,10 @@ class PrimingEngine:
     def _adjust_token_budget(self, message: str, channel: str, *, intent: str = "") -> int:
         """Adjust token budget based on message type.
 
+        For heartbeat, the budget is ``max(config.budget_heartbeat,
+        int(context_window * config.heartbeat_context_pct))`` so that
+        models with large context windows get proportionally more priming.
+
         Args:
             message: Message text
             channel: Message channel
@@ -857,16 +893,24 @@ class PrimingEngine:
         Returns:
             Adjusted token budget
         """
+        self._load_config_budgets()
         msg_type = self._classify_message_type(message, channel, intent=intent)
 
-        budget_map = {
-            "greeting": _BUDGET_GREETING,
-            "question": _BUDGET_QUESTION,
-            "request": _BUDGET_REQUEST,
-            "heartbeat": _BUDGET_HEARTBEAT,
-        }
+        if msg_type == "heartbeat":
+            base = self._budget_heartbeat
+            if self.context_window > 0:
+                pct_budget = int(self.context_window * self._heartbeat_context_pct)
+                budget = max(base, pct_budget)
+            else:
+                budget = base
+        else:
+            budget_map = {
+                "greeting": self._budget_greeting,
+                "question": self._budget_question,
+                "request": self._budget_request,
+            }
+            budget = budget_map.get(msg_type, _DEFAULT_MAX_PRIMING_TOKENS)
 
-        budget = budget_map.get(msg_type, _DEFAULT_MAX_PRIMING_TOKENS)
         logger.debug("Message type: %s -> budget: %d", msg_type, budget)
         return budget
 
