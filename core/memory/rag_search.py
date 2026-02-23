@@ -200,7 +200,7 @@ class RAGMemorySearch:
 
         # Hybrid: append vector search results when RAG is available
         if self._indexer is not None and scope in (
-            "knowledge", "common_knowledge", "procedures", "all",
+            "knowledge", "common_knowledge", "procedures", "conversation_summary", "all",
         ):
             try:
                 vector_hits = self._vector_search_memory(query, scope, knowledge_dir)
