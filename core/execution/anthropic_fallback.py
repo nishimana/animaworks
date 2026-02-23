@@ -271,7 +271,7 @@ class AnthropicFallbackExecutor(BaseExecutor):
 
             tool_results = []
             for tu in tool_uses:
-                result = self._tool_handler.handle(tu.name, tu.input)
+                result = self._tool_handler.handle(tu.name, tu.input, tu.id)
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": tu.id,
@@ -314,10 +314,11 @@ class AnthropicFallbackExecutor(BaseExecutor):
         images: list[dict[str, Any]] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
         max_turns_override: int | None = None,
+        trigger: str = "",
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Stream execution events using the Anthropic SDK messages.stream().
 
-        Yields event dicts matching the A1 streaming protocol:
+        Yields event dicts matching the S mode streaming protocol:
             - ``{"type": "text_delta", "text": "..."}``
             - ``{"type": "tool_start", "tool_name": "...", "tool_id": "..."}``
             - ``{"type": "tool_end", "tool_id": "...", "tool_name": "..."}``
@@ -437,6 +438,7 @@ class AnthropicFallbackExecutor(BaseExecutor):
                             self._tool_handler.handle,
                             tu.name,
                             tu.input,
+                            tu.id,
                         )
                     except Exception as tool_err:
                         logger.exception("Tool execution error: %s", tu.name)

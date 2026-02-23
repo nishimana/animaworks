@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -76,7 +77,7 @@ def test_budget_adjustment(temp_anima_dir):
     request_budget = engine._adjust_token_budget(long_message, "chat")
     assert request_budget == 3000
 
-    # Test heartbeat budget (200 tokens)
+    # Test heartbeat budget (200 tokens - fallback when context_window=0)
     heartbeat_budget = engine._adjust_token_budget("任意の内容", "heartbeat")
     assert heartbeat_budget == 200
 
@@ -202,3 +203,97 @@ def test_heartbeat_budget_minimum_400(temp_anima_dir):
         int(_BUDGET_RECENT_ACTIVITY * (token_budget / _DEFAULT_MAX_PRIMING_TOKENS)),
     )
     assert budget_activity >= 400
+
+
+# ── New tests: backward compatibility ──────────────────────────
+
+
+def test_priming_engine_no_args_backward_compat(temp_anima_dir):
+    """PrimingEngine() with no context_window should work (backward compat)."""
+    engine = PrimingEngine(temp_anima_dir)
+    assert engine.context_window == 0
+    # Budget should fall back to hardcoded default
+    budget = engine._adjust_token_budget("任意", "heartbeat")
+    assert budget == 200
+
+
+# ── New tests: context_window driven HB budget ─────────────────
+
+
+def test_heartbeat_budget_with_context_window(temp_anima_dir):
+    """When context_window is set, HB budget = max(200, ctx * 0.05)."""
+    engine = PrimingEngine(temp_anima_dir, context_window=200_000)
+    budget = engine._adjust_token_budget("任意", "heartbeat")
+    # 200_000 * 0.05 = 10_000 > 200
+    assert budget == 10_000
+
+
+def test_heartbeat_budget_small_context_window(temp_anima_dir):
+    """When context_window is small, fallback budget_heartbeat wins."""
+    engine = PrimingEngine(temp_anima_dir, context_window=2_000)
+    budget = engine._adjust_token_budget("任意", "heartbeat")
+    # 2_000 * 0.05 = 100 < 200 → fallback to 200
+    assert budget == 200
+
+
+def test_heartbeat_budget_zero_context_window(temp_anima_dir):
+    """context_window=0 (unknown) → use fallback budget_heartbeat."""
+    engine = PrimingEngine(temp_anima_dir, context_window=0)
+    budget = engine._adjust_token_budget("任意", "heartbeat")
+    assert budget == 200
+
+
+def test_non_heartbeat_budget_unaffected_by_context_window(temp_anima_dir):
+    """Non-heartbeat budgets should not change with context_window."""
+    engine = PrimingEngine(temp_anima_dir, context_window=200_000)
+
+    assert engine._adjust_token_budget("こんにちは", "chat") == 500
+    assert engine._adjust_token_budget("これは何ですか?", "chat") == 1500
+
+    long_message = "これは長い業務依頼のメッセージです。" * 10
+    assert engine._adjust_token_budget(long_message, "chat") == 3000
+
+
+# ── New tests: config-driven budgets ────────────────────────────
+
+
+def test_config_driven_budgets(temp_anima_dir):
+    """PrimingEngine should read budget values from config.json."""
+    from core.config.models import PrimingConfig, AnimaWorksConfig
+
+    custom_config = AnimaWorksConfig(
+        priming=PrimingConfig(
+            budget_greeting=600,
+            budget_question=2000,
+            budget_request=4000,
+            budget_heartbeat=300,
+            heartbeat_context_pct=0.10,
+        ),
+    )
+
+    with patch("core.config.models.load_config", return_value=custom_config):
+        engine = PrimingEngine(temp_anima_dir, context_window=100_000)
+        # Force fresh config load
+        engine._config_loaded = False
+
+        assert engine._adjust_token_budget("こんにちは", "chat") == 600
+        assert engine._adjust_token_budget("これは何ですか?", "chat") == 2000
+
+        long_msg = "これは長い業務依頼のメッセージです。" * 10
+        assert engine._adjust_token_budget(long_msg, "chat") == 4000
+
+        # HB: max(300, 100_000 * 0.10) = max(300, 10_000) = 10_000
+        assert engine._adjust_token_budget("任意", "heartbeat") == 10_000
+
+
+def test_config_load_failure_uses_defaults(temp_anima_dir):
+    """When config load fails, hardcoded defaults are used."""
+    with patch(
+        "core.config.models.load_config",
+        side_effect=Exception("config unavailable"),
+    ):
+        engine = PrimingEngine(temp_anima_dir)
+        engine._config_loaded = False
+
+        assert engine._adjust_token_budget("こんにちは", "chat") == 500
+        assert engine._adjust_token_budget("任意", "heartbeat") == 200

@@ -420,6 +420,7 @@ class AssistedExecutor(BaseExecutor):
                     self._tool_handler.handle,
                     tool_name,
                     tool_args,
+                    tool_id,
                 )
             except Exception as e:
                 logger.exception("Mode B tool execution error: %s", tool_name)
@@ -473,6 +474,7 @@ class AssistedExecutor(BaseExecutor):
         images: list[dict[str, Any]] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
         max_turns_override: int | None = None,
+        trigger: str = "",
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Stream execution events from the text-based tool-call loop.
 
@@ -602,6 +604,7 @@ class AssistedExecutor(BaseExecutor):
                         self._tool_handler.handle,
                         tool_name,
                         tool_args,
+                        tool_id,
                     )
                 except Exception as e:
                     logger.exception(

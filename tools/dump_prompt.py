@@ -119,7 +119,7 @@ def main() -> None:
     result = build_system_prompt(
         memory=memory,
         tool_registry=tool_registry,
-        execution_mode="a1",
+        execution_mode="s",
         message=test_message,
         priming_section=priming_section,
         trigger=trigger,

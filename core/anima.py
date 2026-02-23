@@ -403,15 +403,17 @@ class DigitalAnima:
                 conv_memory = ConversationMemory(self.anima_dir, self.model_config)
                 await conv_memory.compress_if_needed()
 
-                # Determine if structured messages should be used
+                # Determine prompt and history strategy per execution mode
                 mode = self.agent.execution_mode
                 prior_messages = None
-                if mode in ("a2", "a1_fallback"):
-                    fmt = "openai" if mode == "a2" else "anthropic"
-                    prior_messages = conv_memory.build_structured_messages(
-                        content, fmt=fmt,
-                    )
-                    prompt = content  # Raw message; history is in prior_messages
+                if mode == "s":
+                    # S mode: SDK manages conversation history internally,
+                    # but we still save turns for downstream memory processes.
+                    prompt = content
+                elif mode == "a":
+                    # A mode: AnimaWorks manages history via structured messages
+                    prior_messages = conv_memory.build_structured_messages(content)
+                    prompt = content
                 elif mode == "b":
                     prompt = conv_memory.build_chat_prompt(
                         content, from_person, max_history_chars=2000,
@@ -562,14 +564,16 @@ class DigitalAnima:
                 conv_memory = ConversationMemory(self.anima_dir, self.model_config)
                 await conv_memory.compress_if_needed()
 
-                # Determine if structured messages should be used
+                # Determine prompt and history strategy per execution mode
                 mode = self.agent.execution_mode
                 prior_messages = None
-                if mode in ("a2", "a1_fallback"):
-                    fmt = "openai" if mode == "a2" else "anthropic"
-                    prior_messages = conv_memory.build_structured_messages(
-                        content, fmt=fmt,
-                    )
+                if mode == "s":
+                    # S mode: SDK manages conversation history internally,
+                    # but we still save turns for downstream memory processes.
+                    prompt = content
+                elif mode == "a":
+                    # A mode: AnimaWorks manages history via structured messages
+                    prior_messages = conv_memory.build_structured_messages(content)
                     prompt = content
                 elif mode == "b":
                     prompt = conv_memory.build_chat_prompt(
@@ -798,13 +802,12 @@ class DigitalAnima:
     def _build_prior_messages(
         self, prompt_text: str,
     ) -> list[dict[str, Any]] | None:
-        """Build prior_messages for A2/A1F modes, None otherwise."""
+        """Build prior_messages for A mode, None for S/B."""
         mode = self.agent.execution_mode
-        if mode not in ("a2", "a1_fallback"):
+        if mode != "a":
             return None
         conv = ConversationMemory(self.anima_dir, self.model_config)
-        fmt = "openai" if mode == "a2" else "anthropic"
-        return conv.build_structured_messages(prompt_text, fmt=fmt)
+        return conv.build_structured_messages(prompt_text)
 
     async def _build_heartbeat_prompt(self) -> list[str]:
         """Build heartbeat prompt parts.
@@ -1447,18 +1450,20 @@ class DigitalAnima:
 
     # ── Consolidation helpers ──────────────────────────────────
 
-    def _collect_episodes_summary(self) -> tuple[str, str]:
-        """Collect recent episodes and resolved events as formatted text.
+    def _collect_episodes_summary(self) -> tuple[str, str, str]:
+        """Collect recent episodes, resolved events, and activity log as formatted text.
 
         Returns:
-            Tuple of (episodes_summary, resolved_events_summary).
-            If no episodes are found, returns a placeholder message.
+            Tuple of (episodes_summary, resolved_events_summary, activity_log_summary).
+            If no episodes are found, returns a placeholder message for episodes
+            with empty strings for the other summaries.
         """
         from core.memory.consolidation import ConsolidationEngine
 
         engine = ConsolidationEngine(self.anima_dir, self.name)
         episodes = engine._collect_recent_episodes(hours=24)
         resolved = engine._collect_resolved_events(hours=24)
+        activity_log_summary = engine._collect_activity_entries(hours=24)
 
         # Format episodes
         if episodes:
@@ -1467,7 +1472,7 @@ class DigitalAnima:
                 for e in episodes
             )
         else:
-            return ("(本日のエピソードはありません)", "")
+            return ("(本日のエピソードはありません)", "", activity_log_summary)
 
         # Format resolved events
         if resolved:
@@ -1477,7 +1482,7 @@ class DigitalAnima:
         else:
             resolved_events_summary = ""
 
-        return (episodes_summary, resolved_events_summary)
+        return (episodes_summary, resolved_events_summary, activity_log_summary)
 
     def count_recent_episodes(self, hours: int = 24) -> int:
         """Count recent episode entries within the given time window.
@@ -1525,12 +1530,15 @@ class DigitalAnima:
                 try:
                     # Build consolidation prompt
                     if consolidation_type == "daily":
-                        episodes_summary, resolved_events_summary = self._collect_episodes_summary()
+                        episodes_summary, resolved_events_summary, activity_log_summary = (
+                            self._collect_episodes_summary()
+                        )
                         prompt = load_prompt(
                             "memory/consolidation_instruction",
                             anima_name=self.name,
                             episodes_summary=episodes_summary,
                             resolved_events_summary=resolved_events_summary,
+                            activity_log_summary=activity_log_summary or "(アクティビティログなし)",
                         )
                     else:
                         prompt = load_prompt(

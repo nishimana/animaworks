@@ -184,6 +184,20 @@ def index_command(args: argparse.Namespace) -> None:
             total_chunks += chunks
             logger.info("  Indexed %d chunks from %s/", chunks, memory_type)
 
+        # Index conversation summary (compressed_summary from conversation.json)
+        state_dir = anima_dir / "state"
+        conv_file = state_dir / "conversation.json"
+        if conv_file.is_file():
+            logger.info("Indexing conversation_summary...")
+            if args.dry_run:
+                logger.info("  Would index compressed_summary from conversation.json")
+            else:
+                chunks = indexer.index_conversation_summary(
+                    state_dir, anima_name, force=args.full,
+                )
+                total_chunks += chunks
+                logger.info("  Indexed %d chunks from conversation_summary", chunks)
+
     # Index shared user memories
     shared_users_dir = base_dir / "shared" / "users"
     if shared_users_dir.is_dir() and not args.anima:

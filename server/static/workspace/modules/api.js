@@ -101,8 +101,10 @@ export function fetchSession(name, sessionId) {
   return request(`/api/animas/${encodeURIComponent(name)}/sessions/${encodeURIComponent(sessionId)}`);
 }
 
-export function fetchConversationFull(name, limit = 50, offset = 0) {
-  return request(`/api/animas/${encodeURIComponent(name)}/conversation/full?limit=${limit}&offset=${offset}`);
+export function fetchConversationHistory(name, limit = 50, before = null) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (before) params.set("before", before);
+  return request(`/api/animas/${encodeURIComponent(name)}/conversation/history?${params}`);
 }
 
 export function fetchTranscript(name, date) {

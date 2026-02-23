@@ -252,6 +252,84 @@ class ConsolidationEngine:
             logger.debug("Failed to collect resolved events", exc_info=True)
             return []
 
+    # ── Activity Log Collection ──────────────────────────────────
+
+    def _collect_activity_entries(self, hours: int = 24) -> str:
+        """Collect recent activity log entries for consolidation input.
+
+        Retrieves response_sent, tool_use, and message_received events
+        from the unified activity log and formats them as readable text
+        for the consolidation prompt.
+
+        Args:
+            hours: Number of hours to look back (default 24).
+
+        Returns:
+            Formatted activity log summary string, truncated to
+            approximately 4000 tokens (12000 chars).  Empty string
+            if no matching entries are found.
+        """
+        _CHAR_BUDGET = 12_000  # ~4000 tokens
+
+        try:
+            from core.memory.activity import ActivityLogger
+
+            activity = ActivityLogger(self.anima_dir)
+            target_types = ["response_sent", "tool_use", "message_received"]
+            entries = activity.recent(
+                days=max(1, (hours + 23) // 24),
+                limit=200,
+                types=target_types,
+            )
+
+            if not entries:
+                return ""
+
+            # Filter by hours cutoff
+            cutoff = now_jst() - timedelta(hours=hours)
+            filtered: list = []
+            for e in entries:
+                try:
+                    ts = ensure_aware(datetime.fromisoformat(e.ts))
+                    if ts >= cutoff:
+                        filtered.append(e)
+                except (ValueError, TypeError):
+                    filtered.append(e)
+
+            if not filtered:
+                return ""
+
+            # Format entries as readable lines
+            lines: list[str] = []
+            total_chars = 0
+            for entry in filtered:
+                ts_short = entry.ts[11:16] if len(entry.ts) >= 16 else entry.ts
+                text = entry.summary or entry.content
+                if len(text) > 300:
+                    text = text[:300] + "..."
+
+                # Build context parts
+                parts: list[str] = []
+                if entry.from_person:
+                    parts.append(f"from:{entry.from_person}")
+                if entry.to_person:
+                    parts.append(f"to:{entry.to_person}")
+                if entry.tool:
+                    parts.append(f"tool:{entry.tool}")
+                ctx = f" ({', '.join(parts)})" if parts else ""
+
+                line = f"[{ts_short}] {entry.type}{ctx}: {text}"
+                if total_chars + len(line) + 1 > _CHAR_BUDGET:
+                    break
+                lines.append(line)
+                total_chars += len(line) + 1
+
+            return "\n".join(lines)
+
+        except Exception:
+            logger.debug("Failed to collect activity entries", exc_info=True)
+            return ""
+
     # ── Utilities ────────────────────────────────────────────────
 
     @staticmethod
