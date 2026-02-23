@@ -1077,7 +1077,6 @@ class AgentSDKExecutor(BaseExecutor):
         options = self._build_sdk_options(
             system_prompt, _max_turns, _cw, session_stats,
             resume=session_id_to_resume,
-            include_partial_messages=True,
         )
 
         response_text: list[str] = []
@@ -1191,7 +1190,6 @@ class AgentSDKExecutor(BaseExecutor):
                 options = self._build_sdk_options(
                     system_prompt, _max_turns, _cw, session_stats,
                     resume=None,
-                    include_partial_messages=True,
                 )
                 try:
                     async with ClaudeSDKClient(options=options) as client:
