@@ -554,6 +554,45 @@ DEFAULT_MODEL_MODE_PATTERNS: dict[str, str] = {
 # Backward-compatible alias
 DEFAULT_MODEL_MODES = DEFAULT_MODEL_MODE_PATTERNS
 
+# ── Known model catalog ──────────────────────────────────────────────────────
+# Concrete model names for reference. Used by SUPERVISOR_TOOLS description.
+# Mode is determined by DEFAULT_MODEL_MODE_PATTERNS at runtime; this list is
+# informational and does NOT restrict which models can be used.
+KNOWN_MODELS: list[dict[str, str]] = [
+    # ── Claude / Anthropic (Mode S) ──────────────────────────────────────────
+    {"name": "claude-opus-4-6",              "mode": "S", "note": "最高性能・推奨"},
+    {"name": "claude-sonnet-4-6",            "mode": "S", "note": "バランス型・推奨"},
+    {"name": "claude-haiku-4-5-20251001",    "mode": "S", "note": "軽量・高速"},
+    # Legacy (still available)
+    {"name": "claude-opus-4-5-20251101",     "mode": "S", "note": "旧フラッグシップ"},
+    {"name": "claude-opus-4-1-20250805",     "mode": "S", "note": "旧Opus"},
+    {"name": "claude-sonnet-4-5-20250929",   "mode": "S", "note": "旧Sonnet"},
+    {"name": "claude-sonnet-4-20250514",     "mode": "S", "note": "旧Sonnet4"},
+    {"name": "claude-opus-4-20250514",       "mode": "S", "note": "旧Opus4"},
+    # ── OpenAI (Mode A) ──────────────────────────────────────────────────────
+    {"name": "openai/gpt-4.1",               "mode": "A", "note": "最新・コーディング強"},
+    {"name": "openai/gpt-4.1-mini",          "mode": "A", "note": "高速・低コスト"},
+    {"name": "openai/gpt-4.1-nano",          "mode": "A", "note": "最軽量"},
+    {"name": "openai/gpt-4o",                "mode": "A", "note": "音声対応・レガシー"},
+    {"name": "openai/o3-2025-04-16",         "mode": "A", "note": "推論特化"},
+    {"name": "openai/o4-mini-2025-04-16",    "mode": "A", "note": "推論・低コスト"},
+    # ── Google Gemini (Mode A) ────────────────────────────────────────────────
+    {"name": "google/gemini-2.5-pro",        "mode": "A", "note": "最高性能"},
+    {"name": "google/gemini-2.5-flash",      "mode": "A", "note": "高速バランス"},
+    {"name": "google/gemini-2.5-flash-lite", "mode": "A", "note": "軽量・高スループット"},
+    # ── xAI Grok (Mode A) ─────────────────────────────────────────────────────
+    {"name": "xai/grok-4",                   "mode": "A", "note": "最新Grok"},
+    {"name": "xai/grok-3-beta",              "mode": "A", "note": "安定版"},
+    {"name": "xai/grok-3-mini-beta",         "mode": "A", "note": "軽量Grok"},
+    # ── Ollama Local (Mode A: tool_use 対応) ─────────────────────────────────
+    {"name": "ollama/glm-4.7",               "mode": "A", "note": "ローカル・tool_use対応"},
+    {"name": "ollama/qwen3:14b",             "mode": "A", "note": "ローカル中型"},
+    {"name": "ollama/qwen3:32b",             "mode": "A", "note": "ローカル大型"},
+    # ── Ollama Local (Mode B: tool_use 非対応) ────────────────────────────────
+    {"name": "ollama/gemma3:4b",             "mode": "B", "note": "軽量ローカル"},
+    {"name": "ollama/gemma3:12b",            "mode": "B", "note": "中型ローカル"},
+]
+
 # ── Legacy mode value mapping ──────────────────────────────
 # Maps old A1/A1F/A2/B and text-based values to new S/A/B scheme.
 _LEGACY_MODE_MAP: dict[str, str] = {

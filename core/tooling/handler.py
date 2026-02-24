@@ -341,6 +341,8 @@ class ToolHandler:
             "create_anima": self._handle_create_anima,
             "disable_subordinate": self._handle_disable_subordinate,
             "enable_subordinate": self._handle_enable_subordinate,
+            "set_subordinate_model": self._handle_set_subordinate_model,
+            "restart_subordinate":   self._handle_restart_subordinate,
             "refresh_tools": self._handle_refresh_tools,
             "share_tool": self._handle_share_tool,
             "report_procedure_outcome": self._handle_report_procedure_outcome,
@@ -1285,6 +1287,127 @@ class ToolHandler:
         )
 
         return f"'{target_name}' を有効にしました。Reconciliation が30秒以内にプロセスを起動します。"
+
+    def _handle_set_subordinate_model(self, args: dict[str, Any]) -> str:
+        """Change a subordinate anima's LLM model in config.json.
+
+        Warns if the model name is not in KNOWN_MODELS but does not block.
+        Process restart is required separately via restart_subordinate.
+        """
+        from core.config.models import AnimaModelConfig, KNOWN_MODELS
+        from core.config.models import load_config, save_config
+
+        target_name = args.get("name", "")
+        model = args.get("model", "").strip()
+        reason = args.get("reason", "")
+
+        if not target_name:
+            return _error_result("InvalidArguments", "name is required")
+        if not model:
+            return _error_result("InvalidArguments", "model is required")
+
+        err = self._check_subordinate(target_name)
+        if err:
+            return err
+
+        # Warn if model not in catalog (do not block)
+        known_names = {m["name"] for m in KNOWN_MODELS}
+        warn_msg = ""
+        if model not in known_names:
+            logger.warning(
+                "set_subordinate_model: unknown model '%s' for '%s'. "
+                "Not in KNOWN_MODELS — proceeding anyway.",
+                model, target_name,
+            )
+            warn_msg = (
+                f"\n警告: '{model}' は既知のモデルカタログに含まれていません。"
+                "正しいモデル名か確認してください。"
+            )
+
+        config = load_config()
+        if target_name not in config.animas:
+            config.animas[target_name] = AnimaModelConfig()
+        config.animas[target_name].model = model
+        save_config(config)
+
+        log_summary = f"{target_name} のモデルを {model} に変更"
+        if reason:
+            log_summary += f" (理由: {reason})"
+        self._activity.log(
+            "tool_use",
+            tool="set_subordinate_model",
+            summary=log_summary,
+            meta={"target": target_name, "model": model, "reason": reason},
+        )
+
+        logger.info(
+            "set_subordinate_model: %s changed %s model to %s (reason=%s)",
+            self._anima_name, target_name, model, reason or "(none)",
+        )
+
+        result = (
+            f"'{target_name}' のモデルを '{model}' に変更しました。"
+            "反映するには restart_subordinate を呼び出してください。"
+        )
+        if reason:
+            result += f"\n理由: {reason}"
+        return result + warn_msg
+
+    def _handle_restart_subordinate(self, args: dict[str, Any]) -> str:
+        """Request restart of a subordinate anima via sentinel flag in status.json.
+
+        The Reconciliation loop will restart the process within 30 seconds.
+        """
+        from core.paths import get_animas_dir
+
+        target_name = args.get("name", "")
+        reason = args.get("reason", "")
+
+        if not target_name:
+            return _error_result("InvalidArguments", "name is required")
+
+        err = self._check_subordinate(target_name)
+        if err:
+            return err
+
+        target_dir = get_animas_dir() / target_name
+        status_file = target_dir / "status.json"
+
+        existing: dict[str, Any] = {}
+        if status_file.exists():
+            try:
+                existing = _json.loads(status_file.read_text(encoding="utf-8"))
+            except (_json.JSONDecodeError, OSError):
+                pass
+
+        existing["restart_requested"] = True
+        status_file.write_text(
+            _json.dumps(existing, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+        log_summary = f"{target_name} を再起動リクエスト"
+        if reason:
+            log_summary += f" (理由: {reason})"
+        self._activity.log(
+            "tool_use",
+            tool="restart_subordinate",
+            summary=log_summary,
+            meta={"target": target_name, "reason": reason},
+        )
+
+        logger.info(
+            "restart_subordinate: %s requested restart of %s (reason=%s)",
+            self._anima_name, target_name, reason or "(none)",
+        )
+
+        result = (
+            f"'{target_name}' の再起動をリクエストしました。"
+            "Reconciliation が 30 秒以内にプロセスを再起動します。"
+        )
+        if reason:
+            result += f"\n理由: {reason}"
+        return result
 
     # ── Tool management handlers ─────────────────────────────
 
