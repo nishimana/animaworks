@@ -388,10 +388,13 @@ def save_config(config: AnimaWorksConfig, path: Path | None = None) -> None:
 
     payload = config.model_dump(mode="json")
     text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
-    path.write_text(text, encoding="utf-8")
 
-    # Restrict permissions — the file may contain API keys.
-    os.chmod(path, 0o600)
+    # Atomic write: write to a sibling temp file then rename so that
+    # concurrent readers never see a partially-written (empty) file.
+    tmp_path = path.with_suffix(".tmp")
+    tmp_path.write_text(text, encoding="utf-8")
+    os.chmod(tmp_path, 0o600)
+    tmp_path.rename(path)
 
     logger.debug("Config saved to %s", path)
 
