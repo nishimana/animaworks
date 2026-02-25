@@ -615,10 +615,14 @@ def build_system_prompt(
         knowledge_list = ", ".join(memory.list_knowledge_files()) or "(なし)"
         episode_list = ", ".join(memory.list_episode_files()[:7]) or "(なし)"
         procedure_list = ", ".join(memory.list_procedure_files()) or "(なし)"
-        all_skill_names = [m.name for m in skill_metas] + [
-            f"{m.name}(共通)" for m in common_skill_metas
-        ]
-        skill_names = ", ".join(all_skill_names) or "(なし)"
+        skill_lines: list[str] = []
+        for m in skill_metas:
+            desc = f": {m.description}" if m.description else ""
+            skill_lines.append(f"- {m.name}{desc}")
+        for m in common_skill_metas:
+            desc = f": {m.description}" if m.description else ""
+            skill_lines.append(f"- {m.name}(共通){desc}")
+        skill_names = "\n".join(skill_lines) or "(なし)"
         shared_users_list = ", ".join(memory.list_shared_users()) or "(なし)"
 
         parts.append(load_prompt(
