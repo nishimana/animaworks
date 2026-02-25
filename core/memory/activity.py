@@ -33,6 +33,33 @@ logger = logging.getLogger("animaworks.activity")
 # Rough characters-per-token for Japanese/English mixed text.
 _CHARS_PER_TOKEN = 4
 
+# Alias mapping: old event type → new canonical name.
+# Used for backward compatibility with existing JSONL logs.
+_EVENT_TYPE_ALIASES: dict[str, str] = {
+    "dm_sent": "message_sent",
+    "dm_received": "message_received",
+}
+
+
+def _resolve_type_filter(types: list[str] | None) -> set[str] | None:
+    """Expand a type filter list to include aliases.
+
+    When the caller requests ``["message_sent"]``, the resolved set
+    also includes ``"dm_sent"`` so that older log entries still match.
+    Conversely, requesting ``["dm_sent"]`` also matches ``"message_sent"``.
+    """
+    if types is None:
+        return None
+    resolved: set[str] = set()
+    for t in types:
+        resolved.add(t)
+        for old, new in _EVENT_TYPE_ALIASES.items():
+            if t == new:
+                resolved.add(old)
+            elif t == old:
+                resolved.add(new)
+    return resolved
+
 
 # ── Data model ────────────────────────────────────────────────
 
@@ -53,6 +80,7 @@ class ActivityEntry:
     meta: dict[str, Any] = field(default_factory=dict)
     _line_number: int = field(default=0, init=False, repr=False)
     _anima_name: str = field(default="", init=False, repr=False)
+    _tool_result_data: dict[str, Any] | None = field(default=None, init=False, repr=False)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a JSON-safe dict, omitting empty fields."""
@@ -116,7 +144,7 @@ class ActivityPage:
 def _get_peer(group: EntryGroup) -> str:
     """Get the peer name from the first entry of a DM group."""
     e = group.entries[0]
-    if e.type == "dm_sent":
+    if e.type in ("dm_sent", "message_sent"):
         return e.to_person
     return e.from_person
 
@@ -266,7 +294,7 @@ class ActivityLogger:
         entries: list[ActivityEntry] = []
         now = now_jst()
         today = now.date()
-        type_set = set(types) if types else None
+        type_set = _resolve_type_filter(types)
 
         # Determine scan range
         scan_days = days
@@ -466,6 +494,11 @@ class ActivityLogger:
     def _format_entry(entry: ActivityEntry, content_trim: int = 200) -> str:
         """Format a single entry as a concise timeline line."""
         ts = entry.ts[11:16] if len(entry.ts) >= 16 else entry.ts
+
+        # tool_result: compact meta-only format for consolidation
+        if entry.type == "tool_result":
+            return ActivityLogger._format_tool_result_entry(entry, ts)
+
         text = entry.summary or entry.content
 
         # Truncate long content with pointer (0 = no trim)
@@ -485,11 +518,12 @@ class ActivityLogger:
 
         type_map: dict[str, str] = {
             "message_received": "MSG<",
-            "response_sent": "MSG>",
+            "message_sent": "MSG>",
+            "response_sent": "RESP>",
             "channel_read": "CH.R",
             "channel_post": "CH.W",
-            "dm_received": "DM<",
-            "dm_sent": "DM>",
+            "dm_received": "MSG<",
+            "dm_sent": "MSG>",
             "human_notify": "NTFY",
             "tool_use": "TOOL",
             "tool_result": "TRES",
@@ -520,6 +554,36 @@ class ActivityLogger:
         ctx = f"({', '.join(context_parts)})" if context_parts else ""
         return f"[{ts}] {icon} {entry.type}{ctx}: {text}"
 
+    @staticmethod
+    def _format_tool_result_entry(entry: ActivityEntry, ts: str) -> str:
+        """Format tool_result as compact meta-only line for consolidation.
+
+        Output: ``[HH:MM] TRES tool_name → ok (12件, 3.2KB)``
+        Avoids injecting raw result content (which can be huge).
+        """
+        tool = entry.tool or "unknown"
+        meta = entry.meta or {}
+        status = meta.get("result_status", "ok")
+        result_bytes = meta.get("result_bytes", 0)
+        result_count = meta.get("result_count")
+
+        if result_bytes >= 1024:
+            size_str = f"{result_bytes / 1024:.1f}KB"
+        else:
+            size_str = f"{result_bytes}B"
+
+        parts = []
+        if result_count is not None:
+            parts.append(f"{result_count}件")
+        parts.append(size_str)
+
+        detail = f" ({', '.join(parts)})" if parts else ""
+
+        if status == "fail":
+            err_hint = (entry.content or "")[:60]
+            return f"[{ts}] TRES {tool} → fail: {err_hint}"
+        return f"[{ts}] TRES {tool} → ok{detail}"
+
     # ── Grouping ─────────────────────────────────────────────
 
     @staticmethod
@@ -542,9 +606,13 @@ class ActivityLogger:
         for entry in entries:
             entry_type = entry.type
 
-            # DM grouping
-            if entry_type in ("dm_sent", "dm_received"):
-                peer = entry.to_person if entry_type == "dm_sent" else entry.from_person
+            # DM / inter-Anima message grouping (includes legacy aliases).
+            # Human-chat message_received (from_type="human") is excluded.
+            _is_dm_event = entry_type in ("dm_sent", "dm_received", "message_sent")
+            if entry_type == "message_received":
+                _is_dm_event = entry.meta.get("from_type") == "anima"
+            if _is_dm_event:
+                peer = entry.to_person if entry_type in ("dm_sent", "message_sent") else entry.from_person
                 if (
                     current_group
                     and current_group.type == "dm"
@@ -646,9 +714,8 @@ class ActivityLogger:
             # Header: [HH:MM-HH:MM] DM {peer}:
             peer = _get_peer(group)
             lines = [f"{time_range} DM {peer}:"]
-            # Child lines: indented DM direction + summary
             for e in group.entries:
-                direction = "DM<" if e.type == "dm_received" else "DM>"
+                direction = "MSG<" if e.type in ("dm_received", "message_received") else "MSG>"
                 text = e.summary or e.content[:100]
                 if len(text) > 100:
                     text = text[:100]
@@ -683,6 +750,240 @@ class ActivityLogger:
 
         # Single entry: use _format_entry
         return ActivityLogger._format_entry(group.entries[0], content_trim=content_trim)
+
+    # ── Trigger-based grouping (for timeline UI) ──────────────────
+
+    _TRIGGER_TYPES = frozenset({
+        "heartbeat_start", "message_received", "cron_executed",
+        "task_created", "task_updated",
+        "inbox_processing_start", "task_exec_start",
+    })
+
+    _CLOSE_MAP: dict[str, frozenset[str]] = {
+        "heartbeat": frozenset({"heartbeat_end"}),
+        "chat": frozenset({"response_sent"}),
+        "dm": frozenset({"response_sent", "message_sent", "dm_sent"}),
+        "inbox": frozenset({"inbox_processing_end"}),
+        # task_exec: no explicit close — stays open until the next trigger
+        # so that the follow-up message_sent (completion report) is absorbed.
+    }
+
+    @staticmethod
+    def group_by_trigger(
+        entries: list[ActivityEntry],
+    ) -> list[dict[str, Any]]:
+        """Group entries by trigger events for timeline display.
+
+        Trigger events (heartbeat_start, message_received, cron_executed,
+        task_created, inbox_processing_start, task_exec_start) open a new
+        group.  Subsequent events are absorbed into the open group until a
+        closing event or the next trigger *for the same Anima*.
+
+        Each Anima's open group is tracked independently so that
+        cross-Anima interleaving does not break grouping.
+
+        tool_use / tool_result pairs are merged into a single entry
+        with ``tool_result`` field attached.
+
+        This is a static method — no ``ActivityLogger`` instance is needed.
+        """
+        _AL = ActivityLogger
+        paired = _AL._pair_tool_results(entries)
+        groups: list[dict[str, Any]] = []
+        current_by_anima: dict[str, dict[str, Any]] = {}
+
+        for entry in paired:
+            etype = entry.type
+            anima = entry._anima_name
+            evt_dict = _AL._entry_to_event_dict(entry)
+            is_trigger = etype in _AL._TRIGGER_TYPES
+            cur = current_by_anima.get(anima)
+
+            if is_trigger:
+                if cur is not None:
+                    _AL._finalize_group(cur)
+                    groups.append(cur)
+                current_by_anima[anima] = _AL._open_group(entry, evt_dict)
+                continue
+
+            if etype == "heartbeat_end":
+                if cur and cur["type"] == "heartbeat":
+                    cur["events"].append(evt_dict)
+                    cur["end_ts"] = entry.ts
+                    cur["is_open"] = False
+                    if entry.summary:
+                        cur["summary"] = entry.summary
+                    _AL._finalize_group(cur)
+                    groups.append(cur)
+                    del current_by_anima[anima]
+                    continue
+                # HB was interrupted (e.g. by a user chat). Retroactively
+                # append to the most recent finalized heartbeat group for
+                # this anima so the end event is not orphaned.
+                retrogrp = _AL._find_recent_group(
+                    groups, anima, "heartbeat",
+                )
+                if retrogrp is not None:
+                    retrogrp["events"].append(evt_dict)
+                    retrogrp["end_ts"] = entry.ts
+                    retrogrp["is_open"] = False
+                    if entry.summary:
+                        retrogrp["summary"] = entry.summary
+                    retrogrp["event_count"] = len(retrogrp["events"])
+                    continue
+                # No matching heartbeat at all — absorb into current if any
+                if cur is not None:
+                    cur["events"].append(evt_dict)
+                    cur["end_ts"] = entry.ts
+                    continue
+
+            if cur is not None:
+                close_types = _AL._CLOSE_MAP.get(cur["type"], frozenset())
+                cur["events"].append(evt_dict)
+                cur["end_ts"] = entry.ts
+                if etype in close_types:
+                    cur["is_open"] = False
+                    _AL._finalize_group(cur)
+                    groups.append(cur)
+                    del current_by_anima[anima]
+                continue
+
+            # Last resort: try to append to the most recent finalized
+            # group for this anima (catches post-close follow-up events
+            # like message_sent after task_exec_end).
+            retrogrp = _AL._find_recent_group(groups, anima)
+            if retrogrp is not None:
+                retrogrp["events"].append(evt_dict)
+                retrogrp["end_ts"] = entry.ts
+                retrogrp["event_count"] = len(retrogrp["events"])
+                continue
+
+            groups.append(_AL._make_single_group(entry, evt_dict))
+
+        for cur in current_by_anima.values():
+            _AL._finalize_group(cur)
+            groups.append(cur)
+
+        return groups
+
+    @staticmethod
+    def _pair_tool_results(
+        entries: list[ActivityEntry],
+    ) -> list[ActivityEntry]:
+        """Attach tool_result data to tool_use entries, remove paired results.
+
+        Sets ``_tool_result_data`` on tool_use entries and returns a
+        filtered list excluding consumed tool_result entries.
+        """
+        result_by_id: dict[str, ActivityEntry] = {}
+        for e in entries:
+            if e.type == "tool_result":
+                tid = e.meta.get("tool_use_id", "")
+                if tid:
+                    result_by_id[tid] = e
+
+        paired_ids: set[int] = set()
+        for e in entries:
+            if e.type == "tool_use":
+                tid = e.meta.get("tool_use_id", "")
+                result_entry = result_by_id.get(tid) if tid else None
+                if not result_entry:
+                    result_entry = ActivityLogger._find_tool_result_fallback(
+                        entries, e,
+                    )
+                if result_entry:
+                    e._tool_result_data = {
+                        "content": result_entry.content or result_entry.summary,
+                        "is_error": result_entry.meta.get("is_error", False),
+                    }
+                    paired_ids.add(id(result_entry))
+
+        return [e for e in entries if id(e) not in paired_ids]
+
+    @staticmethod
+    def _entry_to_event_dict(entry: ActivityEntry) -> dict[str, Any]:
+        """Convert an entry to API dict, attaching tool_result if paired."""
+        d = entry.to_api_dict()
+        if entry.type == "tool_use" and entry._tool_result_data is not None:
+            d["tool_result"] = entry._tool_result_data
+        return d
+
+    @staticmethod
+    def _open_group(entry: ActivityEntry, evt_dict: dict[str, Any]) -> dict[str, Any]:
+        """Create a new group dict from a trigger entry."""
+        etype = entry.type
+        anima = entry._anima_name
+
+        if etype == "heartbeat_start":
+            gtype = "heartbeat"
+        elif etype == "message_received":
+            from_type = entry.meta.get("from_type", "human")
+            gtype = "dm" if from_type == "anima" else "chat"
+        elif etype == "cron_executed":
+            gtype = "cron"
+        elif etype in ("task_created", "task_updated"):
+            gtype = "task"
+        elif etype == "inbox_processing_start":
+            gtype = "inbox"
+        elif etype == "task_exec_start":
+            gtype = "task_exec"
+        else:
+            gtype = "single"
+
+        summary = entry.summary or entry.meta.get("task_name", "")
+        if gtype == "dm":
+            summary = entry.from_person or entry.to_person or summary
+
+        return {
+            "id": f"grp-{anima}:{entry.ts}:{gtype}",
+            "type": gtype,
+            "anima": anima,
+            "start_ts": entry.ts,
+            "end_ts": entry.ts,
+            "summary": summary,
+            "event_count": 1,
+            "is_open": True,
+            "events": [evt_dict],
+        }
+
+    @staticmethod
+    def _make_single_group(entry: ActivityEntry, evt_dict: dict[str, Any]) -> dict[str, Any]:
+        anima = entry._anima_name
+        return {
+            "id": f"grp-{anima}:{entry.ts}:single",
+            "type": "single",
+            "anima": anima,
+            "start_ts": entry.ts,
+            "end_ts": entry.ts,
+            "summary": entry.summary,
+            "event_count": 1,
+            "is_open": False,
+            "events": [evt_dict],
+        }
+
+    @staticmethod
+    def _find_recent_group(
+        groups: list[dict[str, Any]],
+        anima: str,
+        gtype: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Find the most recently finalized group for *anima*.
+
+        Searches *groups* in reverse.  If *gtype* is given, only groups of
+        that type are considered.
+        """
+        for grp in reversed(groups):
+            if grp["anima"] != anima:
+                continue
+            if gtype is not None and grp["type"] != gtype:
+                continue
+            return grp
+        return None
+
+    @staticmethod
+    def _finalize_group(group: dict[str, Any]) -> None:
+        """Update event_count before returning the group."""
+        group["event_count"] = len(group["events"])
 
     # ── Conversation view ───────────────────────────────────────
 

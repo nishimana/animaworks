@@ -126,8 +126,10 @@ class TestMigrateToConfigJson:
         config_path = data_dir / "config.json"
         data = json.loads(config_path.read_text(encoding="utf-8"))
         assert "alice" in data["animas"]
-        assert data["animas"]["alice"]["model"] == "gpt-4o"
-        assert data["animas"]["alice"]["max_tokens"] == 2048
+        # Model config now lives in status.json
+        status_data = json.loads((alice_dir / "status.json").read_text(encoding="utf-8"))
+        assert status_data["model"] == "gpt-4o"
+        assert status_data["max_tokens"] == 2048
         assert "openai" in data["credentials"]
         assert data["credentials"]["openai"]["api_key"] == "sk-test123"
 

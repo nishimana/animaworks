@@ -28,13 +28,14 @@ from typing import Any
 from core.exceptions import LLMAPIError, ToolExecutionError, ConfigError  # noqa: F401
 from core.prompt.context import ContextTracker, resolve_context_window
 from core.execution._session import build_continuation_prompt, handle_session_chaining
+from core.execution._sanitize import wrap_tool_result
 from core.execution._streaming import (
     accumulate_tool_call_chunks,
     parse_accumulated_tool_calls,
     stream_error_boundary,
 )
 from core.execution.base import BaseExecutor, ExecutionResult, StreamDisconnectedError, ToolCallRecord, _truncate_for_record, tool_input_save_budget, tool_result_save_budget
-from core.execution.reminder import MSG_CONTEXT_THRESHOLD, MSG_OUTPUT_TRUNCATED, SystemReminderQueue
+from core.execution.reminder import MSG_CONTEXT_THRESHOLD, MSG_FINAL_ITERATION, MSG_OUTPUT_TRUNCATED, SystemReminderQueue
 from core.memory import MemoryManager
 from core.prompt.builder import build_system_prompt
 from core.schemas import ModelConfig
@@ -290,7 +291,7 @@ class LiteLLMExecutor(BaseExecutor):
             fn_args,
             tc.id,
         )
-        return {"role": "tool", "tool_call_id": tc.id, "content": result}
+        return {"role": "tool", "tool_call_id": tc.id, "content": wrap_tool_result(tc.function.name, result)}
 
     # ── C3b: execute() uses _build_initial_messages / _preflight_clamp ──
 
@@ -325,6 +326,23 @@ class LiteLLMExecutor(BaseExecutor):
         chain_count = 0
 
         for iteration in range(max_iterations):
+            is_final_iteration = (
+                max_iterations > 1 and iteration == max_iterations - 1
+            )
+            iter_tools = [] if is_final_iteration else tools
+
+            if is_final_iteration:
+                messages.append({
+                    "role": "user",
+                    "content": SystemReminderQueue.format_reminder(
+                        MSG_FINAL_ITERATION,
+                    ),
+                })
+                logger.info(
+                    "A final iteration=%d: tools removed, requesting final answer",
+                    iteration,
+                )
+
             logger.debug(
                 "A tool loop iteration=%d messages=%d",
                 iteration, len(messages),
@@ -332,7 +350,7 @@ class LiteLLMExecutor(BaseExecutor):
 
             # ── Pre-flight: clamp max_tokens to fit context window ──
             iter_kwargs = self._preflight_clamp(
-                llm_kwargs, messages, tools, litellm,
+                llm_kwargs, messages, iter_tools, litellm,
             )
             if iter_kwargs is None:
                 return ExecutionResult(
@@ -341,12 +359,15 @@ class LiteLLMExecutor(BaseExecutor):
                     tool_call_records=all_tool_records,
                 )
 
+            call_kwargs: dict[str, Any] = {
+                "messages": messages,
+                **iter_kwargs,
+            }
+            if not is_final_iteration:
+                call_kwargs["tools"] = tools
+
             try:
-                response = await litellm.acompletion(
-                    messages=messages,
-                    tools=tools,
-                    **iter_kwargs,
-                )
+                response = await litellm.acompletion(**call_kwargs)
             except Exception as e:
                 logger.exception("LiteLLM API error")
                 return ExecutionResult(text=f"[LLM API Error: {e}]")
@@ -521,14 +542,32 @@ class LiteLLMExecutor(BaseExecutor):
             all_response_text, executor_name="A-stream",
         ):
             for iteration in range(max_iterations):
+                is_final_iteration = (
+                    max_iterations > 1 and iteration == max_iterations - 1
+                )
+
+                if is_final_iteration:
+                    messages.append({
+                        "role": "user",
+                        "content": SystemReminderQueue.format_reminder(
+                            MSG_FINAL_ITERATION,
+                        ),
+                    })
+                    logger.info(
+                        "A stream final iteration=%d: tools removed",
+                        iteration,
+                    )
+
                 logger.debug(
                     "A stream iteration=%d messages=%d",
                     iteration, len(messages),
                 )
 
+                iter_tools = [] if is_final_iteration else tools
+
                 # ── Pre-flight: clamp max_tokens to fit context window ──
                 iter_kwargs = self._preflight_clamp(
-                    llm_kwargs, messages, tools, litellm,
+                    llm_kwargs, messages, iter_tools, litellm,
                 )
                 if iter_kwargs is None:
                     # Prompt too large -- emit error and stop
@@ -545,13 +584,16 @@ class LiteLLMExecutor(BaseExecutor):
                     return
 
                 # Stream the LLM response
-                response = await litellm.acompletion(
-                    messages=messages,
-                    tools=tools,
-                    stream=True,
-                    stream_options={"include_usage": True},
+                call_kwargs: dict[str, Any] = {
+                    "messages": messages,
+                    "stream": True,
+                    "stream_options": {"include_usage": True},
                     **iter_kwargs,
-                )
+                }
+                if not is_final_iteration:
+                    call_kwargs["tools"] = tools
+
+                response = await litellm.acompletion(**call_kwargs)
 
                 # Accumulate streamed chunks
                 iter_text_parts: list[str] = []
@@ -734,14 +776,32 @@ class LiteLLMExecutor(BaseExecutor):
             all_response_text, executor_name="A-ollama-stream",
         ):
             for iteration in range(max_iterations):
+                is_final_iteration = (
+                    max_iterations > 1 and iteration == max_iterations - 1
+                )
+
+                if is_final_iteration:
+                    messages.append({
+                        "role": "user",
+                        "content": SystemReminderQueue.format_reminder(
+                            MSG_FINAL_ITERATION,
+                        ),
+                    })
+                    logger.info(
+                        "A ollama stream final iteration=%d: tools removed",
+                        iteration,
+                    )
+
                 logger.debug(
                     "A ollama stream iteration=%d messages=%d",
                     iteration, len(messages),
                 )
 
+                iter_tools = [] if is_final_iteration else tools
+
                 # ── Pre-flight: clamp max_tokens to fit context window ──
                 iter_kwargs = self._preflight_clamp(
-                    llm_kwargs, messages, tools, litellm,
+                    llm_kwargs, messages, iter_tools, litellm,
                 )
                 if iter_kwargs is None:
                     error_msg = (
@@ -756,11 +816,14 @@ class LiteLLMExecutor(BaseExecutor):
                     }
                     return
 
-                response = await litellm.acompletion(
-                    messages=messages,
-                    tools=tools,
+                call_kwargs: dict[str, Any] = {
+                    "messages": messages,
                     **iter_kwargs,
-                )
+                }
+                if not is_final_iteration:
+                    call_kwargs["tools"] = tools
+
+                response = await litellm.acompletion(**call_kwargs)
 
                 choice = response.choices[0]
                 message = choice.message
@@ -1002,7 +1065,7 @@ class LiteLLMExecutor(BaseExecutor):
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc_id,
-                    "content": error_content,
+                    "content": wrap_tool_result(fn_name, error_content),
                 })
                 yield {
                     "type": "tool_end", "tool_id": tc_id, "tool_name": fn_name,
@@ -1032,7 +1095,7 @@ class LiteLLMExecutor(BaseExecutor):
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc_id,
-                    "content": result,
+                    "content": wrap_tool_result(fn_name, result),
                 })
                 yield {
                     "type": "tool_end", "tool_id": tc_id, "tool_name": fn_name,
@@ -1050,7 +1113,7 @@ class LiteLLMExecutor(BaseExecutor):
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc_id,
-                    "content": result,
+                    "content": wrap_tool_result(fn_name, result),
                 })
                 yield {
                     "type": "tool_end", "tool_id": tc_id, "tool_name": fn_name,
@@ -1105,7 +1168,7 @@ class LiteLLMExecutor(BaseExecutor):
                     messages.append({
                         "role": "tool",
                         "tool_call_id": shim.id,
-                        "content": error_content,
+                        "content": wrap_tool_result(shim.function.name, error_content),
                     })
                     result_summary = _truncate_for_record(error_content, tool_result_save_budget(shim.function.name, context_window))
                 else:
@@ -1139,7 +1202,7 @@ class LiteLLMExecutor(BaseExecutor):
                     messages.append({
                         "role": "tool",
                         "tool_call_id": shim.id,
-                        "content": error_content,
+                        "content": wrap_tool_result(shim.function.name, error_content),
                     })
                     result_summary = _truncate_for_record(error_content, tool_result_save_budget(shim.function.name, context_window))
                 yield {

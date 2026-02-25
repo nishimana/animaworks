@@ -85,36 +85,29 @@ class TestSetSubordinateModel:
         return d
 
     def test_set_model_success(self, tmp_path: Path):
-        """Known model name updates config.json correctly."""
+        """Known model name updates status.json correctly."""
         handler = _make_handler(tmp_path, "manager")
 
         # Use a known model name (first entry in KNOWN_MODELS)
-        from core.config.models import KNOWN_MODELS, AnimaModelConfig, AnimaWorksConfig
+        from core.config.models import KNOWN_MODELS
 
         known_model = KNOWN_MODELS[0]["name"]
 
-        # Build a config with "engineer" as a direct subordinate
-        cfg = AnimaWorksConfig()
-        cfg.animas["engineer"] = AnimaModelConfig(supervisor="manager")
-
-        saved: list = []
-
-        def fake_save(c):
-            saved.append(c)
+        # Create engineer anima dir with status.json
+        engineer_dir = self._animas_dir(tmp_path) / "engineer"
+        engineer_dir.mkdir(parents=True, exist_ok=True)
+        status_file = engineer_dir / "status.json"
+        status_file.write_text(
+            json.dumps({"enabled": True, "supervisor": "manager"}),
+            encoding="utf-8",
+        )
 
         with (
             patch(
                 "core.tooling.handler.ToolHandler._check_subordinate",
                 return_value=None,
             ),
-            patch(
-                "core.config.models.load_config",
-                return_value=cfg,
-            ),
-            patch(
-                "core.config.models.save_config",
-                side_effect=fake_save,
-            ),
+            patch("core.paths.get_data_dir", return_value=tmp_path),
         ):
             result = handler._handle_set_subordinate_model(
                 {"name": "engineer", "model": known_model}
@@ -123,9 +116,9 @@ class TestSetSubordinateModel:
         # Should succeed (no error JSON)
         assert "error" not in result.lower() or "警告" in result
         assert known_model in result
-        # config was saved with the new model
-        assert len(saved) == 1
-        assert saved[0].animas["engineer"].model == known_model
+        # status.json was updated
+        updated_status = json.loads(status_file.read_text(encoding="utf-8"))
+        assert updated_status["model"] == known_model
 
     def test_set_model_unknown_model_warns(self, tmp_path: Path, caplog):
         """Models outside KNOWN_MODELS succeed but emit a warning."""
@@ -133,18 +126,20 @@ class TestSetSubordinateModel:
 
         handler = _make_handler(tmp_path, "manager")
 
-        from core.config.models import AnimaModelConfig, AnimaWorksConfig
-
-        cfg = AnimaWorksConfig()
-        cfg.animas["engineer"] = AnimaModelConfig(supervisor="manager")
+        # Create engineer anima dir with status.json
+        engineer_dir = self._animas_dir(tmp_path) / "engineer"
+        engineer_dir.mkdir(parents=True, exist_ok=True)
+        (engineer_dir / "status.json").write_text(
+            json.dumps({"enabled": True, "supervisor": "manager"}),
+            encoding="utf-8",
+        )
 
         with (
             patch(
                 "core.tooling.handler.ToolHandler._check_subordinate",
                 return_value=None,
             ),
-            patch("core.config.models.load_config", return_value=cfg),
-            patch("core.config.models.save_config"),
+            patch("core.paths.get_data_dir", return_value=tmp_path),
             caplog.at_level(logging.WARNING),
         ):
             result = handler._handle_set_subordinate_model(

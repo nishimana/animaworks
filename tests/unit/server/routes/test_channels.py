@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from datetime import date
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -172,6 +172,114 @@ class TestGetChannelMessages:
             # Uppercase name violates ^[a-z][a-z0-9_-]{0,30}$
             resp = await client.get("/api/channels/INVALID")
         assert resp.status_code == 400
+
+    async def test_reverse_pagination_returns_newest_first(self, tmp_path: Path):
+        """offset=0 returns the newest N messages in chronological order."""
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+        entries = [
+            {"ts": f"2026-02-17T{h:02d}:00:00", "from": "sakura", "text": f"msg{h}", "source": "anima"}
+            for h in range(10)
+        ]
+        _write_channel(shared_dir, "general", entries)
+
+        app = _make_test_app(shared_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/channels/general?limit=3&offset=0")
+        data = resp.json()
+        assert len(data["messages"]) == 3
+        assert data["total"] == 10
+        assert data["has_more"] is True
+        texts = [m["text"] for m in data["messages"]]
+        assert texts == ["msg7", "msg8", "msg9"]
+
+    async def test_reverse_pagination_second_page(self, tmp_path: Path):
+        """offset=3 returns the next 3 older messages."""
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+        entries = [
+            {"ts": f"2026-02-17T{h:02d}:00:00", "from": "sakura", "text": f"msg{h}", "source": "anima"}
+            for h in range(10)
+        ]
+        _write_channel(shared_dir, "general", entries)
+
+        app = _make_test_app(shared_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/channels/general?limit=3&offset=3")
+        data = resp.json()
+        assert len(data["messages"]) == 3
+        texts = [m["text"] for m in data["messages"]]
+        assert texts == ["msg4", "msg5", "msg6"]
+        assert data["has_more"] is True
+
+    async def test_reverse_pagination_last_page(self, tmp_path: Path):
+        """Last page returns remaining messages with has_more=false."""
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+        entries = [
+            {"ts": f"2026-02-17T{h:02d}:00:00", "from": "sakura", "text": f"msg{h}", "source": "anima"}
+            for h in range(10)
+        ]
+        _write_channel(shared_dir, "general", entries)
+
+        app = _make_test_app(shared_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/channels/general?limit=5&offset=7")
+        data = resp.json()
+        assert len(data["messages"]) == 3
+        texts = [m["text"] for m in data["messages"]]
+        assert texts == ["msg0", "msg1", "msg2"]
+        assert data["has_more"] is False
+
+    async def test_reverse_pagination_all_messages_traversal(self, tmp_path: Path):
+        """Traversing all pages yields all messages in correct order."""
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+        entries = [
+            {"ts": f"2026-02-17T{h:02d}:00:00", "from": "sakura", "text": f"msg{h}", "source": "anima"}
+            for h in range(75)
+        ]
+        _write_channel(shared_dir, "general", entries)
+
+        app = _make_test_app(shared_dir)
+        transport = ASGITransport(app=app)
+        all_texts: list[str] = []
+        offset = 0
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            while True:
+                resp = await client.get(f"/api/channels/general?limit=50&offset={offset}")
+                data = resp.json()
+                page_texts = [m["text"] for m in data["messages"]]
+                all_texts = page_texts + all_texts
+                offset += len(data["messages"])
+                if not data["has_more"]:
+                    break
+
+        assert len(all_texts) == 75
+        assert all_texts == [f"msg{i}" for i in range(75)]
+
+    async def test_small_channel_no_has_more(self, tmp_path: Path):
+        """Channel with fewer messages than limit returns all with has_more=false."""
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+        entries = [
+            {"ts": f"2026-02-17T{h:02d}:00:00", "from": "sakura", "text": f"msg{h}", "source": "anima"}
+            for h in range(3)
+        ]
+        _write_channel(shared_dir, "general", entries)
+
+        app = _make_test_app(shared_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/channels/general?limit=50&offset=0")
+        data = resp.json()
+        assert len(data["messages"]) == 3
+        assert data["has_more"] is False
+        texts = [m["text"] for m in data["messages"]]
+        assert texts == ["msg0", "msg1", "msg2"]
 
     async def test_empty_channel_returns_empty_list(self, tmp_path: Path):
         shared_dir = tmp_path / "shared"
@@ -351,7 +459,8 @@ class TestListDMPairs:
         assert resp.status_code == 200
         assert resp.json() == []
 
-    async def test_lists_dm_pairs(self, tmp_path: Path):
+    @patch("core.config.models.load_config", side_effect=Exception("no config"))
+    async def test_lists_dm_pairs(self, _mock_load_config: MagicMock, tmp_path: Path):
         """Legacy dm_logs entries are picked up by the fallback path."""
         shared_dir = tmp_path / "shared"
         shared_dir.mkdir()
@@ -376,7 +485,10 @@ class TestListDMPairs:
         assert ab["participants"] == ["alice", "bob"]
         assert ab["last_message_ts"] == "2026-02-17T11:00:00"
 
-    async def test_lists_dm_pairs_from_activity_log(self, tmp_path: Path):
+    @patch("core.config.models.load_config", side_effect=Exception("no config"))
+    async def test_lists_dm_pairs_from_activity_log(
+        self, _mock_load_config: MagicMock, tmp_path: Path,
+    ):
         """Activity log entries (primary source) are aggregated into DM pairs."""
         data_dir = tmp_path
         shared_dir = data_dir / "shared"
@@ -409,7 +521,10 @@ class TestListDMPairs:
         assert pair["message_count"] == 4
         assert pair["last_message_ts"] == f"{today}T10:10:00"
 
-    async def test_merges_activity_log_and_legacy_dm_logs(self, tmp_path: Path):
+    @patch("core.config.models.load_config", side_effect=Exception("no config"))
+    async def test_merges_activity_log_and_legacy_dm_logs(
+        self, _mock_load_config: MagicMock, tmp_path: Path,
+    ):
         """Activity log entries and legacy dm_logs are merged into a single pair."""
         data_dir = tmp_path
         shared_dir = data_dir / "shared"
@@ -455,6 +570,89 @@ class TestListDMPairs:
             resp = await client.get("/api/dm")
         assert resp.status_code == 200
         assert resp.json() == []
+
+    @patch("core.config.models.load_config")
+    async def test_filters_garbage_pairs_with_valid_names(
+        self, mock_load_config: MagicMock, tmp_path: Path,
+    ):
+        """Pairs where either participant is not a registered Anima are excluded."""
+        data_dir = tmp_path
+        shared_dir = data_dir / "shared"
+        shared_dir.mkdir()
+        today = _today()
+
+        # Valid pair: alice-bob
+        _write_activity_log(data_dir, "alice", today, [
+            {"ts": f"{today}T10:00:00", "type": "dm_sent", "content": "Hi Bob", "from": "alice", "to": "bob"},
+        ])
+        _write_activity_log(data_dir, "bob", today, [
+            {"ts": f"{today}T10:05:00", "type": "dm_sent", "content": "Hi Alice", "from": "bob", "to": "alice"},
+        ])
+
+        # Garbage pair: spam-random (neither is in valid_names)
+        _write_activity_log(data_dir, "spam", today, [
+            {"ts": f"{today}T11:00:00", "type": "dm_sent", "content": "Spam", "from": "spam", "to": "random"},
+        ])
+        _write_activity_log(data_dir, "random", today, [
+            {"ts": f"{today}T11:01:00", "type": "dm_sent", "content": "Reply", "from": "random", "to": "spam"},
+        ])
+
+        mock_config = MagicMock()
+        mock_config.animas = {"alice": MagicMock(), "bob": MagicMock()}
+        mock_load_config.return_value = mock_config
+
+        app = _make_test_app(shared_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/dm")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["pair"] == "alice-bob"
+
+    @patch("core.config.models.load_config", side_effect=Exception("no config"))
+    async def test_excludes_zero_count_pairs(
+        self, _mock_load_config: MagicMock, tmp_path: Path,
+    ):
+        """Pairs with count=0 (e.g. empty dm_logs file) are excluded."""
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+        _write_dm(shared_dir, "alice-bob", [
+            {"ts": "2026-02-17T10:00:00", "from": "alice", "text": "Hi", "source": "anima"},
+        ])
+        _write_dm(shared_dir, "zero-pair", [])  # Empty file → count=0
+
+        app = _make_test_app(shared_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/dm")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["pair"] == "alice-bob"
+
+    @patch("core.config.models.load_config")
+    async def test_fallback_when_config_load_fails(
+        self, mock_load_config: MagicMock, tmp_path: Path,
+    ):
+        """When load_config raises, all pairs are shown (no filter)."""
+        mock_load_config.side_effect = Exception("config not found")
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+        _write_dm(shared_dir, "alice-bob", [
+            {"ts": "2026-02-17T10:00:00", "from": "alice", "text": "Hi", "source": "anima"},
+        ])
+        _write_dm(shared_dir, "spam-random", [
+            {"ts": "2026-02-17T11:00:00", "from": "spam", "text": "Spam", "source": "anima"},
+        ])
+
+        app = _make_test_app(shared_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/dm")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
 
 
 # ── GET /api/dm/{pair} ───────────────────────────────────
@@ -541,6 +739,56 @@ class TestGetDMHistory:
         # Deduplication by "ts|content" key should yield 1 unique message
         assert data["total"] == 1
         assert len(data["messages"]) == 1
+        assert data["messages"][0]["text"] == "Hello Bob"
+
+    async def test_no_duplicate_with_message_sent_only(self, tmp_path: Path):
+        """When both participants have message_sent entries, all appear without dedup."""
+        data_dir = tmp_path
+        shared_dir = data_dir / "shared"
+        shared_dir.mkdir()
+        today = _today()
+
+        _write_activity_log(data_dir, "alice", today, [
+            {"ts": f"{today}T10:00:00", "type": "message_sent", "content": "Hello Bob", "from": "alice", "to": "bob"},
+        ])
+        _write_activity_log(data_dir, "bob", today, [
+            {"ts": f"{today}T10:05:00", "type": "message_sent", "content": "Hi Alice", "from": "bob", "to": "alice"},
+        ])
+
+        app = _make_test_app(shared_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/dm/alice-bob?limit=50")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 2
+        assert len(data["messages"]) == 2
+        texts = {m["text"] for m in data["messages"]}
+        assert texts == {"Hello Bob", "Hi Alice"}
+
+    async def test_no_duplicate_when_same_message_in_sent_and_received(
+        self, tmp_path: Path,
+    ):
+        """Only message_sent is read; message_received is ignored, so no duplicate."""
+        data_dir = tmp_path
+        shared_dir = data_dir / "shared"
+        shared_dir.mkdir()
+        today = _today()
+
+        _write_activity_log(data_dir, "alice", today, [
+            {"ts": f"{today}T10:00:00", "type": "message_sent", "content": "Hello Bob", "from": "alice", "to": "bob"},
+        ])
+        _write_activity_log(data_dir, "bob", today, [
+            {"ts": f"{today}T10:00:00", "type": "message_received", "content": "Hello Bob", "from": "alice", "to": "bob"},
+        ])
+
+        app = _make_test_app(shared_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/dm/alice-bob?limit=50")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
         assert data["messages"][0]["text"] == "Hello Bob"
 
     async def test_falls_back_to_legacy_dm_logs(self, tmp_path: Path):

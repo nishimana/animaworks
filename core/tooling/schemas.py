@@ -129,8 +129,8 @@ MEMORY_TOOLS: list[dict[str, Any]] = [
         "description": (
             "Send a direct message to another anima or a human user. "
             "DM is limited to max 2 recipients per run, 1 message each, "
-            "with intent 'report' or 'delegation' only. "
-            "For acknowledgments, questions, FYI, or messages to 3+ people, "
+            "with intent 'report', 'delegation', or 'question' only. "
+            "For acknowledgments, FYI, or messages to 3+ people, "
             "use post_channel (Board) instead."
         ),
         "parameters": {
@@ -152,10 +152,11 @@ MEMORY_TOOLS: list[dict[str, Any]] = [
                     "type": "string",
                     "description": (
                         "Message intent (REQUIRED for DM). "
-                        "Only 'report' and 'delegation' are permitted. "
-                        "Values: 'delegation' (task assignment to subordinate), "
-                        "'report' (status/result to supervisor — use report template). "
-                        "Questions, acknowledgments, thanks, and FYI must use "
+                        "Permitted values: 'report', 'delegation', 'question'. "
+                        "'delegation' = task assignment to subordinate, "
+                        "'report' = status/result to supervisor, "
+                        "'question' = ask a specific question requiring a response. "
+                        "Acknowledgments, thanks, and FYI must use "
                         "post_channel (Board) instead of DM."
                     ),
                 },
@@ -243,11 +244,23 @@ CHANNEL_TOOLS: list[dict[str, Any]] = [
 FILE_TOOLS: list[dict[str, Any]] = [
     {
         "name": "read_file",
-        "description": "Read an arbitrary file (subject to permissions).",
+        "description": (
+            "Read a file with line numbers. "
+            "For large files, use offset and limit to read specific sections. "
+            "Output lines are numbered in 'N|content' format."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
                 "path": {"type": "string", "description": "Absolute file path"},
+                "offset": {
+                    "type": "integer",
+                    "description": "Starting line number (1-based, default: 1)",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of lines to read",
+                },
             },
             "required": ["path"],
         },
@@ -599,6 +612,116 @@ SUPERVISOR_TOOLS: list[dict[str, Any]] = [
             "required": ["name"],
         },
     },
+    {
+        "name": "org_dashboard",
+        "description": (
+            "配下全体の組織ダッシュボードを表示する。"
+            "各Animaのプロセス状態・最終アクティビティ時刻・現在タスク要約・タスク数を"
+            "ツリー形式で一覧する。配下が多い場合も全員分を返す。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "ping_subordinate",
+        "description": (
+            "配下のAnimaの生存確認を行う。"
+            "name を省略すると全配下を一括 ping する。"
+            "指定すると単一Animaのみ確認する。"
+            "プロセス状態・最終アクティビティ時刻・経過時間を返す。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "確認するAnima名（省略時は全配下）",
+                },
+            },
+        },
+    },
+    {
+        "name": "read_subordinate_state",
+        "description": (
+            "配下のAnimaの現在のタスク状態を読み取る。"
+            "current_task.md（進行中タスク）と pending.md（保留タスク）の内容を返す。"
+            "直属部下だけでなく孫以下の配下も指定可能。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "読み取る配下のAnima名",
+                },
+            },
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "delegate_task",
+        "description": (
+            "直属部下にタスクを委譲する。部下のタスクキューにタスクを追加し、"
+            "同時にDMで指示を送信する。自分側にも追跡用エントリが作成される。"
+            "直属部下のみ操作可能。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "委譲先の直属部下のAnima名",
+                },
+                "instruction": {
+                    "type": "string",
+                    "description": "タスクの指示内容",
+                },
+                "summary": {
+                    "type": "string",
+                    "description": "タスクの1行要約",
+                },
+                "deadline": {
+                    "type": "string",
+                    "description": "期限（相対形式: '30m', '2h', '1d' または ISO8601）",
+                },
+            },
+            "required": ["name", "instruction", "deadline"],
+        },
+    },
+    {
+        "name": "task_tracker",
+        "description": (
+            "delegate_task で委譲したタスクの進捗を追跡する。"
+            "自分のタスクキューから delegated ステータスのエントリを取得し、"
+            "部下側の最新ステータスと突き合わせて返す。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "enum": ["all", "active", "completed"],
+                    "description": "フィルタ（all: 全件, active: 進行中, completed: 完了済み）。デフォルト: active",
+                },
+            },
+        },
+    },
+]
+
+CHECK_PERMISSIONS_TOOLS: list[dict[str, Any]] = [
+    {
+        "name": "check_permissions",
+        "description": (
+            "自分に現在許可されているツール・外部ツール・ファイルアクセスの一覧を確認する。"
+            "何が使えて何が使えないかを事前に把握し、試行→失敗のサイクルを防ぐ。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {},
+        },
+    },
 ]
 
 PROCEDURE_TOOLS: list[dict[str, Any]] = [
@@ -866,7 +989,7 @@ def build_tool_list(
     """Assemble a tool list from canonical definitions.
 
     Args:
-        include_file_tools: Include file/command operation tools (for A2 mode).
+        include_file_tools: Include file/command operation tools (for Mode A).
         include_search_tools: Include search_code/list_directory tools.
         include_discovery_tools: Include discover_tools tool.
         include_notification_tools: Include call_human tool (for top-level Animas).
@@ -890,6 +1013,8 @@ def build_tool_list(
     tools.extend(PROCEDURE_TOOLS)
     # Knowledge outcome reporting is always included
     tools.extend(KNOWLEDGE_TOOLS)
+    # check_permissions is always available (all Animas can check their own permissions)
+    tools.extend(CHECK_PERMISSIONS_TOOLS)
     if include_file_tools:
         tools.extend(FILE_TOOLS)
     if include_search_tools:

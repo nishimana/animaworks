@@ -258,6 +258,16 @@ class TestCreateFromMdResearcherRole:
         self, data_dir: Path, tmp_path: Path
     ):
         """status.json should contain values from researcher/defaults.json."""
+        from pathlib import Path as _P
+        import importlib.resources
+
+        # Read expected values from the template itself
+        template_defaults_path = (
+            _P(__file__).resolve().parent.parent.parent
+            / "templates" / "roles" / "researcher" / "defaults.json"
+        )
+        expected = json.loads(template_defaults_path.read_text(encoding="utf-8"))
+
         animas_dir = data_dir / "animas"
         sheet_path = _write_sheet(tmp_path, RESEARCHER_SHEET)
 
@@ -266,102 +276,101 @@ class TestCreateFromMdResearcherRole:
         status = json.loads(
             (anima_dir / "status.json").read_text(encoding="utf-8")
         )
-        # researcher defaults.json specifies sonnet model
-        assert status["model"] == "claude-sonnet-4-6"
-        assert status["max_turns"] == 30
-        assert status["max_chains"] == 2
-        assert status["context_threshold"] == 0.50
-        assert status["conversation_history_threshold"] == 0.30
+        assert status["model"] == expected["model"]
+        assert status["max_turns"] == expected["max_turns"]
+        assert status["max_chains"] == expected["max_chains"]
+        assert status["context_threshold"] == expected["context_threshold"]
+        assert status["conversation_history_threshold"] == expected["conversation_history_threshold"]
         assert status["role"] == "researcher"
 
 
-# ── Test 4: 3-layer config resolution ──────────────────────
+# ── Test 4: 2-layer config resolution (status.json SSoT) ────
 
 
-class TestThreeLayerConfigResolution:
-    """Verify the 3-layer config priority: config.json override >> status.json >> defaults."""
+class TestTwoLayerConfigResolution:
+    """Verify the 2-layer config priority: status.json >> anima_defaults."""
 
     def test_status_json_overrides_global_defaults(
         self, data_dir: Path, tmp_path: Path
     ):
-        """Layer 2 (status.json/role defaults) should override layer 3 (global defaults)."""
+        """Layer 1 (status.json/role defaults) should override layer 2 (global defaults)."""
         animas_dir = data_dir / "animas"
         sheet_path = _write_sheet(tmp_path, ENGINEER_SHEET)
 
         anima_dir = create_from_md(animas_dir, sheet_path, role="engineer")
 
-        # Invalidate cache and reload config to pick up the new anima
         invalidate_cache()
 
-        # Read model config through MemoryManager (exercises the full resolution chain)
         memory = MemoryManager(anima_dir)
         model_config = memory.read_model_config()
 
-        # Engineer role defaults should override global defaults (max_turns: 200 vs 5)
+        # Engineer role defaults in status.json should override global defaults
         assert model_config.model == "claude-opus-4-6"
         assert model_config.max_turns == 200
         assert model_config.max_chains == 10
         assert model_config.context_threshold == 0.80
         assert model_config.conversation_history_threshold == 0.40
 
-    def test_config_json_override_takes_priority(
+    def test_status_json_direct_edit_takes_effect(
         self, data_dir: Path, tmp_path: Path
     ):
-        """Layer 1 (config.json per-anima override) should beat layer 2 (status.json)."""
+        """Editing status.json directly should change the resolved model."""
         animas_dir = data_dir / "animas"
         sheet_path = _write_sheet(tmp_path, ENGINEER_SHEET)
 
         anima_dir = create_from_md(animas_dir, sheet_path, role="engineer")
 
-        # Add a config.json override for this anima
-        config_path = data_dir / "config.json"
-        config = load_config(config_path)
-        config.animas["testeng"] = AnimaModelConfig(
-            model="claude-sonnet-4-6",
-            max_turns=50,
+        # Directly update status.json (simulates `anima set-model`)
+        import json
+        status_path = anima_dir / "status.json"
+        status_data = json.loads(status_path.read_text(encoding="utf-8"))
+        status_data["model"] = "claude-sonnet-4-6"
+        status_data["max_turns"] = 50
+        status_path.write_text(
+            json.dumps(status_data, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
         )
-        save_config(config, config_path)
         invalidate_cache()
 
-        # Read model config - config.json override should win
         memory = MemoryManager(anima_dir)
         model_config = memory.read_model_config()
 
-        # Overridden fields from config.json (layer 1)
+        # Updated fields from status.json
         assert model_config.model == "claude-sonnet-4-6"
         assert model_config.max_turns == 50
-        # Non-overridden fields should still come from status.json (layer 2)
+        # Non-updated fields still come from original status.json (engineer role)
         assert model_config.max_chains == 10
         assert model_config.context_threshold == 0.80
 
     def test_resolve_anima_config_directly(
         self, data_dir: Path, tmp_path: Path
     ):
-        """Test resolve_anima_config with all 3 layers exercised."""
+        """Test resolve_anima_config with 2-layer merge (status.json > defaults)."""
+        import json
         animas_dir = data_dir / "animas"
         sheet_path = _write_sheet(tmp_path, ENGINEER_SHEET)
 
         anima_dir = create_from_md(animas_dir, sheet_path, role="engineer")
 
-        # Set up config.json override for just one field
-        config_path = data_dir / "config.json"
-        config = load_config(config_path)
-        config.animas["testeng"] = AnimaModelConfig(max_turns=99)
-        save_config(config, config_path)
+        # Edit status.json to override one field
+        status_path = anima_dir / "status.json"
+        status_data = json.loads(status_path.read_text(encoding="utf-8"))
+        status_data["max_turns"] = 99
+        status_path.write_text(json.dumps(status_data, indent=2) + "\n", encoding="utf-8")
         invalidate_cache()
 
+        config_path = data_dir / "config.json"
         config = load_config(config_path)
         resolved, _cred = resolve_anima_config(
             config, "testeng", anima_dir=anima_dir
         )
 
-        # Layer 1: config.json override
+        # Layer 1: status.json (engineer role defaults + our override)
         assert resolved.max_turns == 99
-        # Layer 2: status.json (engineer role defaults)
         assert resolved.model == "claude-opus-4-6"
         assert resolved.max_chains == 10
         assert resolved.context_threshold == 0.80
-        # Layer 3: global defaults (for fields not set in layer 1 or 2)
+        # Layer 2: global defaults (for fields not set in status.json)
         assert resolved.max_tokens == 1024  # from test config anima_defaults
 
 

@@ -537,6 +537,91 @@ class TestToolHandlerCommonKnowledgeRead:
         assert result == "local content"
 
 
+# ── ToolHandler write_memory_file with common_knowledge/ ──────
+
+
+class TestToolHandlerCommonKnowledgeWrite:
+    """Test ToolHandler._handle_write_memory_file with common_knowledge/ prefix."""
+
+    @pytest.fixture
+    def anima_dir(self, tmp_path: Path) -> Path:
+        d = tmp_path / "animas" / "test-anima"
+        d.mkdir(parents=True)
+        return d
+
+    @pytest.fixture
+    def handler(self, anima_dir: Path):
+        from core.tooling.handler import ToolHandler
+
+        memory = MagicMock()
+        memory.read_permissions.return_value = ""
+        memory.search_memory_text.return_value = []
+        return ToolHandler(
+            anima_dir=anima_dir,
+            memory=memory,
+            messenger=None,
+            tool_registry=[],
+        )
+
+    def test_write_common_knowledge_resolves_to_shared_dir(
+        self, handler, tmp_path: Path,
+    ):
+        ck_dir = tmp_path / "shared_ck"
+        ck_dir.mkdir()
+
+        with patch(
+            "core.paths.get_common_knowledge_dir",
+            return_value=ck_dir,
+        ):
+            handler.handle(
+                "write_memory_file",
+                {"path": "common_knowledge/new-guide.md", "content": "shared content"},
+            )
+        assert (ck_dir / "new-guide.md").read_text(encoding="utf-8") == "shared content"
+
+    def test_write_common_knowledge_nested_creates_parents(
+        self, handler, tmp_path: Path,
+    ):
+        ck_dir = tmp_path / "shared_ck"
+        ck_dir.mkdir()
+
+        with patch(
+            "core.paths.get_common_knowledge_dir",
+            return_value=ck_dir,
+        ):
+            handler.handle(
+                "write_memory_file",
+                {"path": "common_knowledge/ops/new.md", "content": "nested"},
+            )
+        assert (ck_dir / "ops" / "new.md").read_text(encoding="utf-8") == "nested"
+
+    def test_write_common_knowledge_append_mode(
+        self, handler, tmp_path: Path,
+    ):
+        ck_dir = tmp_path / "shared_ck"
+        ck_dir.mkdir()
+        (ck_dir / "existing.md").write_text("line1\n", encoding="utf-8")
+
+        with patch(
+            "core.paths.get_common_knowledge_dir",
+            return_value=ck_dir,
+        ):
+            handler.handle(
+                "write_memory_file",
+                {"path": "common_knowledge/existing.md", "content": "line2\n", "mode": "append"},
+            )
+        assert (ck_dir / "existing.md").read_text(encoding="utf-8") == "line1\nline2\n"
+
+    def test_write_non_common_knowledge_stays_in_anima_dir(
+        self, handler, anima_dir: Path,
+    ):
+        handler.handle(
+            "write_memory_file",
+            {"path": "knowledge/local.md", "content": "local"},
+        )
+        assert (anima_dir / "knowledge" / "local.md").read_text(encoding="utf-8") == "local"
+
+
 # ── MemoryManager._vector_search_memory ──────────────────────
 
 

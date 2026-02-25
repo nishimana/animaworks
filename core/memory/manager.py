@@ -490,7 +490,20 @@ class MemoryManager:
         Returns list of dicts sorted by confidence descending:
             {path, name, content, confidence, source_type}
         """
-        entries: list[dict] = []
+        procedures, knowledge = self.collect_distilled_knowledge_separated()
+        return procedures + knowledge
+
+    def collect_distilled_knowledge_separated(
+        self,
+    ) -> tuple[list[dict], list[dict]]:
+        """Collect knowledge and procedures as separate lists.
+
+        Returns (procedures, knowledge), each sorted by confidence descending.
+        Procedures are separated because they are actionable and should be
+        injected into system prompts with higher priority.
+        """
+        procedures: list[dict] = []
+        knowledge: list[dict] = []
         source_dirs = [
             (self.knowledge_dir, "knowledge"),
             (self.procedures_dir, "procedures"),
@@ -509,16 +522,21 @@ class MemoryManager:
                     if not body.strip():
                         continue
                     confidence = float(meta.get("confidence", 0.5))
-                    entries.append({
+                    entry = {
                         "path": str(f),
                         "name": f.stem,
                         "content": body,
                         "confidence": confidence,
                         "source_type": source_type,
-                    })
+                    }
+                    if source_type == "procedures":
+                        procedures.append(entry)
+                    else:
+                        knowledge.append(entry)
                 except Exception:
                     logger.warning(
                         "Failed to read %s for knowledge injection", f,
                     )
-        entries.sort(key=lambda d: d["confidence"], reverse=True)
-        return entries
+        procedures.sort(key=lambda d: d["confidence"], reverse=True)
+        knowledge.sort(key=lambda d: d["confidence"], reverse=True)
+        return procedures, knowledge

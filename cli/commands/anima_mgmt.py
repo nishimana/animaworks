@@ -397,6 +397,70 @@ def cmd_anima_set_role(args: argparse.Namespace) -> None:
         print("  Changes will take effect on next server start.")
 
 
+def cmd_anima_set_model(args: argparse.Namespace) -> None:
+    """Set an anima's model (updates status.json)."""
+    from core.config.models import update_status_model
+    from core.paths import get_data_dir
+
+    try:
+        data_dir = get_data_dir()
+        animas_dir = data_dir / "animas"
+        pid_file = data_dir / "server.pid"
+
+        if args.all:
+            model = args.model or args.anima
+            if not model:
+                print("Error: model is required (e.g. animaworks anima set-model claude-sonnet-4-6 --all)")
+                sys.exit(1)
+            credential = args.credential
+            updated = 0
+            for entry in sorted(animas_dir.iterdir()):
+                if not entry.is_dir():
+                    continue
+                status_file = entry / "status.json"
+                if not status_file.exists():
+                    continue
+                try:
+                    status_data = json.loads(status_file.read_text(encoding="utf-8"))
+                    if not status_data.get("enabled", True):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    update_status_model(entry, model=model, credential=credential)
+                    updated += 1
+                    print(f"  {entry.name}: model={model}")
+                except Exception as e:
+                    print(f"  {entry.name}: ERROR - {e}", file=sys.stderr)
+            if updated == 0:
+                print("No enabled animas found.")
+                return
+            print(f"Updated model for {updated} anima(s) to '{model}'")
+        else:
+            if not args.anima or not args.model:
+                print("Error: anima name and model are required (e.g. animaworks anima set-model hinata claude-sonnet-4-6)")
+                sys.exit(1)
+            anima_dir = animas_dir / args.anima
+            if not anima_dir.exists():
+                print(f"Error: Anima '{args.anima}' not found")
+                sys.exit(1)
+            update_status_model(
+                anima_dir,
+                model=args.model,
+                credential=args.credential,
+            )
+            print(f"Model updated to '{args.model}' for '{args.anima}'")
+
+        if pid_file.exists():
+            print("  Server is running. Restart animas to apply changes (animaworks anima restart <name>).")
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 def cmd_anima_list(args: argparse.Namespace) -> None:
     """List all animas."""
     import requests

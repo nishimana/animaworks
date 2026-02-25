@@ -115,15 +115,33 @@ def migrate_to_config_json(data_dir: Path) -> None:
                 base_url=base_url or None,
             )
 
-        # Build anima config (only override non-default values)
-        anima_cfg = AnimaModelConfig(
-            model=parsed.get("model") or None,
-            fallback_model=parsed.get("fallback_model") or None,
-            max_tokens=int(parsed["max_tokens"]) if "max_tokens" in parsed else None,
-            max_turns=int(parsed["max_turns"]) if "max_turns" in parsed else None,
-            credential=cred_name,
-        )
-        config.animas[anima_dir.name] = anima_cfg
+        # Model config now lives in status.json (SSoT). Write status.json.
+        status_data: dict[str, object] = {}
+        if parsed.get("model"):
+            status_data["model"] = parsed["model"]
+        if parsed.get("fallback_model"):
+            status_data["fallback_model"] = parsed["fallback_model"]
+        if "max_tokens" in parsed:
+            status_data["max_tokens"] = int(parsed["max_tokens"])
+        if "max_turns" in parsed:
+            status_data["max_turns"] = int(parsed["max_turns"])
+        status_data["credential"] = cred_name
+        if status_data:
+            status_path = anima_dir / "status.json"
+            existing: dict[str, object] = {}
+            if status_path.is_file():
+                try:
+                    existing = json.loads(status_path.read_text(encoding="utf-8"))
+                except (json.JSONDecodeError, OSError):
+                    pass
+            existing.update(status_data)
+            status_path.write_text(
+                json.dumps(existing, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+
+        # config.json animas: organization structure only (supervisor, speciality)
+        config.animas[anima_dir.name] = AnimaModelConfig()
 
     config.credentials = seen_credentials
 
@@ -600,3 +618,119 @@ def migrate_person_to_anima(data_dir: Path) -> None:
         logger.exception("Failed to update env var references")
 
     logger.info("Person -> Anima rename migration complete")
+
+
+# ── Model Config SSoT migration ──────────────────────────
+
+# Fields that move from config.json animas to status.json
+_MODEL_FIELDS_TO_MIGRATE = frozenset({
+    "model", "fallback_model", "max_tokens", "max_turns", "credential",
+    "context_threshold", "max_chains", "conversation_history_threshold",
+    "execution_mode", "thinking", "llm_timeout",
+})
+
+
+def migrate_model_config_to_status(data_dir: Path, *, dry_run: bool = False) -> dict[str, list[str]]:
+    """Migrate model config fields from config.json animas to status.json.
+
+    For each anima in config.json, model-related fields are merged into the
+    corresponding status.json (only if the status.json field is absent or empty).
+    After migration, config.json animas entries are slimmed to supervisor +
+    speciality only.
+
+    Args:
+        data_dir: The AnimaWorks data directory (e.g. ``~/.animaworks``).
+        dry_run: If True, report changes without writing files.
+
+    Returns:
+        Dict mapping anima names to lists of migrated field names.
+        If a conflict is detected (both files have different values),
+        the field is reported but NOT overwritten — status.json wins.
+    """
+    config_path = data_dir / "config.json"
+    if not config_path.is_file():
+        logger.info("No config.json found; skipping model config migration")
+        return {}
+
+    try:
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.error("Failed to read config.json: %s", exc)
+        return {}
+
+    animas_section = raw.get("animas", {})
+    if not animas_section:
+        return {}
+
+    results: dict[str, list[str]] = {}
+    config_changed = False
+
+    for anima_name, anima_cfg in list(animas_section.items()):
+        if not isinstance(anima_cfg, dict):
+            continue
+
+        anima_dir = data_dir / "animas" / anima_name
+        status_path = anima_dir / "status.json"
+
+        fields_to_migrate = {
+            k: v for k, v in anima_cfg.items()
+            if k in _MODEL_FIELDS_TO_MIGRATE and v is not None
+        }
+        if not fields_to_migrate:
+            continue
+
+        # Load status.json
+        status_data: dict[str, object] = {}
+        if status_path.is_file():
+            try:
+                status_data = json.loads(status_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                logger.warning("Failed to read %s; skipping", status_path)
+                continue
+
+        migrated: list[str] = []
+        conflicts: list[str] = []
+        for field, config_val in fields_to_migrate.items():
+            status_val = status_data.get(field)
+            if status_val in (None, ""):
+                status_data[field] = config_val
+                migrated.append(field)
+            elif status_val != config_val:
+                conflicts.append(field)
+                logger.warning(
+                    "Conflict for %s.%s: config.json=%r, status.json=%r — keeping status.json",
+                    anima_name, field, config_val, status_val,
+                )
+
+        if migrated:
+            results[anima_name] = migrated
+            if not dry_run:
+                status_path.write_text(
+                    json.dumps(status_data, indent=2, ensure_ascii=False) + "\n",
+                    encoding="utf-8",
+                )
+                logger.info("Migrated %s: %s", anima_name, ", ".join(migrated))
+
+        if conflicts:
+            results.setdefault(anima_name, [])
+
+        # Clean config.json animas entry: remove model fields, keep supervisor/speciality
+        cleaned = {
+            k: v for k, v in anima_cfg.items()
+            if k not in _MODEL_FIELDS_TO_MIGRATE
+        }
+        if cleaned != anima_cfg:
+            animas_section[anima_name] = cleaned
+            config_changed = True
+
+    if config_changed and not dry_run:
+        raw["animas"] = animas_section
+        tmp_path = config_path.with_suffix(".tmp")
+        tmp_path.write_text(
+            json.dumps(raw, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        tmp_path.replace(config_path)
+        logger.info("Cleaned model fields from config.json animas section")
+
+    return results

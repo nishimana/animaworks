@@ -67,21 +67,10 @@ class CredentialConfig(BaseModel):
 
 
 class AnimaModelConfig(BaseModel):
-    """Per-anima overrides.  All fields are optional (None = use default)."""
+    """Per-anima config in config.json. Organization structure only."""
 
-    model: str | None = None
-    fallback_model: str | None = None
-    max_tokens: int | None = None
-    max_turns: int | None = None
-    credential: str | None = None
-    context_threshold: float | None = None
-    max_chains: int | None = None
-    conversation_history_threshold: float | None = None
-    execution_mode: str | None = None  # "autonomous" or "assisted"
-    supervisor: str | None = None  # name of supervisor Anima
-    speciality: str | None = None  # free-text specialisation
-    thinking: bool | None = None  # Ollama thinking mode (None=auto, True/False=explicit)
-    llm_timeout: int | None = None  # LLM API timeout (seconds); None = auto
+    supervisor: str | None = None
+    speciality: str | None = None
 
 
 # ── Default model names (single source of truth) ─────────────────────────────
@@ -264,6 +253,8 @@ class HeartbeatConfig(BaseModel):
     actionable_intents: list[str] = ["delegation", "report", "question"]
     enable_read_ack: bool = False  # Send read-receipt ACK to message senders (disabled by default to prevent gratitude loops)
     channel_post_cooldown_s: int = 300  # Min seconds between board posts per Anima (0 = no limit)
+    max_messages_per_hour: int = 30  # Global outbound DM limit per Anima per hour
+    max_messages_per_day: int = 100  # Global outbound DM limit per Anima per day
 
 
 class AnimaWorksConfig(BaseModel):
@@ -272,7 +263,7 @@ class AnimaWorksConfig(BaseModel):
     locale: str = "ja"
     system: SystemConfig = SystemConfig()
     credentials: dict[str, CredentialConfig] = {"anthropic": CredentialConfig()}
-    model_modes: dict[str, str] = {}  # モデル名 → "A1"/"A2"/"B"
+    model_modes: dict[str, str] = {}  # モデル名 → "S"/"A"/"B" (legacy: "A1"/"A2" も可)
     model_context_windows: dict[str, int] = {}  # モデル名パターン → コンテキストウィンドウサイズ
     anima_defaults: AnimaDefaults = AnimaDefaults()
     animas: dict[str, AnimaModelConfig] = {}
@@ -419,7 +410,7 @@ def save_config(config: AnimaWorksConfig, path: Path | None = None) -> None:
 def _load_status_json(anima_dir: Path) -> dict[str, Any]:
     """Load ModelConfig-relevant fields from anima's status.json.
 
-    Returns a dict with field names matching AnimaModelConfig fields.
+    Returns a dict with field names matching AnimaDefaults fields.
     Missing or invalid files return an empty dict.
     """
     status_path = anima_dir / "status.json"
@@ -442,6 +433,10 @@ def _load_status_json(anima_dir: Path) -> dict[str, Any]:
         "credential": "credential",
         "execution_mode": "execution_mode",
         "supervisor": "supervisor",
+        "max_tokens": "max_tokens",
+        "fallback_model": "fallback_model",
+        "thinking": "thinking",
+        "llm_timeout": "llm_timeout",
     }
     for status_key, config_key in field_mapping.items():
         if status_key in data and data[status_key] not in (None, ""):
@@ -454,16 +449,18 @@ def resolve_anima_config(
     anima_name: str,
     anima_dir: Path | None = None,
 ) -> tuple[AnimaDefaults, CredentialConfig]:
-    """Merge per-anima overrides with status.json and *anima_defaults*.
+    """Merge status.json with *anima_defaults* (2-layer merge).
 
-    Resolution uses a 3-layer priority (strongest first):
+    Resolution uses a 2-layer priority (strongest first):
 
-      1. ``config.json`` per-anima override (admin override)
-      2. ``status.json`` in *anima_dir* (role-template values)
-      3. ``config.json`` anima_defaults (global defaults)
+      1. ``status.json`` in *anima_dir* (role-template values, model config SSoT)
+      2. ``config.json`` anima_defaults (global defaults)
 
-    When *anima_dir* is ``None``, layer 2 is skipped and the original
-    2-layer merge is used for backward compatibility.
+    ``config.json`` per-anima (``config.animas``) no longer contributes
+    model-related fields. Only ``supervisor`` and ``speciality`` are read
+    from config.animas for organization structure; these override status.json.
+
+    When *anima_dir* is ``None``, layer 1 is skipped (no status.json).
 
     Returns:
         A ``(resolved_defaults, credential)`` tuple.
@@ -475,19 +472,25 @@ def resolve_anima_config(
     anima_entry = config.animas.get(anima_name, AnimaModelConfig())
     defaults = config.anima_defaults
 
-    # Layer 2: status.json values
     status_values = _load_status_json(anima_dir) if anima_dir else {}
 
-    # Merge: config_override >> status_values >> defaults
+    # Merge: status_values >> anima_defaults for model fields.
+    # supervisor, speciality: config.animas >> status >> defaults (org structure)
     resolved: dict[str, Any] = {}
-    for field_name in AnimaModelConfig.model_fields:
-        anima_value = getattr(anima_entry, field_name)
-        if anima_value is not None:
-            resolved[field_name] = anima_value
-        elif field_name in status_values and status_values[field_name] is not None:
-            resolved[field_name] = status_values[field_name]
+    for field_name in AnimaDefaults.model_fields:
+        if field_name in ("supervisor", "speciality"):
+            anima_value = getattr(anima_entry, field_name)
+            if anima_value is not None:
+                resolved[field_name] = anima_value
+            elif field_name in status_values and status_values[field_name] is not None:
+                resolved[field_name] = status_values[field_name]
+            else:
+                resolved[field_name] = getattr(defaults, field_name)
         else:
-            resolved[field_name] = getattr(defaults, field_name)
+            if field_name in status_values and status_values[field_name] is not None:
+                resolved[field_name] = status_values[field_name]
+            else:
+                resolved[field_name] = getattr(defaults, field_name)
 
     resolved_defaults = AnimaDefaults.model_validate(resolved)
 
@@ -606,7 +609,7 @@ KNOWN_MODELS: list[dict[str, str]] = [
 ]
 
 # ── Legacy mode value mapping ──────────────────────────────
-# Maps old A1/A1F/A2/B and text-based values to new S/A/B scheme.
+# Maps legacy A1/A1F/A2 and text-based values to canonical S/A/B scheme.
 _LEGACY_MODE_MAP: dict[str, str] = {
     "autonomous": "A",
     "assisted": "B",
@@ -720,7 +723,7 @@ def _match_pattern_table(
     Phase 1: O(1) exact dict lookup.
     Phase 2: fnmatch scan in specificity-descending order.
 
-    Returns the mode string (e.g. ``"A1"``) or ``None`` if no match.
+    Returns the mode string (e.g. ``"S"``) or ``None`` if no match.
     """
     # Phase 1: exact match
     if model_name in table:
@@ -785,8 +788,8 @@ def load_model_config(anima_dir: Path) -> "ModelConfig":
 def _normalise_mode(raw: str) -> str:
     """Normalise a mode value to S/A/B, applying legacy mapping if needed.
 
-    Accepts old values (``"A1"``, ``"A2"``, ``"autonomous"``, etc.) and
-    new values (``"S"``, ``"A"``, ``"B"``).  Returns uppercase S/A/B.
+    Accepts legacy values (``"A1"``, ``"A2"``, ``"autonomous"``, etc.) and
+    canonical values (``"S"``, ``"A"``, ``"B"``).  Returns uppercase S/A/B.
     """
     lower = raw.strip().lower()
     mapped = _LEGACY_MODE_MAP.get(lower)
@@ -925,6 +928,29 @@ def resolve_context_window(
 _NONE_SUPERVISOR_VALUES = frozenset({"なし", "(なし)", "（なし）", "-", "---", ""})
 
 _PAREN_EN_NAME_RE = re.compile(r"[（(]([A-Za-z_][A-Za-z0-9_]*)[）)]")
+
+
+def update_status_model(
+    anima_dir: Path,
+    *,
+    model: str | None = None,
+    credential: str | None = None,
+) -> None:
+    """Update model/credential in an anima's status.json (atomic write)."""
+    status_path = anima_dir / "status.json"
+    if not status_path.is_file():
+        raise FileNotFoundError(f"status.json not found: {status_path}")
+    data = json.loads(status_path.read_text(encoding="utf-8"))
+    if model is not None:
+        data["model"] = model
+    if credential is not None:
+        data["credential"] = credential
+    tmp = status_path.with_suffix(".tmp")
+    tmp.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    tmp.replace(status_path)
 
 
 def _resolve_supervisor_name(raw: str) -> str | None:

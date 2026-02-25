@@ -124,24 +124,31 @@ def create_anima_dir(
     )
     (anima_dir / "state" / "pending.md").write_text("", encoding="utf-8")
 
-    # Update config.json with anima entry
+    # Model config lives in status.json (SSoT). config.json animas: org structure only.
+    status_data: dict[str, Any] = {
+        "model": model,
+        "context_threshold": context_threshold,
+        "max_chains": max_chains,
+        "max_turns": max_turns,
+        "conversation_history_threshold": conversation_history_threshold,
+    }
+    if execution_mode is not None:
+        status_data["execution_mode"] = execution_mode
+    if credential is not None:
+        status_data["credential"] = credential
+    (anima_dir / "status.json").write_text(
+        json.dumps(status_data, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    # config.json animas: supervisor and speciality only
     config_path = data_dir / "config.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
-
-    anima_config: dict[str, Any] = {"model": model}
-    if execution_mode is not None:
-        anima_config["execution_mode"] = execution_mode
-    if credential is not None:
-        anima_config["credential"] = credential
+    anima_config: dict[str, Any] = {}
     if supervisor is not None:
         anima_config["supervisor"] = supervisor
     if speciality is not None:
         anima_config["speciality"] = speciality
-    anima_config["context_threshold"] = context_threshold
-    anima_config["max_chains"] = max_chains
-    anima_config["max_turns"] = max_turns
-    anima_config["conversation_history_threshold"] = conversation_history_threshold
-
     config["animas"][name] = anima_config
 
     # Update credentials for the appropriate credential type

@@ -106,10 +106,11 @@ class TestSetSubordinateModelE2E:
 
         assert "claude-opus-4-6" in result, f"Unexpected result: {result}"
 
-        # Reload config from disk and verify
-        invalidate_cache()
-        updated_config = load_config()
-        assert updated_config.animas["worker"].model == "claude-opus-4-6"
+        # Model config SSoT: status.json is updated, not config.json
+        status = _read_status(worker_dir)
+        assert status.get("model") == "claude-opus-4-6", (
+            f"Expected model in status.json; got: {status}"
+        )
 
 
 @pytest.mark.e2e
@@ -206,16 +207,12 @@ class TestSetModelAndRestartSequenceE2E:
         )
         assert "再起動" in result2, f"Unexpected result2: {result2}"
 
-        # Verify config.json model update
-        invalidate_cache()
-        updated_config = load_config()
-        assert updated_config.animas["worker"].model == "claude-opus-4-6", (
-            f"Expected model 'claude-opus-4-6' in config.json; "
-            f"got: {updated_config.animas['worker'].model}"
-        )
-
-        # Verify status.json restart flag
+        # Verify status.json: model update (SSoT) and restart_requested flag
         status = _read_status(worker_dir)
+        assert status.get("model") == "claude-opus-4-6", (
+            f"Expected model 'claude-opus-4-6' in status.json; "
+            f"got: {status.get('model')}"
+        )
         assert status.get("restart_requested") is True, (
             f"restart_requested should be True; got: {status}"
         )

@@ -111,10 +111,11 @@ DEFAULT_DESCRIPTIONS: dict[str, str] = {
         "以前のやり取りの文脈を確認したいとき、"
         "報告や委任の進捗を追跡したいときに使う。"
     ),
-    # -- File tools (A2/B modes) --
+    # -- File tools (Mode A/B) --
     "read_file": (
         "任意のファイルを絶対パスで読む（permissions.mdの許可範囲内）。"
-        "自分の記憶ディレクトリ外のファイルを読む時に使う。"
+        "出力は行番号付き（N|content形式）でコードブロックに囲まれる。"
+        "大きいファイルはoffset（開始行、1始まり）とlimit（行数）で部分読み取り可能。"
         "自分の記憶ディレクトリ内のファイルにはread_memory_fileを使うこと。"
     ),
     "write_file": (
@@ -132,7 +133,7 @@ DEFAULT_DESCRIPTIONS: dict[str, str] = {
         "ファイル操作にはread_file/write_file/edit_fileを優先し、"
         "コマンド実行が本当に必要な場合のみ使う。"
     ),
-    # -- Search tools (A2/B modes) --
+    # -- Search tools (Mode A/B) --
     "search_code": (
         "正規表現パターンでファイル内のテキストを検索する。"
         "マッチした行をファイルパスと行番号付きで返す。"
@@ -188,6 +189,12 @@ DEFAULT_DESCRIPTIONS: dict[str, str] = {
         "- 知識が正確で役立った → success=true\n"
         "- 不正確・古い・無関係だった → success=false + notesに問題点を記録\n"
         "報告データは能動的忘却と知識品質の維持に使われる。未報告の知識は品質評価できない。"
+    ),
+    # -- Skill tools --
+    "skill": (
+        "スキル・共通スキル・手順書の全文を取得する。\n"
+        "Primingのスキルヒントに表示された名前を指定して呼ぶ。\n"
+        "手順書に従って作業する前に、必ずこのツールで全文を確認すること。"
     ),
     # -- Task tools --
     "add_task": (
@@ -249,8 +256,41 @@ Sモードでは **Writeツール**（ネイティブ）を使って直接記憶
 ### 人間通知
 - **mcp__aw__call_human**: 人間の管理者に通知を送信。重要な報告・エスカレーション用。日常報告にはsend_messageを使う
 
-### ツール発見
-- **mcp__aw__discover_tools**: 利用可能な外部ツールカテゴリを確認。外部サービスを使いたい時にまず呼ぶ
+### スキル・手続きの詳細取得
+- **mcp__aw__skill**: スキル（skills/）・共通スキル（common_skills/）・手順書（procedures/）の全文を取得する
+  - Primingのスキルヒントに表示された名前を `name` パラメータに指定する
+  - 手順書に従って作業する前に、必ずこのツールで全文を確認すること
+
+### 外部ツール（Bash経由）
+
+AnimaWorks内部ツール（MCP `mcp__aw__*`）とは別に、外部サービス連携ツールが利用可能。
+外部ツールはBashから `animaworks-tool` コマンドで実行する。
+
+#### 使い方の流れ
+1. `mcp__aw__discover_tools` を引数なしで呼び、利用可能なカテゴリを確認する
+2. カテゴリを指定して呼ぶと詳細が返る
+3. Bashで実行する: `animaworks-tool <ツール名> <サブコマンド> [引数...]`
+4. 詳細なヘルプ: `animaworks-tool <ツール名> --help`
+
+#### 例: Web検索を実行する
+1. `mcp__aw__discover_tools(category="web_search")` → 引数の詳細が返る
+2. Bashで実行:
+   ```
+   animaworks-tool web_search "AnimaWorks デプロイ手順" -n 5
+   ```
+
+#### 長時間ツールのバックグラウンド実行
+画像生成・ローカルLLM推論等の長時間ツールは直接実行するとロックが保持される。
+必ず `submit` で非同期実行すること:
+```
+animaworks-tool submit <ツール名> <サブコマンド> [引数...]
+```
+完了時は `state/background_notifications/` に通知が書かれ、次回heartbeatで確認できる。
+
+#### 注意事項
+- MCPツール（`mcp__aw__*`）: タスク管理・記憶検索・通信等の内部機能。直接呼び出す
+- 外部ツール（`animaworks-tool`）: Slack・Gmail・GitHub等の外部サービス。Bash経由で実行
+- 使えるツールは `permissions.md` の `tool_categories` で許可されたもののみ
 """,
     "non_s": """\
 ## ツールの使い方
@@ -301,6 +341,16 @@ Sモードでは **Writeツール**（ネイティブ）を使って直接記憶
 #### 成果追跡
 手順書やスキルに従って作業した後は、report_procedure_outcome で必ず結果を報告すること。
 search_memoryやPrimingで取得した知識を使った後は、report_knowledge_outcome で有用性を報告すること。
+
+### スキル・手続きの詳細取得
+
+Primingのスキルヒントに表示された名前は、`skill` ツールで全文を取得できる:
+```
+skill(name="スキル名またはファイル名")
+```
+- skills/、common_skills/、procedures/ の全文を返す
+- 手順書に従って作業する前に、必ず全文を確認すること
+- ヒントに `->` ポインタがある場合、具体的な手順を取得するために使う
 
 #### ユーザー記憶の更新
 ユーザーについて新しい情報を得たら shared/users/{ユーザー名}/index.md の該当セクションを更新し、log.md の先頭に追記する

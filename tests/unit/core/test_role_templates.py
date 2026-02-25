@@ -514,11 +514,11 @@ class TestLoadStatusJson:
         assert result == {"model": "openai/gpt-4o", "max_turns": 50}
 
 
-# ── 4. resolve_anima_config 3-layer merge ─────────────────────────
+# ── 4. resolve_anima_config 2-layer merge (status.json SSoT) ──────
 
 
-class TestResolveAnimaConfig3Layer:
-    """Tests for 3-layer merge in resolve_anima_config()."""
+class TestResolveAnimaConfig2Layer:
+    """Tests for 2-layer merge in resolve_anima_config(): status.json > defaults."""
 
     def _make_config(
         self,
@@ -538,8 +538,8 @@ class TestResolveAnimaConfig3Layer:
             config.animas[anima_name] = AnimaModelConfig(**anima_overrides)
         return config
 
-    def test_config_override_beats_status_json(self, tmp_path: Path) -> None:
-        """config.json per-anima override has highest priority."""
+    def test_status_json_is_ssot(self, tmp_path: Path) -> None:
+        """status.json is the single source of truth for model config."""
         anima_dir = tmp_path / "testbot"
         anima_dir.mkdir()
         _write_status_json(anima_dir, {
@@ -547,23 +547,6 @@ class TestResolveAnimaConfig3Layer:
             "max_turns": 100,
         })
 
-        config = self._make_config(
-            anima_overrides={"model": "from-config-override"},
-        )
-
-        resolved, _ = resolve_anima_config(config, "testbot", anima_dir=anima_dir)
-        assert resolved.model == "from-config-override"
-
-    def test_status_json_beats_defaults(self, tmp_path: Path) -> None:
-        """status.json values are used when config.json has no per-anima override."""
-        anima_dir = tmp_path / "testbot"
-        anima_dir.mkdir()
-        _write_status_json(anima_dir, {
-            "model": "from-status-json",
-            "max_turns": 100,
-        })
-
-        # No per-anima overrides in config
         config = self._make_config(
             defaults_overrides={"model": "from-defaults", "max_turns": 20},
         )
@@ -572,13 +555,29 @@ class TestResolveAnimaConfig3Layer:
         assert resolved.model == "from-status-json"
         assert resolved.max_turns == 100
 
-    def test_defaults_used_when_no_override_or_status(
-        self, tmp_path: Path,
-    ) -> None:
-        """anima_defaults are used when neither config override nor status.json exist."""
+    def test_status_json_beats_defaults(self, tmp_path: Path) -> None:
+        """status.json values override anima_defaults."""
         anima_dir = tmp_path / "testbot"
         anima_dir.mkdir()
-        # Empty status.json
+        _write_status_json(anima_dir, {
+            "model": "from-status-json",
+            "max_turns": 100,
+        })
+
+        config = self._make_config(
+            defaults_overrides={"model": "from-defaults", "max_turns": 20},
+        )
+
+        resolved, _ = resolve_anima_config(config, "testbot", anima_dir=anima_dir)
+        assert resolved.model == "from-status-json"
+        assert resolved.max_turns == 100
+
+    def test_defaults_used_when_no_status(
+        self, tmp_path: Path,
+    ) -> None:
+        """anima_defaults are used when status.json has no value."""
+        anima_dir = tmp_path / "testbot"
+        anima_dir.mkdir()
         _write_status_json(anima_dir, {"enabled": True})
 
         config = self._make_config(
@@ -589,8 +588,8 @@ class TestResolveAnimaConfig3Layer:
         assert resolved.model == "from-defaults"
         assert resolved.max_turns == 42
 
-    def test_three_layer_priority_all_set(self, tmp_path: Path) -> None:
-        """Full 3-layer merge: config override > status.json > defaults."""
+    def test_two_layer_priority_partial_status(self, tmp_path: Path) -> None:
+        """status.json fields override defaults; missing fields fall through."""
         anima_dir = tmp_path / "testbot"
         anima_dir.mkdir()
         _write_status_json(anima_dir, {
@@ -600,10 +599,6 @@ class TestResolveAnimaConfig3Layer:
         })
 
         config = self._make_config(
-            anima_overrides={
-                "model": "override-model",
-                # max_turns NOT overridden - should come from status
-            },
             defaults_overrides={
                 "model": "default-model",
                 "max_turns": 20,
@@ -613,26 +608,21 @@ class TestResolveAnimaConfig3Layer:
         )
 
         resolved, _ = resolve_anima_config(config, "testbot", anima_dir=anima_dir)
-        # Layer 1 wins for model
-        assert resolved.model == "override-model"
-        # Layer 2 wins for max_turns (no config override)
+        # status.json wins
+        assert resolved.model == "status-model"
         assert resolved.max_turns == 150
-        # Layer 2 wins for max_chains (no config override)
         assert resolved.max_chains == 8
-        # Layer 3 wins for context_threshold (not in status.json or override)
+        # defaults used (not in status.json)
         assert resolved.context_threshold == 0.50
 
-    def test_backward_compatible_without_anima_dir(self) -> None:
-        """2-layer merge when anima_dir is None (backward compatibility)."""
+    def test_without_anima_dir_uses_defaults(self) -> None:
+        """When anima_dir is None, only anima_defaults are used."""
         config = self._make_config(
-            anima_overrides={"model": "override-model"},
             defaults_overrides={"model": "default-model", "max_turns": 20},
         )
 
         resolved, _ = resolve_anima_config(config, "testbot", anima_dir=None)
-        # Layer 1 wins
-        assert resolved.model == "override-model"
-        # Layer 3 defaults
+        assert resolved.model == "default-model"
         assert resolved.max_turns == 20
 
     def test_backward_compatible_defaults_only(self) -> None:
