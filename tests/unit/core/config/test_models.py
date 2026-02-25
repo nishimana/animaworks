@@ -78,14 +78,6 @@ class TestCredentialConfig:
 class TestAnimaModelConfig:
     def test_all_none_by_default(self):
         pmc = AnimaModelConfig()
-        assert pmc.model is None
-        assert pmc.fallback_model is None
-        assert pmc.max_tokens is None
-        assert pmc.max_turns is None
-        assert pmc.credential is None
-        assert pmc.context_threshold is None
-        assert pmc.max_chains is None
-        assert pmc.execution_mode is None
         assert pmc.supervisor is None
         assert pmc.speciality is None
 
@@ -112,10 +104,11 @@ class TestAnimaWorksConfig:
 
     def test_roundtrip_json(self):
         config = AnimaWorksConfig()
-        config.animas["alice"] = AnimaModelConfig(model="gpt-4o")
+        config.animas["alice"] = AnimaModelConfig(supervisor="bob", speciality="engineer")
         data = config.model_dump(mode="json")
         restored = AnimaWorksConfig.model_validate(data)
-        assert restored.animas["alice"].model == "gpt-4o"
+        assert restored.animas["alice"].supervisor == "bob"
+        assert restored.animas["alice"].speciality == "engineer"
 
 
 class TestImageGenConfig:
@@ -200,7 +193,7 @@ class TestLoadConfigMtimeReload:
         # Bump mtime by rewriting with different content
         import time
         time.sleep(0.05)
-        self._write_config(path, animas={"bob": {"model": "gpt-4o"}})
+        self._write_config(path, animas={"bob": {"supervisor": "alice"}})
         os.utime(path)
 
         c2 = load_config(path)
@@ -276,13 +269,13 @@ class TestLoadConfig:
             load_config(bad)
 
     def test_load_with_animas(self, data_dir):
-        # Write a config with an anima
+        # Write a config with an anima (supervisor/speciality only; model in status.json)
         config_data = {
             "version": 1,
             "system": {"mode": "server", "log_level": "INFO"},
             "credentials": {"anthropic": {"api_key": ""}},
             "anima_defaults": {"model": "claude-sonnet-4-6", "credential": "anthropic"},
-            "animas": {"alice": {"model": "gpt-4o"}},
+            "animas": {"alice": {"supervisor": "bob", "speciality": "engineer"}},
         }
         (data_dir / "config.json").write_text(
             json.dumps(config_data), encoding="utf-8"
@@ -290,7 +283,8 @@ class TestLoadConfig:
         invalidate_cache()
         config = load_config(data_dir / "config.json")
         assert "alice" in config.animas
-        assert config.animas["alice"].model == "gpt-4o"
+        assert config.animas["alice"].supervisor == "bob"
+        assert config.animas["alice"].speciality == "engineer"
 
 
 # ── save_config ───────────────────────────────────────────
@@ -354,33 +348,37 @@ class TestResolveAnimaConfig:
         assert resolved.credential == "anthropic"
         assert cred.api_key == ""
 
-    def test_anima_override(self):
+    def test_status_json_override(self, tmp_path):
+        """status.json overrides anima_defaults for model config."""
+        status = {"model": "gpt-4o", "max_tokens": 8192, "credential": "anthropic"}
+        (tmp_path / "status.json").write_text(json.dumps(status))
         config = AnimaWorksConfig()
-        config.animas["alice"] = AnimaModelConfig(
-            model="gpt-4o",
-            max_tokens=8192,
-        )
-        resolved, cred = resolve_anima_config(config, "alice")
+        config.animas["alice"] = AnimaModelConfig()
+        resolved, cred = resolve_anima_config(config, "alice", anima_dir=tmp_path)
         assert resolved.model == "gpt-4o"
         assert resolved.max_tokens == 8192
-        # Non-overridden fields use defaults
-        assert resolved.max_turns == 20
+        assert resolved.max_turns == 20  # from anima_defaults
 
-    def test_custom_credential(self):
+    def test_custom_credential(self, tmp_path):
+        """status.json credential overrides anima_defaults."""
+        status = {"credential": "openai"}
+        (tmp_path / "status.json").write_text(json.dumps(status))
         config = AnimaWorksConfig()
         config.credentials["openai"] = CredentialConfig(api_key="sk-openai")
-        config.animas["alice"] = AnimaModelConfig(credential="openai")
-        resolved, cred = resolve_anima_config(config, "alice")
+        config.animas["alice"] = AnimaModelConfig()
+        resolved, cred = resolve_anima_config(config, "alice", anima_dir=tmp_path)
         assert resolved.credential == "openai"
         assert cred.api_key == "sk-openai"
 
-    def test_missing_credential_raises(self):
+    def test_missing_credential_raises(self, tmp_path):
+        """KeyError when status.json credential not in config.credentials."""
+        status = {"credential": "nonexistent"}
+        (tmp_path / "status.json").write_text(json.dumps(status))
         config = AnimaWorksConfig()
-        config.animas["alice"] = AnimaModelConfig(credential="nonexistent")
-        # Remove default anthropic to ensure it fails
         config.credentials = {}
+        config.animas["alice"] = AnimaModelConfig()
         with pytest.raises(KeyError, match="nonexistent"):
-            resolve_anima_config(config, "alice")
+            resolve_anima_config(config, "alice", anima_dir=tmp_path)
 
     def test_partial_overrides(self):
         config = AnimaWorksConfig()
@@ -574,12 +572,12 @@ class TestLoadModelConfig:
     def test_anima_override(self, data_dir):
         import json as _json
 
-        # Write config with anima override
+        # Model override now in status.json
         config_data = {
             "version": 1,
             "credentials": {"anthropic": {"api_key": "sk-test"}},
             "anima_defaults": {"model": "claude-sonnet-4-6", "credential": "anthropic"},
-            "animas": {"alice": {"model": "openai/gpt-4o", "max_tokens": 8192}},
+            "animas": {"alice": {}},
         }
         (data_dir / "config.json").write_text(
             _json.dumps(config_data), encoding="utf-8",
@@ -588,12 +586,14 @@ class TestLoadModelConfig:
 
         anima_dir = data_dir / "animas" / "alice"
         anima_dir.mkdir(parents=True, exist_ok=True)
+        (anima_dir / "status.json").write_text(
+            _json.dumps({"model": "openai/gpt-4o", "max_tokens": 8192}),
+        )
 
         mc = load_model_config(anima_dir)
         assert mc.model == "openai/gpt-4o"
         assert mc.max_tokens == 8192
-        # Non-overridden field uses default
-        assert mc.max_turns == 20
+        assert mc.max_turns == 20  # from anima_defaults
 
     def test_resolves_credential(self, data_dir):
         import json as _json
@@ -605,7 +605,7 @@ class TestLoadModelConfig:
                 "openai": {"api_key": "sk-openai", "base_url": "https://api.openai.com"},
             },
             "anima_defaults": {"model": "claude-sonnet-4-6", "credential": "anthropic"},
-            "animas": {"bob": {"credential": "openai"}},
+            "animas": {"bob": {}},
         }
         (data_dir / "config.json").write_text(
             _json.dumps(config_data), encoding="utf-8",
@@ -614,6 +614,9 @@ class TestLoadModelConfig:
 
         anima_dir = data_dir / "animas" / "bob"
         anima_dir.mkdir(parents=True, exist_ok=True)
+        (anima_dir / "status.json").write_text(
+            _json.dumps({"credential": "openai"}),
+        )
 
         mc = load_model_config(anima_dir)
         assert mc.api_key == "sk-openai"
@@ -741,7 +744,7 @@ class TestRegisterAnimaInConfig:
         config_path = data_dir / "config.json"
         cfg = AnimaWorksConfig()
         cfg.animas["alice"] = AnimaModelConfig(
-            model="openai/gpt-4o", supervisor="charlie",
+            supervisor="charlie", speciality="engineer",
         )
         save_config(cfg, config_path)
         invalidate_cache()
@@ -757,7 +760,7 @@ class TestRegisterAnimaInConfig:
         invalidate_cache()
         cfg = load_config(config_path)
         assert cfg.animas["alice"].supervisor == "charlie"  # unchanged
-        assert cfg.animas["alice"].model == "openai/gpt-4o"  # unchanged
+        assert cfg.animas["alice"].speciality == "engineer"  # unchanged
 
     def test_no_config_file_noop(self, tmp_path: Path) -> None:
         """Does nothing when config.json does not exist."""

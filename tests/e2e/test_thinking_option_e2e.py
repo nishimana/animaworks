@@ -74,13 +74,12 @@ class TestThinkingOptionModeB:
             execution_mode="assisted",
         )
 
-        # Manually set thinking=True in config.json (not supported by
-        # create_anima_dir helper) and rebuild model_config.
-        config_path = data_dir / "config.json"
-        config = json.loads(config_path.read_text(encoding="utf-8"))
-        config["animas"]["think-ollama-explicit"]["thinking"] = True
-        config_path.write_text(
-            json.dumps(config, indent=2, ensure_ascii=False),
+        # Set thinking=True in status.json (model config SSoT).
+        status_path = agent.anima_dir / "status.json"
+        status_data = json.loads(status_path.read_text(encoding="utf-8"))
+        status_data["thinking"] = True
+        status_path.write_text(
+            json.dumps(status_data, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
 

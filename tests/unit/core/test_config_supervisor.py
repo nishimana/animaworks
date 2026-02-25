@@ -300,7 +300,6 @@ class TestRegisterAnimaInConfig:
         # Create config.json with existing anima
         config = AnimaWorksConfig(setup_complete=True)
         config.animas["hinata"] = AnimaModelConfig(
-            model="openai/gpt-4o",
             supervisor="original",
         )
         save_config(config, data_dir / "config.json")
@@ -317,7 +316,6 @@ class TestRegisterAnimaInConfig:
         invalidate_cache()
         cfg = load_config(data_dir / "config.json")
         assert cfg.animas["hinata"].supervisor == "original"
-        assert cfg.animas["hinata"].model == "openai/gpt-4o"
 
     def test_config_json_does_not_exist(self, tmp_path: Path) -> None:
         """No error when config.json does not exist."""

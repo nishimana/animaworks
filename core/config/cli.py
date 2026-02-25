@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -152,6 +153,47 @@ def cmd_config_set(args: argparse.Namespace) -> None:
 
     parts = key.split(".")
 
+    _MODEL_FIELDS = {
+        "model",
+        "fallback_model",
+        "max_tokens",
+        "max_turns",
+        "credential",
+        "context_threshold",
+        "max_chains",
+        "conversation_history_threshold",
+        "execution_mode",
+        "thinking",
+        "llm_timeout",
+    }
+    if len(parts) >= 3 and parts[0] == "animas" and parts[2] in _MODEL_FIELDS:
+        anima_name = parts[1]
+        field = parts[2]
+        print(
+            f"Warning: 'animas.{anima_name}.{field}' は非推奨です。\n"
+            f"  status.json に書き込みます。今後は 'animaworks anima set-model' を使用してください。",
+            file=sys.stderr,
+        )
+        # Redirect to status.json (SSoT)
+        anima_dir = get_animas_dir() / anima_name
+        status_path = anima_dir / "status.json"
+        status_data: dict[str, object] = {}
+        if status_path.is_file():
+            try:
+                status_data = json.loads(status_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                pass
+        status_data[field] = coerced
+        status_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = status_path.with_suffix(".tmp")
+        tmp.write_text(
+            json.dumps(status_data, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        tmp.replace(status_path)
+        print(f"Set {anima_name}/status.json {field} = {_mask_secret(key, coerced)}")
+        return
+
     # Auto-create scaffold for new anima entries (e.g. "animas.newperson.model")
     if len(parts) >= 3 and parts[0] == "animas":
         anima_name = parts[1]
@@ -273,23 +315,46 @@ def _interactive_setup() -> None:
 
     for anima_name in detected_animas:
         print(f"\n  Anima: {anima_name}")
-        existing = config.animas.get(anima_name, AnimaModelConfig())
+        anima_dir = animas_dir / anima_name
+        status_path = anima_dir / "status.json"
+        current_model = ""
+        current_cred = ""
+        status_data: dict[str, object] = {}
+        if status_path.is_file():
+            try:
+                status_data = json.loads(
+                    status_path.read_text(encoding="utf-8")
+                )
+                current_model = status_data.get("model", "") or ""
+                current_cred = status_data.get("credential", "") or ""
+            except (json.JSONDecodeError, OSError):
+                pass
 
         model = input(
-            f"    Model [{existing.model or '(use default)'}]: "
+            f"    Model [{current_model or '(use default)'}]: "
         ).strip()
         if model:
-            existing.model = model
+            status_data["model"] = model
 
         if cred_names:
             print(f"    Available credentials: {', '.join(cred_names)}")
         cred = input(
-            f"    Credential [{existing.credential or '(use default)'}]: "
+            f"    Credential [{current_cred or '(use default)'}]: "
         ).strip()
         if cred:
-            existing.credential = cred
+            status_data["credential"] = cred
 
-        config.animas[anima_name] = existing
+        if model or cred:
+            status_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = status_path.with_suffix(".tmp")
+            tmp.write_text(
+                json.dumps(status_data, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+            tmp.replace(status_path)
+
+        if anima_name not in config.animas:
+            config.animas[anima_name] = AnimaModelConfig()
 
     # Step 4: Save
     print()

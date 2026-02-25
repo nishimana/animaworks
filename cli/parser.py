@@ -323,6 +323,32 @@ def cli_main() -> None:
     )
     p_anima_list.set_defaults(func=_lazy_anima_list)
 
+    # anima set-model
+    p_anima_set_model = anima_sub.add_parser("set-model", help="Change an anima's model")
+    p_anima_set_model.add_argument(
+        "anima",
+        nargs="?",
+        default=None,
+        help="Anima name (not required with --all)",
+    )
+    p_anima_set_model.add_argument(
+        "model",
+        nargs="?",
+        default=None,
+        help="Model name (e.g. azure/gpt-4.1-mini)",
+    )
+    p_anima_set_model.add_argument(
+        "--credential",
+        default=None,
+        help="Credential name",
+    )
+    p_anima_set_model.add_argument(
+        "--all",
+        action="store_true",
+        help="Apply to all enabled animas",
+    )
+    p_anima_set_model.set_defaults(func=_lazy_anima_set_model)
+
     # anima set-role
     p_anima_set_role = anima_sub.add_parser("set-role", help="Change an anima's role")
     p_anima_set_role.add_argument("anima", help="Anima name")
@@ -554,6 +580,12 @@ def _lazy_anima_set_role(args: argparse.Namespace) -> None:
     from cli.commands.anima_mgmt import cmd_anima_set_role
 
     cmd_anima_set_role(args)
+
+
+def _lazy_anima_set_model(args: argparse.Namespace) -> None:
+    from cli.commands.anima_mgmt import cmd_anima_set_model
+
+    cmd_anima_set_model(args)
 
 
 def _lazy_board_read(args: argparse.Namespace) -> None:

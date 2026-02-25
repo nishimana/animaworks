@@ -67,21 +67,10 @@ class CredentialConfig(BaseModel):
 
 
 class AnimaModelConfig(BaseModel):
-    """Per-anima overrides.  All fields are optional (None = use default)."""
+    """Per-anima config in config.json. Organization structure only."""
 
-    model: str | None = None
-    fallback_model: str | None = None
-    max_tokens: int | None = None
-    max_turns: int | None = None
-    credential: str | None = None
-    context_threshold: float | None = None
-    max_chains: int | None = None
-    conversation_history_threshold: float | None = None
-    execution_mode: str | None = None  # "autonomous" or "assisted"
-    supervisor: str | None = None  # name of supervisor Anima
-    speciality: str | None = None  # free-text specialisation
-    thinking: bool | None = None  # Ollama thinking mode (None=auto, True/False=explicit)
-    llm_timeout: int | None = None  # LLM API timeout (seconds); None = auto
+    supervisor: str | None = None
+    speciality: str | None = None
 
 
 # ── Default model names (single source of truth) ─────────────────────────────
@@ -421,7 +410,7 @@ def save_config(config: AnimaWorksConfig, path: Path | None = None) -> None:
 def _load_status_json(anima_dir: Path) -> dict[str, Any]:
     """Load ModelConfig-relevant fields from anima's status.json.
 
-    Returns a dict with field names matching AnimaModelConfig fields.
+    Returns a dict with field names matching AnimaDefaults fields.
     Missing or invalid files return an empty dict.
     """
     status_path = anima_dir / "status.json"
@@ -444,6 +433,10 @@ def _load_status_json(anima_dir: Path) -> dict[str, Any]:
         "credential": "credential",
         "execution_mode": "execution_mode",
         "supervisor": "supervisor",
+        "max_tokens": "max_tokens",
+        "fallback_model": "fallback_model",
+        "thinking": "thinking",
+        "llm_timeout": "llm_timeout",
     }
     for status_key, config_key in field_mapping.items():
         if status_key in data and data[status_key] not in (None, ""):
@@ -456,16 +449,18 @@ def resolve_anima_config(
     anima_name: str,
     anima_dir: Path | None = None,
 ) -> tuple[AnimaDefaults, CredentialConfig]:
-    """Merge per-anima overrides with status.json and *anima_defaults*.
+    """Merge status.json with *anima_defaults* (2-layer merge).
 
-    Resolution uses a 3-layer priority (strongest first):
+    Resolution uses a 2-layer priority (strongest first):
 
-      1. ``config.json`` per-anima override (admin override)
-      2. ``status.json`` in *anima_dir* (role-template values)
-      3. ``config.json`` anima_defaults (global defaults)
+      1. ``status.json`` in *anima_dir* (role-template values, model config SSoT)
+      2. ``config.json`` anima_defaults (global defaults)
 
-    When *anima_dir* is ``None``, layer 2 is skipped and the original
-    2-layer merge is used for backward compatibility.
+    ``config.json`` per-anima (``config.animas``) no longer contributes
+    model-related fields. Only ``supervisor`` and ``speciality`` are read
+    from config.animas for organization structure; these override status.json.
+
+    When *anima_dir* is ``None``, layer 1 is skipped (no status.json).
 
     Returns:
         A ``(resolved_defaults, credential)`` tuple.
@@ -477,19 +472,25 @@ def resolve_anima_config(
     anima_entry = config.animas.get(anima_name, AnimaModelConfig())
     defaults = config.anima_defaults
 
-    # Layer 2: status.json values
     status_values = _load_status_json(anima_dir) if anima_dir else {}
 
-    # Merge: config_override >> status_values >> defaults
+    # Merge: status_values >> anima_defaults for model fields.
+    # supervisor, speciality: config.animas >> status >> defaults (org structure)
     resolved: dict[str, Any] = {}
-    for field_name in AnimaModelConfig.model_fields:
-        anima_value = getattr(anima_entry, field_name)
-        if anima_value is not None:
-            resolved[field_name] = anima_value
-        elif field_name in status_values and status_values[field_name] is not None:
-            resolved[field_name] = status_values[field_name]
+    for field_name in AnimaDefaults.model_fields:
+        if field_name in ("supervisor", "speciality"):
+            anima_value = getattr(anima_entry, field_name)
+            if anima_value is not None:
+                resolved[field_name] = anima_value
+            elif field_name in status_values and status_values[field_name] is not None:
+                resolved[field_name] = status_values[field_name]
+            else:
+                resolved[field_name] = getattr(defaults, field_name)
         else:
-            resolved[field_name] = getattr(defaults, field_name)
+            if field_name in status_values and status_values[field_name] is not None:
+                resolved[field_name] = status_values[field_name]
+            else:
+                resolved[field_name] = getattr(defaults, field_name)
 
     resolved_defaults = AnimaDefaults.model_validate(resolved)
 
@@ -927,6 +928,51 @@ def resolve_context_window(
 _NONE_SUPERVISOR_VALUES = frozenset({"なし", "(なし)", "（なし）", "-", "---", ""})
 
 _PAREN_EN_NAME_RE = re.compile(r"[（(]([A-Za-z_][A-Za-z0-9_]*)[）)]")
+
+_INJECTION_MODEL_RE = re.compile(r"^(- \*\*モデル\*\*:\s*)(.+)$", re.MULTILINE)
+
+
+def update_injection_model(anima_dir: Path, model_display: str) -> bool:
+    """Update the model line in injection.md.
+
+    Replaces `- **モデル**: OLD` with `- **モデル**: NEW`.
+    Returns True if the file was updated, False if no matching line found.
+    """
+    injection_path = anima_dir / "injection.md"
+    if not injection_path.is_file():
+        return False
+    content = injection_path.read_text(encoding="utf-8")
+    safe_display = model_display.replace("\\", "\\\\").replace("&", "\\&")
+    new_content, count = _INJECTION_MODEL_RE.subn(
+        rf"\g<1>{safe_display}", content
+    )
+    if count == 0:
+        return False
+    injection_path.write_text(new_content, encoding="utf-8")
+    return True
+
+
+def update_status_model(
+    anima_dir: Path,
+    *,
+    model: str | None = None,
+    credential: str | None = None,
+) -> None:
+    """Update model/credential in an anima's status.json (atomic write)."""
+    status_path = anima_dir / "status.json"
+    if not status_path.is_file():
+        raise FileNotFoundError(f"status.json not found: {status_path}")
+    data = json.loads(status_path.read_text(encoding="utf-8"))
+    if model is not None:
+        data["model"] = model
+    if credential is not None:
+        data["credential"] = credential
+    tmp = status_path.with_suffix(".tmp")
+    tmp.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    tmp.replace(status_path)
 
 
 def _resolve_supervisor_name(raw: str) -> str | None:

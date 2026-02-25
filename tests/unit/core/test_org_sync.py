@@ -367,8 +367,7 @@ class TestSyncOrgStructure:
         # Pre-populate with extra fields
         cfg = load_config(config_path)
         cfg.animas["alice"] = AnimaModelConfig(
-            model="openai/gpt-4o",
-            max_tokens=8192,
+            speciality="testing",
             supervisor=None,
         )
         save_config(cfg, config_path)
@@ -379,8 +378,7 @@ class TestSyncOrgStructure:
         invalidate_cache()
         cfg = load_config(config_path)
         assert cfg.animas["alice"].supervisor == "bob"
-        assert cfg.animas["alice"].model == "openai/gpt-4o"
-        assert cfg.animas["alice"].max_tokens == 8192
+        assert cfg.animas["alice"].speciality == "testing"
 
     def test_mismatch_logs_warning(
         self, animas_dir: Path, config_path: Path, caplog: pytest.LogCaptureFixture,
