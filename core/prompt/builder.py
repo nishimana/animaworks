@@ -697,6 +697,7 @@ def build_system_prompt(
 
     # ── Distilled Knowledge Injection (skip for task) ─────
     injected_knowledge_files: list[str] = []
+    injected_procedures: list[Path] = []
     overflow_files: list[str] = []
 
     if is_task:
@@ -714,14 +715,33 @@ def build_system_prompt(
     else:
         knowledge_budget = 0
 
-    distilled = memory.collect_distilled_knowledge()
+    procedures_list, knowledge_list = memory.collect_distilled_knowledge_separated()
 
     used_tokens = 0
-    injection_parts: list[str] = []
-    for entry in distilled:
+
+    proc_parts: list[str] = []
+    for entry in procedures_list:
         est_tokens = len(entry["content"]) // 3
         if used_tokens + est_tokens <= knowledge_budget:
-            injection_parts.append(
+            proc_parts.append(
+                f"### {entry['name']}\n\n{entry['content']}"
+            )
+            used_tokens += est_tokens
+            injected_procedures.append(Path(entry["path"]))
+        else:
+            overflow_files.append(entry["name"])
+
+    if proc_parts:
+        parts.append(
+            "## Procedures（手順書）\n\n"
+            + "\n\n---\n\n".join(proc_parts)
+        )
+
+    know_parts: list[str] = []
+    for entry in knowledge_list:
+        est_tokens = len(entry["content"]) // 3
+        if used_tokens + est_tokens <= knowledge_budget:
+            know_parts.append(
                 f"### {entry['name']}\n\n{entry['content']}"
             )
             used_tokens += est_tokens
@@ -729,10 +749,10 @@ def build_system_prompt(
         else:
             overflow_files.append(entry["name"])
 
-    if injection_parts:
+    if know_parts:
         parts.append(
             "## Distilled Knowledge\n\n"
-            + "\n\n---\n\n".join(injection_parts)
+            + "\n\n---\n\n".join(know_parts)
         )
 
     if not is_task and tier in (TIER_FULL, TIER_STANDARD):
@@ -868,6 +888,7 @@ def build_system_prompt(
     )
     return BuildResult(
         system_prompt=prompt,
+        injected_procedures=injected_procedures,
         injected_knowledge_files=injected_knowledge_files,
         overflow_files=overflow_files,
     )
