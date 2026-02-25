@@ -95,11 +95,14 @@ def sync_org_structure(
         animas_dir: Path to the animas directory
             (e.g. ``~/.animaworks/animas``).
         config_path: Optional explicit path to config.json.  When ``None``,
-            the default location is resolved automatically.
+            derived from ``animas_dir.parent / "config.json"`` so that
+            config always lives under the same data root as *animas_dir*.
 
     Returns:
         Dict of ``{anima_name: supervisor_value}`` for all discovered entries.
     """
+    if config_path is None:
+        config_path = animas_dir.parent / "config.json"
     if not animas_dir.is_dir():
         logger.debug("Animas directory does not exist: %s", animas_dir)
         return {}
@@ -246,7 +249,8 @@ def _find_orphan_supervisor(
 
     # 2) config.json global entry / 3) fallback to top-level anima
     try:
-        config = load_config()
+        config_path = animas_dir.parent / "config.json"
+        config = load_config(config_path)
         anima_cfg = config.animas.get(name)
         if anima_cfg and anima_cfg.supervisor:
             return anima_cfg.supervisor
