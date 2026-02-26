@@ -100,7 +100,7 @@ class TestSupervisorActivityLogPermission:
         assert result is not None, "Supervisor should NOT be allowed to read subordinate's episodes"
 
     def test_supervisor_can_read_subordinate_identity(self, tmp_path: Path):
-        """Supervisor mio can read subordinate yuki's identity.md."""
+        """Supervisor mio can read descendant yuki's identity.md (read_subordinate_state)."""
         sub_dir = tmp_path / "animas" / "yuki"
         sub_dir.mkdir(parents=True, exist_ok=True)
         identity_file = sub_dir / "identity.md"
@@ -111,7 +111,7 @@ class TestSupervisorActivityLogPermission:
 
         result = handler._check_file_permission(str(identity_file), write=False)
 
-        assert result is None, "Supervisor should be allowed to read subordinate's identity.md"
+        assert result is None, "Supervisor should be allowed to read descendant's identity.md"
 
     def test_supervisor_cannot_write_subordinate_activity_log(self, tmp_path: Path):
         """Supervisor mio cannot WRITE to subordinate yuki's activity_log."""
@@ -193,7 +193,7 @@ class TestSupervisorActivityLogPermission:
 
     def test_path_traversal_via_dotdot_denied(self, tmp_path: Path):
         """Path traversal ``activity_log/../episodes/...`` resolves to episodes, which is denied."""
-        # Create subordinate dirs; identity.md is now allowed, so target episodes/ instead
+        # Create subordinate dirs (identity.md is now allowed for descendants, so target episodes/)
         sub_dir = tmp_path / "animas" / "yuki"
         (sub_dir / "activity_log").mkdir(parents=True, exist_ok=True)
         (sub_dir / "episodes").mkdir(parents=True, exist_ok=True)

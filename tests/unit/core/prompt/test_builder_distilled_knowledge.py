@@ -38,6 +38,7 @@ def _make_mock_memory(anima_dir: Path, data_dir: Path) -> MagicMock:
     memory.list_procedure_metas.return_value = []
     memory.common_skills_dir = data_dir / "common_skills"
     memory.list_shared_users.return_value = []
+    memory.collect_distilled_knowledge.return_value = []
     memory.collect_distilled_knowledge_separated.return_value = ([], [])
     # read_model_config for context window resolution
     model_cfg = MagicMock()

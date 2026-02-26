@@ -131,10 +131,11 @@ class TestDistilledKnowledgeInjectionE2E:
 
         # Step 2: build_system_prompt with entries supplied via mock
         mock_memory = _make_mock_memory(anima_dir, data_dir)
-        procedures = [e for e in entries if e.get("source_type") == "procedures"]
-        knowledge = [e for e in entries if e.get("source_type") == "knowledge"]
+        procedures_list = [e for e in entries if e.get("source_type") == "procedures"]
+        knowledge_list = [e for e in entries if e.get("source_type") == "knowledge"]
         mock_memory.collect_distilled_knowledge_separated.return_value = (
-            procedures, knowledge,
+            procedures_list,
+            knowledge_list,
         )
 
         with (
@@ -291,10 +292,11 @@ class TestDistilledKnowledgeInjectionE2E:
         # Build system prompt with mock memory that returns these entries
         # and a tiny context window to force overflow
         mock_memory = _make_mock_memory(anima_dir, data_dir)
-        procedures = [e for e in entries if e.get("source_type") == "procedures"]
-        knowledge = [e for e in entries if e.get("source_type") == "knowledge"]
+        procedures_list = [e for e in entries if e.get("source_type") == "procedures"]
+        knowledge_list = [e for e in entries if e.get("source_type") == "knowledge"]
         mock_memory.collect_distilled_knowledge_separated.return_value = (
-            procedures, knowledge,
+            procedures_list,
+            knowledge_list,
         )
         # Use a small model to get a small context window
         mock_memory.read_model_config.return_value = MagicMock(
