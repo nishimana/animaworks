@@ -382,7 +382,7 @@ async function openConversation(animaName) {
   // Initialize voice input for conversation
   const convInputArea = document.querySelector(".ws-conv-input-area");
   if (convInputArea && animaName) {
-    initVoiceUI(convInputArea, animaName);
+    initVoiceUI(convInputArea, animaName, _buildVoiceChatCallbacks(animaName));
   }
 }
 
@@ -1069,6 +1069,32 @@ function updateStreamingBubble(msg) {
   }
   bubble.innerHTML = html;
   dom.convMessages.scrollTop = dom.convMessages.scrollHeight;
+}
+
+function _buildVoiceChatCallbacks(animaName) {
+  return {
+    addUserBubble(text) {
+      const { chatMessages } = getState();
+      const ts = new Date().toISOString();
+      setState({ chatMessages: [...chatMessages, { role: "user", text, timestamp: ts }] });
+      renderConvMessages();
+    },
+    addStreamingBubble() {
+      const { chatMessages } = getState();
+      const ts = new Date().toISOString();
+      const msg = { role: "assistant", text: "", streaming: true, activeTool: null, timestamp: ts, thinkingText: "", thinking: false };
+      setState({ chatMessages: [...chatMessages, msg] });
+      renderConvMessages();
+      return msg;
+    },
+    updateStreamingBubble(msg) {
+      updateStreamingBubble(msg);
+    },
+    finalizeStreamingBubble(msg) {
+      setState({ chatMessages: [...getState().chatMessages] });
+      renderConvMessages();
+    },
+  };
 }
 
 // ── Board Tab ──────────────────────

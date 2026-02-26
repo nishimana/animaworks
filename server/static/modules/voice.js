@@ -11,6 +11,8 @@ export class VoiceManager {
     this._mode = 'ptt'; // 'ptt' or 'vad'
     this._recording = false;
     this._connected = false;
+    this._startingRecording = false;
+    this._pendingStop = false;
     this._audioContext = null;
     this._workletNode = null;
     this._mediaStream = null;
@@ -43,30 +45,40 @@ export class VoiceManager {
     (this._listeners[event] || []).forEach((f) => f(data));
   }
 
-  async connect(animaName) {
+  connect(animaName) {
     this.disconnect();
     this._animaName = animaName;
 
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const url = `${protocol}//${location.host}/ws/voice/${encodeURIComponent(animaName)}`;
 
-    this._ws = new WebSocket(url);
-    this._ws.binaryType = 'arraybuffer';
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      this._ws = new WebSocket(url);
+      this._ws.binaryType = 'arraybuffer';
 
-    this._ws.onopen = () => {
-      this._connected = true;
-      this._reconnectAttempts = 0;
-      this._emit('connected');
-    };
-    this._ws.onclose = (e) => {
-      this._connected = false;
-      this._emit('disconnected', { code: e.code });
-      this._tryReconnect();
-    };
-    this._ws.onerror = () => {
-      this._emit('error', { message: 'WebSocket error' });
-    };
-    this._ws.onmessage = (e) => this._handleMessage(e);
+      this._ws.onopen = () => {
+        settled = true;
+        this._connected = true;
+        this._reconnectAttempts = 0;
+        this._emit('connected');
+        resolve();
+      };
+      this._ws.onclose = (e) => {
+        this._connected = false;
+        if (!settled) {
+          settled = true;
+          reject(new Error('WebSocket closed before open'));
+          return;
+        }
+        this._emit('disconnected', { code: e.code });
+        this._tryReconnect();
+      };
+      this._ws.onerror = () => {
+        this._emit('error', { message: 'WebSocket error' });
+      };
+      this._ws.onmessage = (e) => this._handleMessage(e);
+    });
   }
 
   disconnect() {
@@ -89,11 +101,14 @@ export class VoiceManager {
   }
 
   async startRecording() {
-    if (this._recording || !this._connected) return;
+    if (this._recording || this._startingRecording || !this._connected) return;
 
     if (this._ttsPlaying) {
       this.interrupt();
     }
+
+    this._startingRecording = true;
+    this._pendingStop = false;
 
     try {
       this._mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -104,9 +119,28 @@ export class VoiceManager {
           noiseSuppression: true,
         },
       });
+
+      if (this._pendingStop) {
+        this._mediaStream.getTracks().forEach((t) => t.stop());
+        this._mediaStream = null;
+        this._startingRecording = false;
+        this._pendingStop = false;
+        return;
+      }
+
       this._audioContext = new AudioContext({ sampleRate: 48000 });
 
       await this._audioContext.audioWorklet.addModule('/modules/voice-worklet.js');
+
+      if (this._pendingStop) {
+        this._audioContext.close();
+        this._audioContext = null;
+        this._mediaStream.getTracks().forEach((t) => t.stop());
+        this._mediaStream = null;
+        this._startingRecording = false;
+        this._pendingStop = false;
+        return;
+      }
 
       const source = this._audioContext.createMediaStreamSource(this._mediaStream);
       this._workletNode = new AudioWorkletNode(this._audioContext, 'voice-pcm-processor', {
@@ -126,13 +160,21 @@ export class VoiceManager {
       silentGain.connect(this._audioContext.destination);
 
       this._recording = true;
+      this._startingRecording = false;
       this._emit('recordingStart');
     } catch (err) {
+      this._startingRecording = false;
+      this._pendingStop = false;
       this._emit('error', { message: `Microphone error: ${err.message}` });
     }
   }
 
   stopRecording() {
+    if (this._startingRecording) {
+      this._pendingStop = true;
+      this._emit('recordingStop');
+      return;
+    }
     if (!this._recording) return;
     this._stopRecordingInternal();
     if (this._ws && this._ws.readyState === WebSocket.OPEN) {
@@ -221,6 +263,9 @@ export class VoiceManager {
           break;
         case 'thinking_status':
           this._emit('thinkingStatus', msg.thinking);
+          break;
+        case 'thinking_delta':
+          this._emit('thinkingDelta', { text: msg.text });
           break;
         case 'error':
           this._emit('error', { message: msg.message });

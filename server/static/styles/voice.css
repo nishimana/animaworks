@@ -20,11 +20,16 @@
   transition: all 0.2s;
   padding: 0;
   flex-shrink: 0;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
 }
 .voice-mic-btn svg {
   width: 18px;
   height: 18px;
   fill: var(--text-secondary, #666);
+  pointer-events: none;
 }
 .voice-mic-btn:hover {
   border-color: var(--accent-color, #4a9eff);
@@ -138,6 +143,24 @@
   border-radius: 50%;
   background: var(--accent-color, #4a9eff);
   cursor: pointer;
+}
+
+/* ── Mobile: larger tap target ─────────── */
+@media (max-width: 768px) {
+  .voice-mic-btn {
+    width: 48px;
+    height: 48px;
+  }
+  .voice-mic-btn svg {
+    width: 24px;
+    height: 24px;
+  }
+  .voice-controls {
+    gap: 8px;
+  }
+  .voice-volume-slider {
+    width: 50px;
+  }
 }
 
 /* ── Dark mode ──────────────────────────── */

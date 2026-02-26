@@ -80,21 +80,22 @@ class VoiceSession:
             self._processing = False
 
     async def _check_tts_health(self) -> bool:
-        """Check TTS availability, caching result for the session."""
-        if self._tts_available is not None:
-            return self._tts_available
+        """Check TTS availability. Only caches positive results; retries on failure."""
+        if self._tts_available:
+            return True
         try:
-            self._tts_available = await self._tts.health_check()
+            ok = await self._tts.health_check()
         except Exception:
-            self._tts_available = False
-        if not self._tts_available:
+            ok = False
+        self._tts_available = ok
+        if not ok:
             logger.warning(
                 "TTS provider unavailable for %s (%s)",
                 self._anima_name,
                 self._tts_config.provider,
             )
             await self._ws.send_json({"type": "error", "message": "TTS unavailable"})
-        return self._tts_available
+        return ok
 
     def invalidate_tts_health(self) -> None:
         """Reset cached TTS health so next speech_end rechecks."""
@@ -219,7 +220,12 @@ class VoiceSession:
                     elif chunk_data.get("type") == "thinking_end":
                         await self._ws.send_json({"type": "thinking_status", "thinking": False})
                     elif chunk_data.get("type") == "thinking_delta":
-                        pass
+                        delta = chunk_data.get("text", "")
+                        if delta:
+                            await self._ws.send_json({
+                                "type": "thinking_delta",
+                                "text": delta,
+                            })
 
                     elif chunk_data.get("type") == "cycle_done":
                         cycle_result = chunk_data.get("cycle_result", {})

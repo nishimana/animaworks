@@ -402,7 +402,7 @@ export function renderChat() {
 
 // ── SSE Streaming ─────────────────────────
 
-function renderStreamingBubble(msg) {
+export function renderStreamingBubble(msg) {
   const chatMessages = dom.chatMessages || document.getElementById("chatMessages");
   if (!chatMessages) return;
   const bubble = chatMessages.querySelector(".chat-bubble.assistant.streaming");
@@ -675,7 +675,7 @@ export function initImageInput() {
   // Initialize voice input
   const chatInputFormEl = document.querySelector('.chat-input-form');
   if (chatInputFormEl && state.selectedAnima) {
-    initVoiceUI(chatInputFormEl, state.selectedAnima);
+    initVoiceUI(chatInputFormEl, state.selectedAnima, _buildVoiceChatCallbacks(state.selectedAnima));
   }
 }
 
@@ -802,6 +802,29 @@ export function updateVoiceAnima(animaName) {
   updateVoiceUIAnima(animaName);
   const chatInputForm = document.querySelector('.chat-input-form');
   if (chatInputForm && animaName) {
-    initVoiceUI(chatInputForm, animaName);
+    initVoiceUI(chatInputForm, animaName, _buildVoiceChatCallbacks(animaName));
   }
+}
+
+function _buildVoiceChatCallbacks(animaName) {
+  return {
+    addUserBubble(text) {
+      if (!state.chatHistories[animaName]) state.chatHistories[animaName] = [];
+      state.chatHistories[animaName].push({ role: 'user', text });
+      renderChat();
+    },
+    addStreamingBubble() {
+      if (!state.chatHistories[animaName]) state.chatHistories[animaName] = [];
+      const msg = { role: 'assistant', text: '', streaming: true, activeTool: null };
+      state.chatHistories[animaName].push(msg);
+      renderChat();
+      return msg;
+    },
+    updateStreamingBubble(msg) {
+      renderStreamingBubble(msg);
+    },
+    finalizeStreamingBubble(_msg) {
+      renderChat();
+    },
+  };
 }
