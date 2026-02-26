@@ -2,9 +2,10 @@
 
 import { state, dom, escapeHtml } from "./state.js";
 import { api } from "./api.js";
-import { renderChat, resumeActiveStream, loadConversationHistory, setupScrollObserver } from "./chat.js";
+import { renderChat, resumeActiveStream, loadConversationHistory, setupScrollObserver, updateVoiceAnima } from "./chat.js";
 import { loadMemoryTab } from "./memory.js";
 import { hideHistoryDetail, loadSessionList } from "./history.js";
+import { animaHashColor } from "../shared/avatar-utils.js";
 
 export async function loadAnimas() {
   try {
@@ -73,6 +74,7 @@ export async function selectAnima(name) {
   }
 
   state.selectedAnima = name;
+  updateVoiceAnima(name);
 
   // Update dropdown
   const dropdown = dom.animaDropdown || document.getElementById("animaDropdown");
@@ -125,14 +127,8 @@ export async function selectAnima(name) {
 
 // ── Anima Avatar ───────────────────────────
 
-export function animaHashColor(name) {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const hue = Math.abs(hash) % 360;
-  return `hsl(${hue}, 45%, 45%)`;
-}
+// animaHashColor is now imported from shared/avatar-utils.js
+export { animaHashColor };
 
 export async function updateAnimaAvatar() {
   const container = dom.animaAvatar || document.getElementById("animaAvatar");

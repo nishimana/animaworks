@@ -7,6 +7,7 @@
  */
 import { createLogger } from "../../shared/logger.js";
 import { escapeHtml, smartTimestamp } from "./utils.js";
+import { animaHashColor } from "../../shared/avatar-utils.js";
 
 const logger = createLogger("org-dashboard");
 
@@ -89,13 +90,7 @@ function renderStatusCard(anima) {
   </div>`;
 }
 
-function animaHashColor(name) {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return `hsl(${Math.abs(hash) % 360}, 45%, 45%)`;
-}
+// animaHashColor imported from shared/avatar-utils.js
 
 // ── Activity Feed ──────────────────────
 
