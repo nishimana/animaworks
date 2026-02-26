@@ -553,6 +553,10 @@ class LiteLLMExecutor(BaseExecutor):
         not within this method.
         """
         import litellm
+        # When thinking_blocks are missing from assistant messages on tool-call
+        # turns, Anthropic/Bedrock returns 400.  This flag tells LiteLLM to
+        # silently drop the thinking param for that turn instead of crashing.
+        litellm.modify_params = True
 
         tools = self._build_base_tools()
         active_categories: set[str] = set()
@@ -628,6 +632,7 @@ class LiteLLMExecutor(BaseExecutor):
                 usage_data: dict[str, int] | None = None
                 _chunk_count = 0
                 _reasoning_seen = False
+                _reasoning_parts: list[str] = []
 
                 async for chunk in response:
                     _chunk_count += 1
@@ -653,7 +658,8 @@ class LiteLLMExecutor(BaseExecutor):
 
                     # Reasoning content → thinking_delta events
                     reasoning = getattr(delta, "reasoning_content", None)
-                    if reasoning and not delta.content:
+                    if reasoning:
+                        _reasoning_parts.append(reasoning)
                         if not _reasoning_seen:
                             _reasoning_seen = True
                             logger.info(
@@ -691,6 +697,20 @@ class LiteLLMExecutor(BaseExecutor):
 
                 if _reasoning_seen:
                     yield {"type": "thinking_end"}
+
+                # Try to extract thinking_blocks from streamed response for
+                # later inclusion in assistant messages (tool-call iterations).
+                _iter_thinking_blocks: list[dict[str, Any]] | None = None
+                if _reasoning_seen:
+                    _resp_msg = getattr(response, "response_uptil_now", None)
+                    if _resp_msg:
+                        _choices = getattr(_resp_msg, "choices", None)
+                        if _choices:
+                            _msg_obj = getattr(_choices[0], "message", None)
+                            if _msg_obj:
+                                _iter_thinking_blocks = getattr(
+                                    _msg_obj, "thinking_blocks", None,
+                                )
 
                 # Post-stream diagnostics
                 if not iter_text_parts and not tool_calls_acc:
@@ -767,6 +787,12 @@ class LiteLLMExecutor(BaseExecutor):
                     "content": iter_text or None,
                     "tool_calls": assistant_tool_calls,
                 }
+                if _iter_thinking_blocks:
+                    assistant_msg["thinking_blocks"] = _iter_thinking_blocks
+                    logger.debug(
+                        "A stream: preserved %d thinking_blocks for tool-call turn",
+                        len(_iter_thinking_blocks),
+                    )
                 messages.append(assistant_msg)
 
                 # H2: Execute tool calls and yield tool_end per-tool
