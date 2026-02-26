@@ -43,7 +43,12 @@ export function initVoiceUI(chatInputForm, animaName) {
   volumeSlider.value = '80';
   volumeSlider.style.display = 'none';
 
-  container.append(micBtn, recIndicator, ttsIndicator, modeToggle, volumeSlider);
+  const thinkingIndicator = document.createElement('span');
+  thinkingIndicator.className = 'voice-thinking-indicator';
+  thinkingIndicator.textContent = '考え中...';
+  thinkingIndicator.style.display = 'none';
+
+  container.append(micBtn, recIndicator, ttsIndicator, thinkingIndicator, modeToggle, volumeSlider);
 
   const sendBtn = chatInputForm.querySelector(
     '[id$="SendBtn"], .chat-send-btn, button[type="submit"]'
@@ -124,11 +129,15 @@ export function initVoiceUI(chatInputForm, animaName) {
   voiceManager.on('playbackEnd', () => {
     ttsIndicator.style.display = 'none';
   });
+  voiceManager.on('thinkingStatus', (thinking) => {
+    thinkingIndicator.style.display = thinking ? '' : 'none';
+  });
   voiceManager.on('disconnected', () => {
     voiceActive = false;
     micBtn.classList.remove('active', 'recording');
     recIndicator.style.display = 'none';
     ttsIndicator.style.display = 'none';
+    thinkingIndicator.style.display = 'none';
     modeToggle.style.display = 'none';
     volumeSlider.style.display = 'none';
   });

@@ -123,6 +123,7 @@ class CycleResult(BaseModel):
     trigger: str
     action: str
     summary: str = ""
+    thinking_text: str = ""
     duration_ms: int = 0
     timestamp: datetime = Field(default_factory=now_jst)
     context_usage_ratio: float = 0.0

@@ -219,6 +219,9 @@ export class VoiceManager {
           }
           this._emit('ttsDone');
           break;
+        case 'thinking_status':
+          this._emit('thinkingStatus', msg.thinking);
+          break;
         case 'error':
           this._emit('error', { message: msg.message });
           break;

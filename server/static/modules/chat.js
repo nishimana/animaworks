@@ -286,9 +286,15 @@ function _renderHistoryMessage(msg) {
   }
 
   if (msg.role === "assistant") {
+    let thinkingHtml = "";
+    if (msg.thinking_text) {
+      const thRendered = renderMarkdown(msg.thinking_text);
+      const thSummary = `Thinking (${msg.thinking_text.length} chars)`;
+      thinkingHtml = `<details class="thinking-block"><summary class="thinking-summary"><span class="thinking-icon">💭</span> ${escapeHtml(thSummary)}</summary><div class="thinking-content">${thRendered}</div></details>`;
+    }
     const content = msg.content ? renderMarkdown(msg.content) : "";
     const toolHtml = _renderToolCalls(msg.tool_calls);
-    return `<div class="chat-bubble assistant">${content}${toolHtml}${tsHtml}</div>`;
+    return `<div class="chat-bubble assistant">${thinkingHtml}${content}${toolHtml}${tsHtml}</div>`;
   }
 
   // human / user
@@ -305,6 +311,15 @@ function _renderLiveChatMessage(m) {
   if (m.role === "assistant") {
     const streamClass = m.streaming ? " streaming" : "";
     const notifClass = m.notification ? " notification" : "";
+    let thinkingHtml = "";
+    if (m.thinkingText) {
+      const thSummary = m.thinking ? "Thinking..." : `Thinking (${m.thinkingText.length} chars)`;
+      let thRendered;
+      try { thRendered = marked.parse(m.thinkingText, { breaks: true }); }
+      catch { thRendered = escapeHtml(m.thinkingText); }
+      const open = m.thinking ? " open" : "";
+      thinkingHtml = `<details class="thinking-block"${open}><summary class="thinking-summary"><span class="thinking-icon">💭</span> ${escapeHtml(thSummary)}</summary><div class="thinking-content">${thRendered}</div></details>`;
+    }
     let content = "";
     if (m.text) {
       content = renderMarkdown(m.text);
@@ -317,7 +332,7 @@ function _renderLiveChatMessage(m) {
     const toolHtml = m.activeTool
       ? `<div class="tool-indicator"><span class="tool-spinner"></span>${escapeHtml(m.activeTool)} \u3092\u5B9F\u884C\u4E2D...</div>`
       : "";
-    return `<div class="chat-bubble assistant${streamClass}${notifClass}">${content}${bootstrapHtml}${toolHtml}</div>`;
+    return `<div class="chat-bubble assistant${streamClass}${notifClass}">${thinkingHtml}${content}${bootstrapHtml}${toolHtml}</div>`;
   }
   const imagesHtml = renderChatImages(m.images);
   const textHtml = m.text ? `<div class="chat-text">${escapeHtml(m.text)}</div>` : "";
@@ -401,7 +416,10 @@ function renderStreamingBubble(msg) {
   if (msg.thinkingText) {
     const open = msg.thinking ? " open" : "";
     const summary = msg.thinking ? "Thinking..." : `Thinking (${msg.thinkingText.length} chars)`;
-    html += `<details class="thinking-block"${open}><summary class="thinking-summary"><span class="thinking-icon">💭</span> ${escapeHtml(summary)}</summary><pre class="thinking-content">${escapeHtml(msg.thinkingText)}</pre></details>`;
+    let thinkingHtml;
+    try { thinkingHtml = marked.parse(msg.thinkingText, { breaks: true }); }
+    catch { thinkingHtml = escapeHtml(msg.thinkingText); }
+    html += `<details class="thinking-block"${open}><summary class="thinking-summary"><span class="thinking-icon">💭</span> ${escapeHtml(summary)}</summary><div class="thinking-content">${thinkingHtml}</div></details>`;
   }
 
   if (msg.heartbeatRelay) {

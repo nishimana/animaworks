@@ -214,6 +214,13 @@ class VoiceSession:
                                         break
                                     await self._synthesize_and_send(sentence)
 
+                    elif chunk_data.get("type") == "thinking_start":
+                        await self._ws.send_json({"type": "thinking_status", "thinking": True})
+                    elif chunk_data.get("type") == "thinking_end":
+                        await self._ws.send_json({"type": "thinking_status", "thinking": False})
+                    elif chunk_data.get("type") == "thinking_delta":
+                        pass
+
                     elif chunk_data.get("type") == "cycle_done":
                         cycle_result = chunk_data.get("cycle_result", {})
                         emotion = cycle_result.get("emotion", "neutral")

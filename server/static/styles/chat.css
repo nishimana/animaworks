@@ -835,15 +835,19 @@
 .thinking-content {
   padding: 8px 10px;
   margin: 0;
-  font-size: 0.78rem;
-  line-height: 1.45;
+  font-size: 0.82rem;
+  line-height: 1.5;
   color: var(--aw-color-text-secondary);
   background: var(--aw-color-bg-tertiary, #f0f1f3);
-  white-space: pre-wrap;
-  word-break: break-word;
+  word-wrap: break-word;
   max-height: 300px;
   overflow-y: auto;
 }
+
+.thinking-content p { margin: 0 0 0.5em; }
+.thinking-content p:last-child { margin-bottom: 0; }
+.thinking-content code { font-size: 0.78rem; }
+.thinking-content pre { font-size: 0.75rem; margin: 0.5em 0; overflow-x: auto; }
 
 /* Dark mode overrides */
 @media (prefers-color-scheme: dark) {

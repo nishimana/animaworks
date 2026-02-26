@@ -486,6 +486,14 @@ function _renderChat(scrollToBottom = true) {
       }
       if (m.role === "assistant") {
         const streamClass = m.streaming ? " streaming" : "";
+        let thinkingHtml = "";
+        if (m.thinkingText) {
+          const thSummary = `Thinking (${m.thinkingText.length} chars)`;
+          let thRendered;
+          try { thRendered = marked.parse(m.thinkingText, { breaks: true }); }
+          catch { thRendered = escapeHtml(m.thinkingText); }
+          thinkingHtml = `<details class="thinking-block"><summary class="thinking-summary"><span class="thinking-icon">💭</span> ${escapeHtml(thSummary)}</summary><div class="thinking-content">${thRendered}</div></details>`;
+        }
         let content = "";
         if (m.text) {
           content = renderMarkdown(m.text);
@@ -495,7 +503,7 @@ function _renderChat(scrollToBottom = true) {
         const toolHtml = m.activeTool
           ? `<div class="tool-indicator"><span class="tool-spinner"></span>${escapeHtml(m.activeTool)} \u3092\u5B9F\u884C\u4E2D...</div>`
           : "";
-        return `<div class="chat-bubble assistant${streamClass}">${content}${toolHtml}${tsHtml}</div>`;
+        return `<div class="chat-bubble assistant${streamClass}">${thinkingHtml}${content}${toolHtml}${tsHtml}</div>`;
       }
       const imagesHtml = renderChatImages(m.images);
       const textHtml = m.text ? `<div class="chat-text">${escapeHtml(m.text)}</div>` : "";
@@ -527,6 +535,15 @@ function _renderStreamingBubble(msg) {
   if (!bubble) return;
 
   let html = "";
+
+  if (msg.thinkingText) {
+    const open = msg.thinking ? " open" : "";
+    const summary = msg.thinking ? "Thinking..." : `Thinking (${msg.thinkingText.length} chars)`;
+    let thHtml;
+    try { thHtml = marked.parse(msg.thinkingText, { breaks: true }); }
+    catch { thHtml = escapeHtml(msg.thinkingText); }
+    html += `<details class="thinking-block"${open}><summary class="thinking-summary"><span class="thinking-icon">💭</span> ${escapeHtml(summary)}</summary><div class="thinking-content">${thHtml}</div></details>`;
+  }
 
   if (msg.heartbeatRelay) {
     html += '<div class="heartbeat-relay-indicator"><span class="tool-spinner"></span>ハートビート処理中...</div>';
@@ -780,7 +797,7 @@ async function _sendChat(message) {
 
   const sendTs = new Date().toISOString();
   history.push({ role: "user", text: message, images: displayImages, timestamp: sendTs });
-  const streamingMsg = { role: "assistant", text: "", streaming: true, activeTool: null, timestamp: sendTs };
+  const streamingMsg = { role: "assistant", text: "", streaming: true, activeTool: null, timestamp: sendTs, thinkingText: "", thinking: false };
   history.push(streamingMsg);
   _renderChat();
 
@@ -842,6 +859,19 @@ async function _sendChat(message) {
         streamingMsg.heartbeatRelay = false;
         streamingMsg.heartbeatText = "";
         streamingMsg.afterHeartbeatRelay = true;
+        _renderStreamingBubble(streamingMsg);
+      },
+      onThinkingStart: () => {
+        streamingMsg.thinkingText = "";
+        streamingMsg.thinking = true;
+        _renderStreamingBubble(streamingMsg);
+      },
+      onThinkingDelta: (text) => {
+        streamingMsg.thinkingText = (streamingMsg.thinkingText || "") + text;
+        _renderStreamingBubble(streamingMsg);
+      },
+      onThinkingEnd: () => {
+        streamingMsg.thinking = false;
         _renderStreamingBubble(streamingMsg);
       },
       onError: ({ message: errorMsg }) => {

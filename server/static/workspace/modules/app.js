@@ -613,6 +613,12 @@ function renderConvBubble(msg) {
     return `<div class="chat-bubble user">${imagesHtml}${textHtml}${tsHtml}</div>`;
   }
   const streamClass = msg.streaming ? " streaming" : "";
+  let thinkingHtml = "";
+  if (msg.thinkingText) {
+    const thSummary = `Thinking (${msg.thinkingText.length} chars)`;
+    const thRendered = renderSimpleMarkdown(msg.thinkingText);
+    thinkingHtml = `<details class="thinking-block"><summary class="thinking-summary"><span class="thinking-icon">💭</span> ${escapeHtml(thSummary)}</summary><div class="thinking-content">${thRendered}</div></details>`;
+  }
   let content = "";
   if (msg.text) {
     content = renderSimpleMarkdown(msg.text);
@@ -622,7 +628,7 @@ function renderConvBubble(msg) {
   const toolHtml = msg.activeTool
     ? `<div class="tool-indicator"><span class="tool-spinner"></span>${escapeHtml(msg.activeTool)} を実行中...</div>`
     : "";
-  return `<div class="chat-bubble assistant${streamClass}">${content}${toolHtml}${tsHtml}</div>`;
+  return `<div class="chat-bubble assistant${streamClass}">${thinkingHtml}${content}${toolHtml}${tsHtml}</div>`;
 }
 
 function renderConvMessages() {
@@ -768,6 +774,19 @@ async function resumeConversationStream(animaName) {
         setExpression("neutral");
         updateStreamingBubble(streamingMsg);
       },
+      onThinkingStart: () => {
+        streamingMsg.thinkingText = "";
+        streamingMsg.thinking = true;
+        updateStreamingBubble(streamingMsg);
+      },
+      onThinkingDelta: (text) => {
+        streamingMsg.thinkingText = (streamingMsg.thinkingText || "") + text;
+        scheduleStreamingUpdate(streamingMsg);
+      },
+      onThinkingEnd: () => {
+        streamingMsg.thinking = false;
+        updateStreamingBubble(streamingMsg);
+      },
       onDone: ({ summary, emotion }) => {
         if (summary) streamingMsg.text = summary;
         if (!streamingMsg.text) streamingMsg.text = "(空の応答)";
@@ -891,7 +910,7 @@ async function sendConversationMessage() {
   const { chatMessages } = getState();
   const sendTs = new Date().toISOString();
   const userMsg = { role: "user", text: text || "", images: displayImages, timestamp: sendTs };
-  const streamingMsg = { role: "assistant", text: "", streaming: true, activeTool: null, timestamp: sendTs };
+  const streamingMsg = { role: "assistant", text: "", streaming: true, activeTool: null, timestamp: sendTs, thinkingText: "", thinking: false };
   setState({ chatMessages: [...chatMessages, userMsg, streamingMsg] });
   renderConvMessages();
 
@@ -947,6 +966,19 @@ async function sendConversationMessage() {
         streamingMsg.heartbeatText = "";
         streamingMsg.afterHeartbeatRelay = true;
         scheduleStreamingUpdate(streamingMsg);
+      },
+      onThinkingStart: () => {
+        streamingMsg.thinkingText = "";
+        streamingMsg.thinking = true;
+        updateStreamingBubble(streamingMsg);
+      },
+      onThinkingDelta: (text) => {
+        streamingMsg.thinkingText = (streamingMsg.thinkingText || "") + text;
+        scheduleStreamingUpdate(streamingMsg);
+      },
+      onThinkingEnd: () => {
+        streamingMsg.thinking = false;
+        updateStreamingBubble(streamingMsg);
       },
       onDone: ({ summary, emotion }) => {
         // Use clean summary (emotion tag already stripped server-side)
@@ -1012,6 +1044,12 @@ function updateStreamingBubble(msg) {
   if (!bubble) return;
 
   let html = "";
+  if (msg.thinkingText) {
+    const open = msg.thinking ? " open" : "";
+    const summary = msg.thinking ? "Thinking..." : `Thinking (${msg.thinkingText.length} chars)`;
+    const thinkingRendered = renderSimpleMarkdown(msg.thinkingText);
+    html += `<details class="thinking-block"${open}><summary class="thinking-summary"><span class="thinking-icon">💭</span> ${escapeHtml(summary)}</summary><div class="thinking-content">${thinkingRendered}</div></details>`;
+  }
   if (msg.heartbeatRelay) {
     html = '<div class="heartbeat-relay-indicator"><span class="tool-spinner"></span>ハートビート処理中...</div>';
     if (msg.heartbeatText) {

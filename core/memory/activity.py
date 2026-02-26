@@ -1149,6 +1149,8 @@ class ActivityLogger:
                     "from_person": "",
                     "tool_calls": [],
                 }
+                if e.meta.get("thinking_text"):
+                    msg["thinking_text"] = e.meta["thinking_text"]
                 messages.append(msg)
                 # Attach any pending tool calls to this assistant message
                 if pending_tool_calls:

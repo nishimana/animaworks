@@ -495,8 +495,9 @@ class DigitalAnima:
                     )
                     conv_memory.save()
 
-                    # Activity log: response sent
-                    self._activity.log("response_sent", content=result.summary, to_person=from_person, channel="chat")
+                    # Activity log: response sent (with thinking text if present)
+                    resp_meta = {"thinking_text": result.thinking_text} if result.thinking_text else None
+                    self._activity.log("response_sent", content=result.summary, to_person=from_person, channel="chat", meta=resp_meta)
 
                     logger.info(
                         "[%s] process_message END duration_ms=%d",
@@ -645,8 +646,10 @@ class DigitalAnima:
                             )
                             conv_memory.save()
 
-                            # Activity log: response sent
-                            self._activity.log("response_sent", content=summary, to_person=from_person, channel="chat")
+                            # Activity log: response sent (with thinking text if present)
+                            thinking_text = cycle_result.get("thinking_text", "")
+                            resp_meta = {"thinking_text": thinking_text} if thinking_text else None
+                            self._activity.log("response_sent", content=summary, to_person=from_person, channel="chat", meta=resp_meta)
 
                             # Finalize streaming journal (deletes the file)
                             journal.finalize(summary=summary[:500])
