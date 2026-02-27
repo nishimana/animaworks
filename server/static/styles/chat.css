@@ -1701,7 +1701,8 @@
   max-width: 100%;
 }
 
-.text-artifact-card:hover {
+.text-artifact-card:hover,
+.text-artifact-card:active {
   filter: brightness(1.2);
 }
 
@@ -1773,7 +1774,8 @@
   line-height: 1;
 }
 
-.text-artifact-modal-close:hover {
+.text-artifact-modal-close:hover,
+.text-artifact-modal-close:active {
   color: var(--aw-color-text-primary);
 }
 
@@ -1820,7 +1822,8 @@
   transition: background 0.15s;
 }
 
-.text-artifact-btn:hover {
+.text-artifact-btn:hover,
+.text-artifact-btn:active {
   background: var(--aw-color-bg-hover);
 }
 
@@ -1830,7 +1833,8 @@
   border-color: var(--aw-color-accent);
 }
 
-.text-artifact-btn-download:hover {
+.text-artifact-btn-download:hover,
+.text-artifact-btn-download:active {
   background: var(--aw-color-accent-hover);
 }
 
