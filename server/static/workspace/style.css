@@ -1924,10 +1924,12 @@ html, body {
   /* Conversation input: reduce max-height for mobile */
   .ws-conv-input {
     max-height: 100px;
+    font-size: 16px;
   }
 
   .chat-input {
     max-height: 100px;
+    font-size: 16px;
   }
 
   /* Login card: reduced padding */

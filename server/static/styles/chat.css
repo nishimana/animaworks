@@ -232,6 +232,81 @@
   cursor: not-allowed;
 }
 
+/* ── Pending Message Bar ──────────────────── */
+
+.pending-message-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--aw-color-warning-bg);
+  border: 1px solid var(--aw-color-warning-border);
+  border-radius: 6px;
+  margin-bottom: 6px;
+  font-size: 0.82rem;
+  animation: pendingSlideIn 0.15s ease-out;
+}
+
+@keyframes pendingSlideIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.pending-message-content {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.pending-message-icon {
+  flex-shrink: 0;
+}
+
+.pending-message-text {
+  color: var(--aw-color-warning-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pending-message-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.pending-message-hint {
+  font-size: 0.72rem;
+  color: var(--aw-color-text-placeholder);
+}
+
+.pending-message-cancel {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--aw-color-text-muted);
+  padding: 2px 4px;
+  line-height: 1;
+}
+
+.pending-message-cancel:hover {
+  color: var(--aw-color-error);
+}
+
+/* Send button: interrupt mode */
+.chat-send-btn.interrupt {
+  background: var(--aw-color-warning, #d97706);
+  color: #fff;
+}
+
+.chat-send-btn.interrupt:hover:not(:disabled) {
+  filter: brightness(0.9);
+}
+
 /* ── Streaming UI ─────────────────────────── */
 
 .cursor-blink {
@@ -879,4 +954,11 @@
 
 [data-theme="dark"] .thinking-content {
   background: var(--aw-color-bg-tertiary, #1e2126);
+}
+
+/* ── Mobile: prevent auto-zoom on input focus ── */
+@media (max-width: 768px) {
+  .chat-input {
+    font-size: 16px;
+  }
 }
