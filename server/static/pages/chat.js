@@ -503,6 +503,8 @@ async function _selectThread(threadId) {
 
   const hs = _historyState[name]?.[threadId];
   const needLoad = !hs || hs.sessions.length === 0;
+  _renderChat();
+
   if (needLoad) {
     try {
       const conv = await _fetchConversationHistory(name, _HISTORY_PAGE_SIZE, null, threadId);
