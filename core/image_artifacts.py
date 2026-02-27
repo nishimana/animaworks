@@ -92,8 +92,8 @@ def extract_image_artifacts_from_tool_records(
                 try:
                     parsed = json.loads(stripped)
                     _walk(parsed, tool_name)
-                except Exception:
-                    pass
+                except json.JSONDecodeError:
+                    return
 
     for record in tool_call_records:
         tool_name = str(record.get("tool_name", ""))
