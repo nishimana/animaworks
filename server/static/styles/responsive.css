@@ -450,6 +450,15 @@
   overflow: hidden;
 }
 
+.chat-memory-section {
+  border-top: 1px solid var(--aw-color-border-light);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  max-height: 40%;
+  overflow: hidden;
+}
+
 /* Mobile tabs: hidden on desktop */
 .chat-mobile-tabs {
   display: none;

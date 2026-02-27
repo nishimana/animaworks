@@ -134,13 +134,13 @@ export function render(container) {
         </div>
 
         <!-- Memory Browser -->
-        <div style="border-top:1px solid var(--border-color, #eee); max-height:40%; display:flex; flex-direction:column;">
+        <div class="chat-memory-section">
           <nav class="memory-tabs" style="display:flex; border-bottom:1px solid var(--border-color, #eee);">
             <button class="memory-tab active" data-tab="episodes">エピソード</button>
             <button class="memory-tab" data-tab="knowledge">知識</button>
             <button class="memory-tab" data-tab="procedures">手順書</button>
           </nav>
-          <div id="chatMemoryFileList" class="memory-file-list" style="flex:1; overflow-y:auto; padding:0.5rem;">
+          <div id="chatMemoryFileList" class="memory-file-list" style="overflow-y:auto; padding:0.5rem;">
             <div class="loading-placeholder">Animaを選択してください</div>
           </div>
           <div id="chatMemoryContentArea" style="display:none; flex:1; overflow-y:auto; padding:0.5rem;">
