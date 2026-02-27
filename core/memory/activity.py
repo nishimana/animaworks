@@ -26,6 +26,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from core.i18n import t
 from core.time_utils import ensure_aware, now_iso, now_jst
 
 logger = logging.getLogger("animaworks.activity")
@@ -578,7 +579,7 @@ class ActivityLogger:
 
         parts = []
         if result_count is not None:
-            parts.append(f"{result_count}件")
+            parts.append(t("activity.items_count", count=result_count))
         parts.append(size_str)
 
         detail = f" ({', '.join(parts)})" if parts else ""
@@ -1177,7 +1178,7 @@ class ActivityLogger:
                 }
                 if e.meta.get("blocked"):
                     tc["is_error"] = True
-                    tc["result"] = f"ブロック: {e.meta.get('reason', '')}"
+                    tc["result"] = t("activity.blocked", reason=e.meta.get("reason", ""))
                 pending_tool_calls.append(tc)
 
             elif e.type == "tool_result":
@@ -1189,7 +1190,7 @@ class ActivityLogger:
                 messages.append({
                     "ts": e.ts,
                     "role": "system",
-                    "content": e.summary or "定期巡回開始",
+                    "content": e.summary or t("activity.heartbeat_start"),
                     "from_person": "",
                     "tool_calls": [],
                     "_trigger": "heartbeat",
@@ -1200,7 +1201,7 @@ class ActivityLogger:
                 messages.append({
                     "ts": e.ts,
                     "role": "system",
-                    "content": e.summary or e.content or "定期巡回完了",
+                    "content": e.summary or e.content or t("activity.heartbeat_end"),
                     "from_person": "",
                     "tool_calls": [],
                     "_trigger": "heartbeat",
@@ -1209,7 +1210,7 @@ class ActivityLogger:
             elif e.type == "cron_executed":
                 self._flush_tool_calls(messages, pending_tool_calls)
                 task_name = e.meta.get("task_name", "")
-                content = e.summary or e.content or task_name or "cronタスク実行"
+                content = e.summary or e.content or task_name or t("activity.cron_task_exec")
                 messages.append({
                     "ts": e.ts,
                     "role": "system",
@@ -1224,7 +1225,7 @@ class ActivityLogger:
                 messages.append({
                     "ts": e.ts,
                     "role": "system",
-                    "content": f"[エラー] {e.summary or e.content}",
+                    "content": t("activity.error_prefix") + (e.summary or e.content),
                     "from_person": "",
                     "tool_calls": [],
                 })

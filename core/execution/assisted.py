@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from core.exceptions import LLMAPIError, ToolExecutionError, ConfigError  # noqa: F401
+from core.i18n import t
 from core.execution._sanitize import wrap_tool_result
 from core.execution.base import BaseExecutor, ExecutionResult, StreamDisconnectedError, ToolCallRecord, _truncate_for_record, tool_input_save_budget, tool_result_save_budget
 from core.execution.reminder import MSG_OUTPUT_TRUNCATED, SystemReminderQueue
@@ -168,7 +169,7 @@ def _truncate_tool_output(result: str, max_bytes: int = _MAX_TOOL_OUTPUT_BYTES) 
     truncated = encoded[:max_bytes].decode("utf-8", errors="ignore")
     return (
         f"{truncated}\n"
-        f"... [出力切り捨て: 元のサイズ {len(encoded)}バイト]"
+        + t("assisted.output_truncated", size=len(encoded))
     )
 
 
@@ -522,9 +523,10 @@ class AssistedExecutor(BaseExecutor):
                 messages.append({"role": "assistant", "content": content})
                 messages.append({
                     "role": "user",
-                    "content": (
-                        f"エラー: 不明なツール '{tool_name}' です。"
-                        f"利用可能なツール: {sorted(self._known_tools)}"
+                    "content": t(
+                        "assisted.unknown_tool",
+                        tool_name=tool_name,
+                        available=sorted(self._known_tools),
                     ),
                 })
                 continue
@@ -547,10 +549,10 @@ class AssistedExecutor(BaseExecutor):
                 )
             except ToolExecutionError as e:
                 logger.warning("Mode B tool execution error: %s – %s", tool_name, e)
-                result = f"ツール実行エラー: {e}"
+                result = t("assisted.tool_exec_error", error=e)
             except Exception as e:
                 logger.exception("Mode B unexpected tool error: %s", tool_name)
-                result = f"ツール実行エラー: {e}"
+                result = t("assisted.tool_exec_error", error=e)
 
             result = _truncate_tool_output(str(result))
             all_tool_records.append(ToolCallRecord(
@@ -568,7 +570,7 @@ class AssistedExecutor(BaseExecutor):
             messages.append({"role": "assistant", "content": content})
             messages.append({
                 "role": "user",
-                "content": f"ツール実行結果:\n{wrap_tool_result(tool_name, result)}",
+                "content": t("assisted.tool_result_header") + "\n" + wrap_tool_result(tool_name, result),
             })
 
             # ── Drain reminder queue into tool result message ──
@@ -720,9 +722,10 @@ class AssistedExecutor(BaseExecutor):
                     messages.append({"role": "assistant", "content": content})
                     messages.append({
                         "role": "user",
-                        "content": (
-                            f"エラー: 不明なツール '{tool_name}' です。"
-                            f"利用可能なツール: {sorted(self._known_tools)}"
+                        "content": t(
+                            "assisted.unknown_tool",
+                            tool_name=tool_name,
+                            available=sorted(self._known_tools),
                         ),
                     })
                     continue
@@ -760,12 +763,12 @@ class AssistedExecutor(BaseExecutor):
                     logger.warning(
                         "Mode B streaming tool error: %s – %s", tool_name, e,
                     )
-                    result = f"ツール実行エラー: {e}"
+                    result = t("assisted.tool_exec_error", error=e)
                 except Exception as e:
                     logger.exception(
                         "Mode B streaming unexpected tool error: %s", tool_name,
                     )
-                    result = f"ツール実行エラー: {e}"
+                    result = t("assisted.tool_exec_error", error=e)
 
                 result = _truncate_tool_output(str(result))
                 all_tool_records.append(ToolCallRecord(
@@ -786,7 +789,7 @@ class AssistedExecutor(BaseExecutor):
                 messages.append({"role": "assistant", "content": content})
                 messages.append({
                     "role": "user",
-                    "content": f"ツール実行結果:\n{wrap_tool_result(tool_name, result)}",
+                    "content": t("assisted.tool_result_header") + "\n" + wrap_tool_result(tool_name, result),
                 })
 
                 # ── Drain reminder queue into tool result message ──
