@@ -4,7 +4,6 @@
 
 let _initialized = false;
 
-const _LARGE_CONTENT_THRESHOLD = 100 * 1024;
 const _contentStore = new Map();
 let _idCounter = 0;
 
@@ -76,11 +75,17 @@ function _openModal(filename, content) {
 
   overlay.querySelector(".text-artifact-btn-copy").addEventListener("click", (e) => {
     const textarea = overlay.querySelector(".text-artifact-modal-textarea");
-    navigator.clipboard.writeText(textarea.value).then(() => {
-      const btn = e.currentTarget;
-      btn.textContent = "Copied!";
-      setTimeout(() => { btn.textContent = "Copy"; }, 1500);
-    });
+    const btn = e.currentTarget;
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(textarea.value).then(() => {
+        btn.textContent = "Copied!";
+        setTimeout(() => { btn.textContent = "Copy"; }, 1500);
+      }).catch(() => {
+        _fallbackCopy(textarea, btn);
+      });
+    } else {
+      _fallbackCopy(textarea, btn);
+    }
   });
 
   overlay.querySelector(".text-artifact-btn-download").addEventListener("click", () => {
@@ -97,6 +102,17 @@ function _openModal(filename, content) {
 
 function _closeModal() {
   document.querySelector(".text-artifact-modal-overlay")?.remove();
+}
+
+function _fallbackCopy(textarea, btn) {
+  textarea.select();
+  try {
+    document.execCommand("copy");
+    btn.textContent = "Copied!";
+  } catch {
+    btn.textContent = "Failed";
+  }
+  setTimeout(() => { btn.textContent = "Copy"; }, 1500);
 }
 
 function _esc(str) {
