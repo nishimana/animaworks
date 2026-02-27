@@ -74,26 +74,24 @@ export function render(container) {
         <!-- Chat Input -->
         <form id="chatPageForm" class="chat-input-form" style="padding:0.75rem; border-top:1px solid var(--border-color, #eee);">
           <div class="image-preview-bar" id="chatPagePreviewBar" style="display:none"></div>
-          <div class="pending-message-bar" id="chatPagePending" style="display:none">
-            <div class="pending-message-content">
-              <span class="pending-message-icon">⏳</span>
-              <span class="pending-message-text" id="chatPagePendingText"></span>
+          <div class="pending-queue-bar" id="chatPagePending" style="display:none">
+            <div class="pending-queue-header">
+              <span class="pending-queue-label" id="chatPagePendingLabel">キュー</span>
+              <button class="pending-queue-clear" id="chatPagePendingCancel" type="button" title="全クリア">✕ all</button>
             </div>
-            <div class="pending-message-actions">
-              <span class="pending-message-hint">Enter: ■↑</span>
-              <button class="pending-message-cancel" id="chatPagePendingCancel" type="button">✕</button>
-            </div>
+            <div id="chatPagePendingList"></div>
           </div>
           <div class="chat-input-row">
             <textarea
               id="chatPageInput"
               class="chat-input"
-              placeholder="メッセージを入力... (Ctrl+Enter で送信)"
+              placeholder="メッセージを入力... (Ctrl+Enter で送信, Alt+Enter でキュー追加)"
               autocomplete="off"
               rows="1"
               disabled
             ></textarea>
             <button type="button" class="chat-attach-btn" id="chatPageAttachBtn" title="画像を添付">+</button>
+            <button type="button" class="chat-queue-btn" id="chatPageQueueBtn" disabled title="キューに追加 (Alt+Enter)">↓</button>
             <button type="submit" class="chat-send-btn" id="chatPageSendBtn" disabled>↑</button>
           </div>
           <input type="file" id="chatPageFileInput" accept="image/jpeg,image/png,image/gif,image/webp" multiple style="display:none" />
@@ -213,15 +211,21 @@ function _bindEvents() {
     _submitChat();
   });
 
-  // Textarea: Ctrl+Enter
+  // Textarea: Ctrl+Enter = send, Alt+Enter = queue
   _addListener("chatPageInput", "keydown", (e) => {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+    if (e.key === "Enter" && e.altKey) {
+      e.preventDefault();
+      _addToQueue();
+    } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       _submitChat();
     }
   });
 
-  // Pending queue cancel
+  // Queue button
+  _addListener("chatPageQueueBtn", "click", () => _addToQueue());
+
+  // Pending queue cancel all
   _addListener("chatPagePendingCancel", "click", () => {
     _pendingQueue = [];
     _hidePendingIndicator();
@@ -235,7 +239,7 @@ function _bindEvents() {
       el.style.height = "auto";
       el.style.height = Math.min(el.scrollHeight, 200) + "px";
     }
-    if (_isChatStreaming) _updateSendButton();
+    _updateSendButton();
   });
 
   // Right tab switching
@@ -783,12 +787,23 @@ function _submitChat() {
   const msg = input.value.trim();
   const hasImages = _imageInputManager && _imageInputManager.getImageCount() > 0;
 
-  // ── Not streaming: normal send ──
+  // ── Not streaming ──
   if (!_isChatStreaming) {
-    if (!msg && !hasImages) return;
-    input.value = "";
-    input.style.height = "auto";
-    _sendChat(msg);
+    if (msg || hasImages) {
+      _pendingQueue.push({
+        text: msg,
+        images: _imageInputManager?.getPendingImages() || [],
+        displayImages: _imageInputManager?.getDisplayImages() || [],
+      });
+      input.value = "";
+      input.style.height = "auto";
+      _imageInputManager?.clearImages();
+    }
+    if (_pendingQueue.length === 0) return;
+    const next = _pendingQueue.shift();
+    _showPendingIndicator();
+    if (_pendingQueue.length === 0) _hidePendingIndicator();
+    _sendChat(next.text, { images: next.images, displayImages: next.displayImages });
     return;
   }
 
@@ -991,19 +1006,66 @@ async function _sendChat(message, overrideImages = null) {
   }
 }
 
-// ── Pending Message Helpers ─────────────────
+// ── Queue Helpers ─────────────────
+
+function _addToQueue() {
+  const input = _$("chatPageInput");
+  if (!input) return;
+  const msg = input.value.trim();
+  const hasImages = _imageInputManager && _imageInputManager.getImageCount() > 0;
+  if (!msg && !hasImages) return;
+  _pendingQueue.push({
+    text: msg,
+    images: _imageInputManager?.getPendingImages() || [],
+    displayImages: _imageInputManager?.getDisplayImages() || [],
+  });
+  input.value = "";
+  input.style.height = "auto";
+  _imageInputManager?.clearImages();
+  _showPendingIndicator();
+  _updateSendButton();
+}
 
 function _showPendingIndicator() {
   const bar = _$("chatPagePending");
-  const textEl = _$("chatPagePendingText");
-  if (!bar || !textEl || _pendingQueue.length === 0) return;
-  const parts = _pendingQueue.map((p, i) => {
-    const txt = p.text.length > 40 ? p.text.slice(0, 40) + "…" : p.text;
-    const img = p.images?.length ? ` (+${p.images.length}画像)` : "";
-    return `${i + 1}. ${txt || "(画像のみ)"}${img}`;
-  });
-  textEl.textContent = parts.join("  ");
+  const list = _$("chatPagePendingList");
+  const label = _$("chatPagePendingLabel");
+  if (!bar || !list) return;
+  if (_pendingQueue.length === 0) { bar.style.display = "none"; return; }
+  if (label) label.textContent = `キュー (${_pendingQueue.length})`;
+  list.innerHTML = _pendingQueue.map((p, i) => {
+    const txt = escapeHtml(p.text.length > 60 ? p.text.slice(0, 60) + "…" : p.text);
+    const img = p.images?.length ? ` <span style="opacity:0.6">(+${p.images.length}画像)</span>` : "";
+    return `<div class="pending-queue-item" data-idx="${i}">` +
+      `<span class="pending-queue-item-num">${i + 1}.</span>` +
+      `<span class="pending-queue-item-text">${txt || "(画像のみ)"}${img}</span>` +
+      `<button class="pending-queue-item-del" data-idx="${i}" type="button">✕</button>` +
+      `</div>`;
+  }).join("");
   bar.style.display = "";
+
+  list.onclick = (e) => {
+    const delBtn = e.target.closest(".pending-queue-item-del");
+    if (delBtn) {
+      e.stopPropagation();
+      const idx = parseInt(delBtn.dataset.idx, 10);
+      _pendingQueue.splice(idx, 1);
+      _showPendingIndicator();
+      _updateSendButton();
+      return;
+    }
+    const item = e.target.closest(".pending-queue-item");
+    if (item) {
+      const idx = parseInt(item.dataset.idx, 10);
+      const removed = _pendingQueue.splice(idx, 1)[0];
+      if (removed) {
+        const input = _$("chatPageInput");
+        if (input) { input.value = removed.text; input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 200) + "px"; input.focus(); }
+      }
+      _showPendingIndicator();
+      _updateSendButton();
+    }
+  };
 }
 
 function _hidePendingIndicator() {
@@ -1013,14 +1075,19 @@ function _hidePendingIndicator() {
 
 function _updateSendButton() {
   const sendBtn = _$("chatPageSendBtn");
-  if (!sendBtn) return;
+  const queueBtn = _$("chatPageQueueBtn");
   const inputVal = _$("chatPageInput")?.value?.trim() || "";
   const hasInput = inputVal.length > 0;
 
+  if (queueBtn) {
+    queueBtn.disabled = !hasInput || !_selectedAnima;
+  }
+
+  if (!sendBtn) return;
   sendBtn.classList.remove("stop", "interrupt");
   if (!_isChatStreaming) {
-    sendBtn.textContent = "↑";
-    sendBtn.disabled = !_selectedAnima;
+    sendBtn.textContent = (_pendingQueue.length > 0 || hasInput) ? "↑" : "↑";
+    sendBtn.disabled = !_selectedAnima || (!hasInput && _pendingQueue.length === 0);
   } else if (hasInput) {
     sendBtn.textContent = "↑";
     sendBtn.disabled = false;

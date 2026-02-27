@@ -1255,6 +1255,132 @@ html, body {
   filter: brightness(0.9);
 }
 
+/* ── Pending Queue (workspace) ──────────────────── */
+
+.pending-queue-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 8px;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  font-size: 0.78rem;
+  max-height: 120px;
+  overflow-y: auto;
+  animation: pendingSlideIn 0.15s ease-out;
+}
+
+@keyframes pendingSlideIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.pending-queue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 2px;
+}
+
+.pending-queue-label {
+  font-weight: 600;
+  color: #92400e;
+  font-size: 0.72rem;
+}
+
+.pending-queue-clear {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.72rem;
+  color: #999;
+  padding: 0 2px;
+}
+
+.pending-queue-clear:hover {
+  color: #dc2626;
+}
+
+.pending-queue-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.pending-queue-item:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.pending-queue-item-num {
+  flex-shrink: 0;
+  color: #999;
+  font-size: 0.7rem;
+  width: 1.2em;
+  text-align: right;
+}
+
+.pending-queue-item-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #92400e;
+}
+
+.pending-queue-item-del {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: #999;
+  padding: 0 2px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.pending-queue-item:hover .pending-queue-item-del {
+  opacity: 1;
+}
+
+.pending-queue-item-del:hover {
+  color: #dc2626;
+}
+
+.chat-queue-btn {
+  padding: 6px 0;
+  width: 28px;
+  background: transparent;
+  color: #999;
+  border: 1px solid #ddd;
+  border-radius: 50%;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  align-self: flex-end;
+  text-align: center;
+  line-height: 1;
+}
+
+.chat-queue-btn:hover:not(:disabled) {
+  border-color: #2563eb;
+  color: #2563eb;
+}
+
+.chat-queue-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* Right: Live2D Character */
 .ws-conv-character {
   width: 350px;

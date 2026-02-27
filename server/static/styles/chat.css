@@ -235,18 +235,20 @@
   cursor: not-allowed;
 }
 
-/* ── Pending Message Bar ──────────────────── */
+/* ── Pending Queue ──────────────────── */
 
-.pending-message-bar {
+.pending-queue-bar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 12px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 8px;
   background: var(--aw-color-warning-bg);
   border: 1px solid var(--aw-color-warning-border);
   border-radius: 6px;
   margin-bottom: 6px;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
+  max-height: 120px;
+  overflow-y: auto;
   animation: pendingSlideIn 0.15s ease-out;
 }
 
@@ -255,49 +257,109 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
-.pending-message-content {
+.pending-queue-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  min-width: 0;
-  flex: 1;
+  justify-content: space-between;
+  padding-bottom: 2px;
 }
 
-.pending-message-icon {
-  flex-shrink: 0;
-}
-
-.pending-message-text {
+.pending-queue-label {
+  font-weight: 600;
   color: var(--aw-color-warning-text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pending-message-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.pending-message-hint {
   font-size: 0.72rem;
-  color: var(--aw-color-text-placeholder);
 }
 
-.pending-message-cancel {
+.pending-queue-clear {
   border: none;
   background: transparent;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.72rem;
   color: var(--aw-color-text-muted);
+  padding: 0 2px;
+}
+
+.pending-queue-clear:hover {
+  color: var(--aw-color-error);
+}
+
+.pending-queue-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.pending-queue-item:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.pending-queue-item-num {
+  flex-shrink: 0;
+  color: var(--aw-color-text-muted);
+  font-size: 0.7rem;
+  width: 1.2em;
+  text-align: right;
+}
+
+.pending-queue-item-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--aw-color-warning-text);
+}
+
+.pending-queue-item-del {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: var(--aw-color-text-muted);
+  padding: 0 2px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.pending-queue-item:hover .pending-queue-item-del {
+  opacity: 1;
+}
+
+.pending-queue-item-del:hover {
+  color: var(--aw-color-error);
+}
+
+/* Queue add button */
+.chat-queue-btn {
+  padding: 6px 0;
+  width: 28px;
+  background: transparent;
+  color: var(--aw-color-text-muted);
+  border: 1px solid var(--aw-color-border, #ddd);
+  border-radius: 50%;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  align-self: flex-end;
+  text-align: center;
   line-height: 1;
 }
 
-.pending-message-cancel:hover {
-  color: var(--aw-color-error);
+.chat-queue-btn:hover:not(:disabled) {
+  border-color: var(--aw-color-accent);
+  color: var(--aw-color-accent);
+}
+
+.chat-queue-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* Send button: stop mode (streaming, no pending) */

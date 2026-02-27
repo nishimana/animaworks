@@ -85,8 +85,10 @@ function cacheDom() {
   dom.convAttachBtn = document.getElementById("wsConvAttachBtn");
   dom.convFileInput = document.getElementById("wsConvFileInput");
   dom.convPending = document.getElementById("wsConvPending");
-  dom.convPendingText = document.getElementById("wsConvPendingText");
+  dom.convPendingList = document.getElementById("wsConvPendingList");
+  dom.convPendingLabel = document.getElementById("wsConvPendingLabel");
   dom.convPendingCancel = document.getElementById("wsConvPendingCancel");
+  dom.convQueueBtn = document.getElementById("wsConvQueueBtn");
 
   // Mobile controls
   dom.mobileSidebarToggle = document.getElementById("wsMobileSidebarToggle");
@@ -915,12 +917,23 @@ function _wsSubmitConversation() {
   const hasImages = convImageInputManager && convImageInputManager.getImageCount() > 0;
   const isStreaming = !!convStreamController;
 
-  // ── Not streaming: normal send ──
+  // ── Not streaming ──
   if (!isStreaming) {
-    if (!text && !hasImages) return;
-    dom.convInput.value = "";
-    dom.convInput.style.height = "auto";
-    _sendConversation(text);
+    if (text || hasImages) {
+      convPendingQueue.push({
+        text: text || "",
+        images: convImageInputManager?.getPendingImages() || [],
+        displayImages: convImageInputManager?.getDisplayImages() || [],
+      });
+      dom.convInput.value = "";
+      dom.convInput.style.height = "auto";
+      convImageInputManager?.clearImages();
+    }
+    if (convPendingQueue.length === 0) return;
+    const next = convPendingQueue.shift();
+    _wsShowPendingIndicator();
+    if (convPendingQueue.length === 0) _wsHidePendingIndicator();
+    _sendConversation(next.text, { images: next.images, displayImages: next.displayImages });
     return;
   }
 
@@ -1090,17 +1103,63 @@ async function _sendConversation(text, overrideImages = null) {
   }
 }
 
-// ── Workspace Pending Message Helpers ──────────────────────
+// ── Workspace Queue Helpers ──────────────────────
+
+function _wsAddToQueue() {
+  const text = dom.convInput?.value?.trim();
+  const hasImages = convImageInputManager && convImageInputManager.getImageCount() > 0;
+  if (!text && !hasImages) return;
+  convPendingQueue.push({
+    text: text || "",
+    images: convImageInputManager?.getPendingImages() || [],
+    displayImages: convImageInputManager?.getDisplayImages() || [],
+  });
+  if (dom.convInput) { dom.convInput.value = ""; dom.convInput.style.height = "auto"; }
+  convImageInputManager?.clearImages();
+  _wsShowPendingIndicator();
+  _wsUpdateSendButton(!!convStreamController);
+}
 
 function _wsShowPendingIndicator() {
-  if (!dom.convPending || !dom.convPendingText || convPendingQueue.length === 0) return;
-  const parts = convPendingQueue.map((p, i) => {
-    const txt = p.text.length > 40 ? p.text.slice(0, 40) + "…" : p.text;
-    const img = p.images?.length ? ` (+${p.images.length}画像)` : "";
-    return `${i + 1}. ${txt || "(画像のみ)"}${img}`;
-  });
-  dom.convPendingText.textContent = parts.join("  ");
+  if (!dom.convPending || !dom.convPendingList) return;
+  if (convPendingQueue.length === 0) { dom.convPending.style.display = "none"; return; }
+  if (dom.convPendingLabel) dom.convPendingLabel.textContent = `キュー (${convPendingQueue.length})`;
+  dom.convPendingList.innerHTML = convPendingQueue.map((p, i) => {
+    const txt = escapeHtml(p.text.length > 50 ? p.text.slice(0, 50) + "…" : p.text);
+    const img = p.images?.length ? ` <span style="opacity:0.6">(+${p.images.length}画像)</span>` : "";
+    return `<div class="pending-queue-item" data-idx="${i}">` +
+      `<span class="pending-queue-item-num">${i + 1}.</span>` +
+      `<span class="pending-queue-item-text">${txt || "(画像のみ)"}${img}</span>` +
+      `<button class="pending-queue-item-del" data-idx="${i}" type="button">✕</button>` +
+      `</div>`;
+  }).join("");
   dom.convPending.style.display = "";
+
+  dom.convPendingList.onclick = (e) => {
+    const delBtn = e.target.closest(".pending-queue-item-del");
+    if (delBtn) {
+      e.stopPropagation();
+      const idx = parseInt(delBtn.dataset.idx, 10);
+      convPendingQueue.splice(idx, 1);
+      _wsShowPendingIndicator();
+      _wsUpdateSendButton(!!convStreamController);
+      return;
+    }
+    const item = e.target.closest(".pending-queue-item");
+    if (item) {
+      const idx = parseInt(item.dataset.idx, 10);
+      const removed = convPendingQueue.splice(idx, 1)[0];
+      if (removed && dom.convInput) {
+        dom.convInput.value = removed.text;
+        dom.convInput.style.height = "auto";
+        const maxH = isMobileView() ? 100 : 120;
+        dom.convInput.style.height = Math.min(dom.convInput.scrollHeight, maxH) + "px";
+        dom.convInput.focus();
+      }
+      _wsShowPendingIndicator();
+      _wsUpdateSendButton(!!convStreamController);
+    }
+  };
 }
 
 function _wsHidePendingIndicator() {
@@ -1108,20 +1167,28 @@ function _wsHidePendingIndicator() {
 }
 
 function _wsUpdateSendButton(isStreaming) {
-  if (!dom.convSend) return;
   const hasInput = (dom.convInput?.value?.trim() || "").length > 0;
 
+  if (dom.convQueueBtn) {
+    dom.convQueueBtn.disabled = !hasInput;
+  }
+
+  if (!dom.convSend) return;
   dom.convSend.classList.remove("stop", "interrupt");
   if (!isStreaming) {
-    dom.convSend.textContent = "↑";
+    dom.convSend.textContent = (convPendingQueue.length > 0 || hasInput) ? "↑" : "↑";
+    dom.convSend.disabled = !hasInput && convPendingQueue.length === 0;
   } else if (hasInput) {
     dom.convSend.textContent = "↑";
+    dom.convSend.disabled = false;
   } else if (convPendingQueue.length > 0) {
     dom.convSend.textContent = "■↑";
     dom.convSend.classList.add("interrupt");
+    dom.convSend.disabled = false;
   } else {
     dom.convSend.textContent = "■";
     dom.convSend.classList.add("stop");
+    dom.convSend.disabled = false;
   }
 }
 
@@ -1878,8 +1945,12 @@ async function startDashboard() {
     if (e.target === dom.convOverlay) closeConversation();
   });
   dom.convSend?.addEventListener("click", () => _wsSubmitConversation());
+  dom.convQueueBtn?.addEventListener("click", () => _wsAddToQueue());
   dom.convInput?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
+    if (e.key === "Enter" && e.altKey) {
+      e.preventDefault();
+      _wsAddToQueue();
+    } else if (e.key === "Enter") {
       if (isMobileView()) {
         if (!e.shiftKey) {
           e.preventDefault();
@@ -1894,7 +1965,7 @@ async function startDashboard() {
     }
   });
 
-  // Pending queue cancel
+  // Pending queue cancel all
   dom.convPendingCancel?.addEventListener("click", () => {
     convPendingQueue = [];
     _wsHidePendingIndicator();
@@ -1906,7 +1977,7 @@ async function startDashboard() {
     dom.convInput.style.height = "auto";
     const maxH = isMobileView() ? 100 : 120;
     dom.convInput.style.height = Math.min(dom.convInput.scrollHeight, maxH) + "px";
-    if (convStreamController) _wsUpdateSendButton(true);
+    _wsUpdateSendButton(!!convStreamController);
   });
 
   // ── Conversation Image Input Setup ────────────────
