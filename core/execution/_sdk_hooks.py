@@ -30,7 +30,7 @@ from core.execution._sdk_security import (
     _check_a1_file_access,
 )
 from core.execution._sdk_session import _CONTEXT_AUTOCOMPACT_SAFETY
-from core.execution._sdk_stream import _log_tool_use, _log_tool_result
+from core.execution._sdk_stream import _log_tool_use
 
 logger = logging.getLogger("animaworks.execution.agent_sdk")
 

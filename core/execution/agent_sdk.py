@@ -39,7 +39,6 @@ if TYPE_CHECKING:
 from core.prompt.context import CHARS_PER_TOKEN, ContextTracker, resolve_context_window
 from core.exceptions import ExecutionError, LLMAPIError, MemoryWriteError  # noqa: F401
 from core.execution.base import BaseExecutor, ExecutionResult, StreamDisconnectedError, ToolCallRecord
-from core.execution.reminder import MSG_CONTEXT_THRESHOLD
 from core.schemas import ModelConfig
 from core.memory.shortterm import ShortTermMemory
 from pathlib import Path
