@@ -65,6 +65,11 @@ def is_codex_sdk_available() -> bool:
         return False
 
 
+def _is_openai_api_key(key: str) -> bool:
+    """Return True if *key* looks like a genuine OpenAI API key."""
+    return bool(key) and not key.startswith("sk-ant-")
+
+
 def _escape_toml_string(value: str) -> str:
     """Escape a string for safe embedding in a TOML double-quoted value."""
     return value.replace("\\", "\\\\").replace('"', '\\"')
@@ -215,8 +220,14 @@ class CodexSDKExecutor(BaseExecutor):
             "HOME": os.environ.get("HOME", "/tmp"),
         }
         api_key = self._resolve_api_key()
-        if api_key:
+        if api_key and _is_openai_api_key(api_key):
             env["OPENAI_API_KEY"] = api_key
+        elif api_key:
+            logger.debug(
+                "Skipping non-OpenAI API key for Codex env "
+                "(prefix=%s…); relying on cached ChatGPT auth",
+                api_key[:8],
+            )
         if self._model_config.api_base_url:
             env["OPENAI_BASE_URL"] = self._model_config.api_base_url
         return env
@@ -232,6 +243,30 @@ class CodexSDKExecutor(BaseExecutor):
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         }
 
+    def _propagate_auth(self) -> None:
+        """Symlink ``auth.json`` from the default CODEX_HOME into per-anima CODEX_HOME.
+
+        This lets animas share the ChatGPT subscription auth obtained via
+        ``codex auth`` (or ``login_with_device_code``).  Token refreshes
+        propagate automatically through the symlink.  If the per-anima
+        directory already has a real ``auth.json`` (e.g. written by a prior
+        API-key login), it is left untouched.
+        """
+        default_auth = Path.home() / ".codex" / "auth.json"
+        target = self._codex_home / "auth.json"
+
+        if target.exists() and not target.is_symlink():
+            return
+
+        if target.is_symlink():
+            if target.resolve() == default_auth.resolve():
+                return
+            target.unlink()
+
+        if default_auth.is_file():
+            target.symlink_to(default_auth)
+            logger.info("Symlinked auth.json → %s", default_auth)
+
     def _write_codex_config(self, system_prompt: str) -> None:
         """Write CODEX_HOME config.toml and model instructions file.
 
@@ -239,6 +274,7 @@ class CodexSDKExecutor(BaseExecutor):
         across sessions so that Codex's thread data (``sessions/``) survives.
         """
         self._codex_home.mkdir(parents=True, exist_ok=True)
+        self._propagate_auth()
 
         instructions_file = self._codex_home / "instructions.md"
         instructions_file.write_text(system_prompt, encoding="utf-8")

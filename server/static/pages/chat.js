@@ -192,7 +192,10 @@ export function destroy() {
   state.boundListeners = [];
 
   if (state.chatObserver) { state.chatObserver.disconnect(); state.chatObserver = null; }
-  if (state.chatAbortController) { state.chatAbortController.abort(); state.chatAbortController = null; }
+  for (const [, s] of Object.entries(state.activeStreams)) {
+    if (s.abortController) s.abortController.abort();
+  }
+  state.activeStreams = {};
   state.pendingQueue = [];
   _ctx.controllers.avatar.removeBustupOverlay();
 

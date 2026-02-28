@@ -149,7 +149,8 @@ export function createChatRenderer(ctx) {
     if (!name) return;
     const hs = state.historyState[name]?.[tid];
     if (!hs || !hs.hasMore || hs.loading) return;
-    if (state.streamingContext?.anima === name && state.streamingContext?.thread === tid) return;
+    const activeS = state.activeStreams[name];
+    if (activeS && activeS.thread === tid) return;
 
     hs.loading = true;
     renderChat(false);
@@ -186,8 +187,9 @@ export function createChatRenderer(ctx) {
     const name = state.selectedAnima;
     const tid = state.selectedThreadId || "default";
     if (!name || state.chatPollingInFlight) return;
-    if (state.streamingContext?.anima === name && state.streamingContext?.thread === tid) return;
-    if (state.chatAbortController) return;
+    const activeS = state.activeStreams[name];
+    if (activeS && activeS.thread === tid) return;
+    if (Object.keys(state.activeStreams).length > 0 && state.activeStreams[name]) return;
 
     state.chatPollingInFlight = true;
     try {

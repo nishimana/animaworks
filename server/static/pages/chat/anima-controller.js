@@ -103,7 +103,7 @@ export function createAnimaController(ctx) {
 
     const html = state.animaTabs.map(tab => {
       const activeClass = tab.name === state.selectedAnima ? " active" : "";
-      const streamingClass = state.streamingContext?.anima === tab.name ? " is-streaming" : "";
+      const streamingClass = state.activeStreams[tab.name] ? " is-streaming" : "";
       const completedClass = tab.unreadStar ? " has-unread-complete" : "";
       const avatar = buildAnimaTabAvatar(tab.name);
       const closeBtn = state.animaTabs.length > 1
@@ -319,7 +319,7 @@ export function createAnimaController(ctx) {
       restoreChatUiState(uiState);
       renderAddConversationMenu();
       renderAnimaTabs();
-      if (state.animas.length > 0 && !state.selectedAnima && !state.streamingContext) {
+      if (state.animas.length > 0 && !state.selectedAnima && Object.keys(state.activeStreams).length === 0) {
         const firstTab = state.animaTabs[0]?.name;
         openOrSelectAnima(firstTab || state.animas[0].name);
       } else if (state.selectedAnima) {
