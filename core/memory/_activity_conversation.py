@@ -282,7 +282,7 @@ class ConversationMixin:
                 messages.append({
                     "ts": e.ts,
                     "role": "system",
-                    "content": t("activity.error_prefix") + (e.summary or e.content),
+                    "content": t("activity.error_prefix") + (e.content or e.summary or ""),
                     "from_person": "",
                     "tool_calls": [],
                 })

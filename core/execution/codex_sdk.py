@@ -42,7 +42,7 @@ from core.memory.shortterm import ShortTermMemory
 
 logger = logging.getLogger("animaworks.execution.codex_sdk")
 
-__all__ = ["CodexSDKExecutor", "clear_codex_thread_ids"]
+__all__ = ["CodexSDKExecutor", "clear_codex_thread_ids", "is_codex_sdk_available"]
 
 RESUME_TIMEOUT_SEC = 15.0
 
@@ -54,6 +54,15 @@ def _resolve_codex_model(model: str) -> str:
     if model.startswith("codex/"):
         return model[len("codex/"):]
     return model
+
+
+def is_codex_sdk_available() -> bool:
+    """Return True when ``openai_codex_sdk`` is importable."""
+    try:
+        import openai_codex_sdk  # noqa: F401
+        return True
+    except Exception:
+        return False
 
 
 def _escape_toml_string(value: str) -> str:
@@ -264,7 +273,13 @@ class CodexSDKExecutor(BaseExecutor):
 
     def _create_codex_client(self) -> Any:
         """Create a ``Codex`` SDK client instance."""
-        from openai_codex_sdk import Codex
+        try:
+            from openai_codex_sdk import Codex
+        except ModuleNotFoundError as e:
+            raise ImportError(
+                "openai_codex_sdk is required for Mode C "
+                "(install openai-codex-sdk)."
+            ) from e
 
         return Codex({"env": self._build_env()})
 
