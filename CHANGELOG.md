@@ -7,6 +7,40 @@ adhering to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-02-28
+
+### Added
+- Mode S (Agent SDK) multimodal image input support
+- text artifact popup viewer for code blocks (file: cards)
+- ConversationMemory provider-specific credential injection (Bedrock/Azure/Vertex)
+- toggle for chat right-side status pane
+- Mode C (Codex SDK) interrupt_event support
+
+### Fixed
+- create-anima name parsing bug: Japanese headings no longer captured as anima name
+- create-anima documentation updated from deprecated `create-anima` to `anima create`
+- chat message duplication and cross-anima display contamination
+- concurrent per-anima streaming in chat UI
+- chat stream error recovery and reconnection handling
+- recovered chat content preservation on reload
+
+### Changed
+- **major backend refactoring**: split 6 God-class modules into focused Mixin files
+  - `handler.py` (3298 → 8 files)
+  - `agent_sdk.py` (1716 → 5 files)
+  - `image_gen.py` (2434 → 6 files)
+  - `activity.py` (1471 → 6 files)
+  - `manager.py` (1419 → 4 files)
+  - `litellm_loop.py` (1392 → 4 files)
+- **frontend refactoring**: split large JS modules
+  - `chat.js` (2490 → 12 controllers)
+  - `character.js` (1396 → 5 modules)
+  - `office3d.js` (1208 → 5 modules)
+  - `chat-controller.js` (1009 → 5 modules)
+  - `app.js` (716 → 4 modules)
+  - `timeline.js` (576 → 4 modules)
+- extract shared chat logic to `shared/chat/` for Dashboard/Workspace reuse
+
 ## [0.4.4] - 2026-02-27
 
 ### Added
