@@ -346,8 +346,19 @@ body.sidebar-collapsed .sidebar-collapse-btn {
   }
 
   .chat-add-conversation-btn {
-    padding: 0.25rem 0.5rem;
-    font-size: 0.75rem;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: 999px;
+    font-size: 0;
+    line-height: 0;
+  }
+
+  .chat-add-conversation-btn::before {
+    content: "+";
+    font-size: 1.15rem;
+    line-height: 1;
+    color: var(--aw-color-text-primary);
   }
 
   /* --- Thread tabs: horizontal scroll on mobile --- */
@@ -372,7 +383,7 @@ body.sidebar-collapsed .sidebar-collapse-btn {
     white-space: nowrap;
   }
 
-  /* --- Chat input: buttons on right, uniform size --- */
+  /* --- Chat input: 2x2 grid buttons, uniform 32px --- */
   .chat-input-form {
     padding: 8px;
   }
@@ -382,20 +393,16 @@ body.sidebar-collapsed .sidebar-collapse-btn {
   }
 
   .chat-input-actions {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
+    grid-template-columns: repeat(2, 32px);
+    grid-auto-rows: 32px;
     gap: 4px;
   }
 
   .chat-send-btn,
-  .chat-attach-btn {
+  .chat-attach-btn,
+  .chat-queue-btn {
     width: 32px;
     height: 32px;
-  }
-
-  .chat-queue-btn {
-    display: none;
   }
 
   .chat-input-actions .voice-controls {
