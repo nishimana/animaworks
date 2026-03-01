@@ -15,6 +15,8 @@ export function createStreamingController(ctx) {
   const { t, escapeHtml, logger, fetchActiveStream, fetchStreamProgress } = deps;
   const mgr = state.manager;
 
+  mgr.addEventListener("stream-state-changed", () => { updateSendButton(); });
+
   function isAnimaStreaming(name) { return mgr.isStreamingForAnima(name); }
 
   function setSendButtonIcon(sendBtn, mode) {
@@ -186,9 +188,10 @@ export function createStreamingController(ctx) {
     const name = overrideImages?.targetAnima || state.selectedAnima;
     const images = overrideImages?.images || state.imageInputManager?.getPendingImages() || [];
     const displayImages = overrideImages?.displayImages || state.imageInputManager?.getDisplayImages() || [];
+    const tid = overrideImages?.targetThread || state.selectedThreadId;
     if (!name || (!message.trim() && images.length === 0)) return;
-    if (isAnimaStreaming(name)) {
-      logger.warn("Blocked: this anima is already streaming", { anima: name });
+    if (mgr.isStreamingFor(name, tid)) {
+      logger.warn("Blocked: this thread is already streaming", { anima: name, thread: tid });
       return;
     }
 
@@ -204,8 +207,6 @@ export function createStreamingController(ctx) {
       }
       return;
     }
-
-    const tid = overrideImages?.targetThread || state.selectedThreadId;
     const threadList = state.threads[name] || [];
     const threadEntry = threadList.find(th => th.id === tid);
     if (threadEntry && threadEntry.label === "新しいスレッド" && message.trim()) {
@@ -254,7 +255,7 @@ export function createStreamingController(ctx) {
       images,
       displayImages,
       callbacks: {
-        onStreamCreated: msg => { streamingMsg = msg; renderFull(); },
+        onStreamCreated: msg => { streamingMsg = msg; renderFull(); updateSendButton(); },
         onTextDelta: text => {
           if (!streamingMsg?.streaming) return;
           streamingMsg.afterHeartbeatRelay = false;
@@ -363,8 +364,8 @@ export function createStreamingController(ctx) {
   }
 
   async function resumeActiveStream(animaName) {
-    if (isAnimaStreaming(animaName)) return;
     const tid = state.selectedThreadId || "default";
+    if (mgr.isStreamingFor(animaName, tid)) return;
 
     ctx.controllers.renderer.renderChat();
 
@@ -376,7 +377,7 @@ export function createStreamingController(ctx) {
 
     await mgr.resumeStream(animaName, tid, {
       callbacks: {
-        onStreamCreated: msg => { streamingMsg = msg; ctx.controllers.renderer.renderChat(); },
+        onStreamCreated: msg => { streamingMsg = msg; ctx.controllers.renderer.renderChat(); updateSendButton(); },
         onTextDelta: text => { if (streamingMsg?.streaming) { streamingMsg.text += text; renderIfVisible(streamingMsg); } },
         onToolStart: toolName => { if (streamingMsg?.streaming) { streamingMsg.activeTool = toolName; renderIfVisible(streamingMsg); } },
         onToolEnd: () => { if (streamingMsg?.streaming) { streamingMsg.activeTool = null; renderIfVisible(streamingMsg); } },

@@ -151,10 +151,7 @@ export function createChatRenderer(ctx) {
     const mgr = state.manager;
     const hs = mgr.getHistoryState(name, tid);
     if (!hs || !hs.hasMore || hs.loading) return;
-    if (mgr.isStreamingForAnima(name)) {
-      const streamCtx = mgr.getStreamingContext(name);
-      if (streamCtx && streamCtx.thread === tid) return;
-    }
+    if (mgr.isStreamingFor(name, tid)) return;
 
     renderChat(false);
 
@@ -179,7 +176,7 @@ export function createChatRenderer(ctx) {
     const tid = state.selectedThreadId || "default";
     if (!name || state.chatPollingInFlight) return;
     const mgr = state.manager;
-    if (mgr.isStreamingForAnima(name)) return;
+    if (mgr.isStreamingFor(name, tid)) return;
 
     state.chatPollingInFlight = true;
     try {
