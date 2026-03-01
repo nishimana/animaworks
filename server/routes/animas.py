@@ -407,4 +407,70 @@ def create_animas_router() -> APIRouter:
                 results[name] = {"status": "error", "error": str(e)}
         return {"status": "ok", "results": results}
 
+    # ── Org Chart ─────────────────────────────────────────
+
+    @router.get("/org/chart")
+    async def get_org_chart(request: Request):
+        """Return the organisation chart as a tree-structured JSON."""
+        supervisor_obj = request.app.state.supervisor
+        animas_dir = request.app.state.animas_dir
+        anima_names = request.app.state.anima_names
+
+        config = load_config()
+
+        # Build flat lookup: name -> {speciality, supervisor, model, status}
+        flat: dict[str, dict] = {}
+        for name in anima_names:
+            anima_dir = animas_dir / name
+
+            proc_status = supervisor_obj.get_process_status(name)
+            model = None
+            anima_supervisor = None
+            anima_speciality = None
+            try:
+                resolved, _ = resolve_anima_config(config, name, anima_dir=anima_dir)
+                model = resolved.model
+                anima_supervisor = resolved.supervisor
+                anima_speciality = resolved.speciality
+            except Exception:
+                pass
+
+            flat[name] = {
+                "name": name,
+                "speciality": anima_speciality,
+                "supervisor": anima_supervisor,
+                "model": model,
+                "status": proc_status.get("status", "unknown"),
+            }
+
+        # Build tree from flat lookup
+        def _build_node(name: str) -> dict:
+            info = flat[name]
+            children_names = sorted(
+                n for n, d in flat.items() if d["supervisor"] == name
+            )
+            return {
+                "name": name,
+                "speciality": info["speciality"],
+                "model": info["model"],
+                "status": info["status"],
+                "children": [_build_node(c) for c in children_names],
+            }
+
+        # Top-level = animas with no supervisor
+        roots = sorted(
+            n for n, d in flat.items() if d["supervisor"] is None
+        )
+
+        from datetime import datetime, timezone, timedelta
+
+        return {
+            "generated_at": datetime.now(
+                tz=timezone(timedelta(hours=9))
+            ).isoformat(),
+            "total": len(flat),
+            "tree": [_build_node(r) for r in roots],
+            "flat": flat,
+        }
+
     return router

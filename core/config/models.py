@@ -72,6 +72,7 @@ class AnimaModelConfig(BaseModel):
 
     supervisor: str | None = None
     speciality: str | None = None
+    model: str | None = None
 
 
 # ── Default model names (single source of truth) ─────────────────────────────
