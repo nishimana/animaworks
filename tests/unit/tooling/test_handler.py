@@ -229,6 +229,7 @@ class TestHandleRouting:
         assert "Message sent to alice" in result
         handler_with_messenger._messenger.send.assert_called_once_with(
             to="alice", content="hello", thread_id="", reply_to="", intent="delegation",
+            origin_chain=["anima"],
         )
 
     def test_send_message_intent_empty_returns_error(

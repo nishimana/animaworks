@@ -127,6 +127,10 @@ class ToolHandler(
             personal_tools=personal_tools,
         )
 
+        # ── Session origin tracking (provenance Phase 3) ──
+        self._session_origin: str = ""
+        self._session_origin_chain: list[str] = []
+
         # ── Cache subordinate paths for permission checks ──
         self._subordinate_activity_dirs: list[Path] = []
         self._subordinate_management_files: list[Path] = []
@@ -260,6 +264,16 @@ class ToolHandler(
         Returns a reset token for use with ``active_session_type.reset(token)``.
         """
         return active_session_type.set(session_type)
+
+    def set_session_origin(self, origin: str, origin_chain: list[str] | None = None) -> None:
+        """Set the origin context for the current session.
+
+        Called at the start of each execution path (chat, inbox, heartbeat,
+        cron) so that outgoing ``send_message`` / ``delegate_task`` calls
+        can propagate provenance information.
+        """
+        self._session_origin = origin
+        self._session_origin_chain = origin_chain or []
 
     @property
     def session_id(self) -> str:

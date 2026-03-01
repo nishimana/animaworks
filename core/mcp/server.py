@@ -443,6 +443,22 @@ def _get_tool_handler() -> Any:
         return None
 
 
+# ── Trust boundary labeling ───────────────────────────────
+
+def _wrap_result(tool_name: str, result: str) -> str:
+    """Apply trust boundary tag to a successful tool result.
+
+    Falls back to the raw *result* when ``wrap_tool_result`` is
+    unavailable (should never happen in practice, but keeps the
+    MCP server resilient).
+    """
+    try:
+        from core.execution._sanitize import wrap_tool_result
+        return wrap_tool_result(tool_name, result)
+    except Exception:
+        return result
+
+
 # ── MCP handlers ─────────────────────────────────────────
 
 
@@ -496,7 +512,8 @@ async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextCon
 
     try:
         result = await asyncio.to_thread(handler.handle, name, coerced_args)
-        return [TextContent(type="text", text=result)]
+        wrapped = _wrap_result(name, result)
+        return [TextContent(type="text", text=wrapped)]
     except Exception as exc:
         logger.exception("Unhandled error calling tool '%s'", name)
         return [

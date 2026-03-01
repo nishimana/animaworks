@@ -218,7 +218,7 @@ class TestCallToolHandler:
         assert "boom" in payload["message"]
 
     async def test_returns_result_on_success(self) -> None:
-        """When ToolHandler.handle() returns a result, returns TextContent with it."""
+        """When ToolHandler.handle() returns a result, returns wrapped TextContent."""
         import core.mcp.server as mcp_mod
 
         mock_handler = MagicMock()
@@ -230,7 +230,9 @@ class TestCallToolHandler:
         assert len(result) == 1
         assert isinstance(result[0], TextContent)
         assert result[0].type == "text"
-        assert result[0].text == '{"status": "ok", "data": "hello"}'
+        assert '<tool_result tool="send_message" trust="trusted">' in result[0].text
+        assert '{"status": "ok", "data": "hello"}' in result[0].text
+        assert "</tool_result>" in result[0].text
         mock_handler.handle.assert_called_once_with("send_message", {"to": "x", "content": "y"})
 
     async def test_passes_empty_dict_when_arguments_none(self) -> None:
@@ -640,8 +642,165 @@ class TestExternalToolsInMcpTools:
 
             assert len(result) == 1
             assert "ok" in result[0].text
+            assert "<tool_result" in result[0].text
             mock_handler.handle.assert_called_once_with(
                 "chatwork_send", {"room_id": "123", "body": "test"},
             )
         finally:
             mcp_mod._EXPOSED_NAMES = original_exposed
+
+
+# ── TestCallToolTrustWrapping ────────────────────────────────────────
+
+
+class TestCallToolTrustWrapping:
+    """Tests for trust boundary labeling in call_tool()."""
+
+    async def test_untrusted_tool_gets_untrusted_tag(self) -> None:
+        """web_search results are wrapped with trust='untrusted'."""
+        import core.mcp.server as mcp_mod
+
+        original_exposed = mcp_mod._EXPOSED_NAMES
+        mcp_mod._EXPOSED_NAMES = original_exposed | frozenset({"web_search"})
+
+        mock_handler = MagicMock()
+        mock_handler.handle.return_value = "Search results here"
+
+        try:
+            with patch.object(mcp_mod, "_get_tool_handler", return_value=mock_handler):
+                result = await mcp_mod.call_tool("web_search", {"query": "test"})
+
+            assert len(result) == 1
+            assert '<tool_result tool="web_search" trust="untrusted">' in result[0].text
+            assert "Search results here" in result[0].text
+            assert "</tool_result>" in result[0].text
+        finally:
+            mcp_mod._EXPOSED_NAMES = original_exposed
+
+    async def test_trusted_tool_gets_trusted_tag(self) -> None:
+        """search_memory results are wrapped with trust='trusted'."""
+        import core.mcp.server as mcp_mod
+
+        mock_handler = MagicMock()
+        mock_handler.handle.return_value = "Memory result"
+
+        with patch.object(mcp_mod, "_get_tool_handler", return_value=mock_handler):
+            result = await mcp_mod.call_tool("search_memory", {"query": "test"})
+
+        assert len(result) == 1
+        assert '<tool_result tool="search_memory" trust="trusted">' in result[0].text
+        assert "Memory result" in result[0].text
+
+    async def test_medium_trust_tool_gets_medium_tag(self) -> None:
+        """read_file results are wrapped with trust='medium'."""
+        import core.mcp.server as mcp_mod
+
+        original_exposed = mcp_mod._EXPOSED_NAMES
+        mcp_mod._EXPOSED_NAMES = original_exposed | frozenset({"read_file"})
+
+        mock_handler = MagicMock()
+        mock_handler.handle.return_value = "file contents"
+
+        try:
+            with patch.object(mcp_mod, "_get_tool_handler", return_value=mock_handler):
+                result = await mcp_mod.call_tool("read_file", {"path": "/tmp/x"})
+
+            assert len(result) == 1
+            assert '<tool_result tool="read_file" trust="medium">' in result[0].text
+            assert "file contents" in result[0].text
+        finally:
+            mcp_mod._EXPOSED_NAMES = original_exposed
+
+    async def test_empty_result_not_wrapped(self) -> None:
+        """Empty tool results are returned as-is (not wrapped)."""
+        import core.mcp.server as mcp_mod
+
+        mock_handler = MagicMock()
+        mock_handler.handle.return_value = ""
+
+        with patch.object(mcp_mod, "_get_tool_handler", return_value=mock_handler):
+            result = await mcp_mod.call_tool("send_message", {"to": "x", "content": "y"})
+
+        assert len(result) == 1
+        assert result[0].text == ""
+        assert "<tool_result" not in result[0].text
+
+    async def test_error_responses_not_wrapped(self) -> None:
+        """Error JSON responses (ToolNotFound, InitError, UnhandledError) have no trust tag."""
+        import core.mcp.server as mcp_mod
+
+        # ToolNotFound
+        result = await mcp_mod.call_tool("__nonexistent__", {})
+        assert "<tool_result" not in result[0].text
+        payload = json.loads(result[0].text)
+        assert payload["status"] == "error"
+
+        # InitError
+        with patch.object(mcp_mod, "_get_tool_handler", return_value=None), \
+             patch.object(mcp_mod, "_init_error", "init failed"):
+            result = await mcp_mod.call_tool("send_message", {"to": "x", "content": "y"})
+        assert "<tool_result" not in result[0].text
+        payload = json.loads(result[0].text)
+        assert payload["status"] == "error"
+
+        # UnhandledError
+        mock_handler = MagicMock()
+        mock_handler.handle.side_effect = RuntimeError("boom")
+        with patch.object(mcp_mod, "_get_tool_handler", return_value=mock_handler):
+            result = await mcp_mod.call_tool("send_message", {"to": "x", "content": "y"})
+        assert "<tool_result" not in result[0].text
+        payload = json.loads(result[0].text)
+        assert payload["status"] == "error"
+
+    async def test_unknown_tool_defaults_to_untrusted(self) -> None:
+        """Tools not in TOOL_TRUST_LEVELS default to trust='untrusted'."""
+        import core.mcp.server as mcp_mod
+
+        original_exposed = mcp_mod._EXPOSED_NAMES
+        mcp_mod._EXPOSED_NAMES = original_exposed | frozenset({"custom_tool_xyz"})
+
+        mock_handler = MagicMock()
+        mock_handler.handle.return_value = "custom output"
+
+        try:
+            with patch.object(mcp_mod, "_get_tool_handler", return_value=mock_handler):
+                result = await mcp_mod.call_tool("custom_tool_xyz", {})
+
+            assert len(result) == 1
+            assert '<tool_result tool="custom_tool_xyz" trust="untrusted">' in result[0].text
+        finally:
+            mcp_mod._EXPOSED_NAMES = original_exposed
+
+
+# ── TestWrapResultHelper ─────────────────────────────────────────────
+
+
+class TestWrapResultHelper:
+    """Tests for the _wrap_result() helper function."""
+
+    def test_wraps_result_with_trust_tag(self) -> None:
+        """_wrap_result applies trust label from TOOL_TRUST_LEVELS."""
+        from core.mcp.server import _wrap_result
+
+        wrapped = _wrap_result("search_memory", "some data")
+        assert '<tool_result tool="search_memory" trust="trusted">' in wrapped
+        assert "some data" in wrapped
+        assert "</tool_result>" in wrapped
+
+    def test_returns_empty_unchanged(self) -> None:
+        """_wrap_result returns empty strings unchanged."""
+        from core.mcp.server import _wrap_result
+
+        assert _wrap_result("search_memory", "") == ""
+
+    def test_fallback_on_import_error(self) -> None:
+        """_wrap_result returns raw result when wrap_tool_result import fails."""
+        from core.mcp.server import _wrap_result
+
+        with patch(
+            "core.execution._sanitize.wrap_tool_result",
+            side_effect=ImportError("no module"),
+        ):
+            result = _wrap_result("search_memory", "raw data")
+
+        assert result == "raw data"

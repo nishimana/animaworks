@@ -7,6 +7,26 @@ adhering to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-03-01
+
+### Added
+- publish.sh --release で自動バージョンインクリメント
+- cron中のinbox抑制 + per-anima flockによる多重起動防止
+- add origin metadata to RAG chunks and trust-separated priming output (provenance phase 4)
+- propagate origin_chain in Anima-to-Anima messaging (provenance phase 3)
+- add origin tracking at external data entry points (provenance phase 2)
+
+### Fixed
+- session chaining時にSDK session IDをクリアしてfreshセッションを開始
+- compaction空白地帯の解消 — context window是正・閾値スケール修正・Mode Sチェイニング有効化
+- Mode S streaming compaction failure — 2 root causes
+- prevent repeated content in session-chained responses
+- make status.json the SSoT for supervisor/speciality fields
+- detect stale cron/heartbeat schedules via file mtime reconciliation
+- detect stale cron/heartbeat schedules via file mtime reconciliation
+- load mode_s_auth from status.json into resolved config
+
+
 ## [0.4.6] - 2026-02-28
 
 ### Fixed
@@ -397,8 +417,8 @@ memory, and decision-making criteria.
 - Moved model mode patterns from config.json to models.json
 - Tool permissions changed from whitelist to default-allow (blacklist) model
 
-[Unreleased]: https://github.com/xuiltul/animaworks/compare/v0.4.6...HEAD
-[0.4.6]: https://github.com/xuiltul/animaworks/compare/v0.4.5...v0.4.6[0.4.4]: https://github.com/xuiltul/animaworks/compare/v0.4.3...v0.4.4
+[Unreleased]: https://github.com/xuiltul/animaworks/compare/v0.4.7...HEAD
+[0.4.7]: https://github.com/xuiltul/animaworks/compare/v0.4.6...v0.4.7
 [0.4.3]: https://github.com/xuiltul/animaworks/compare/v0.4.2...v0.4.3
 [0.4.0]: https://github.com/xuiltul/animaworks/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/xuiltul/animaworks/compare/v0.3.0...v0.3.1

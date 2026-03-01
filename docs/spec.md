@@ -164,6 +164,7 @@ All settings are consolidated in `~/.animaworks/config.json`. Validated with the
 |`system`               |Operation mode, log level            |
 |`credentials`          |Per-provider API keys and endpoints (named map)|
 |`model_modes`          |Model name to execution mode (S/A/B) custom mapping|
+|`model_context_windows`|Model name pattern → context window size override (fnmatch)|
 |`anima_defaults`       |Default values applied to all Animas |
 |`animas`               |Per-Anima overrides (unspecified fields fall back to defaults)|
 |`consolidation`        |Memory consolidation settings (daily/weekly execution times and thresholds)|
@@ -201,6 +202,9 @@ All settings are consolidated in `~/.animaworks/config.json`. Validated with the
     "anthropic": { "api_key": "", "base_url": null },
     "ollama": { "api_key": "dummy", "base_url": "http://localhost:11434/v1" }
   },
+  "model_context_windows": {
+    "claude-sonnet-4-6": 200000
+  },
   "anima_defaults": {
     "model": "claude-sonnet-4-6",
     "max_tokens": 4096,
@@ -217,6 +221,14 @@ All settings are consolidated in `~/.animaworks/config.json`. Validated with the
 ```
 
 **Security:** config.json is saved with `0o600` permissions (owner read/write only). API key management via environment variables is also supported.
+
+**Context Window Resolution** (`resolve_context_window()` in `core/prompt/context.py`):
+
+1. `model_context_windows` in config.json (highest priority — fnmatch wildcard patterns)
+2. `MODEL_CONTEXT_WINDOWS` hardcoded dict (fallback — prefix match)
+3. `_DEFAULT_CONTEXT_WINDOW` = 128,000 (final fallback)
+
+Hardcoded defaults use conservative values (e.g. `claude-sonnet-4-6: 128,000`). Override via config when a larger window is needed. The compaction threshold is auto-scaled: models with >= 200K windows use the configured value (default 0.50); smaller models scale linearly toward 0.98.
 
 **RAGConfig Fields:**
 

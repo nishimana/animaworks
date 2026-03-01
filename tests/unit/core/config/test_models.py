@@ -360,6 +360,15 @@ class TestResolveAnimaConfig:
         assert resolved.max_tokens == 8192
         assert resolved.max_turns == 20  # from anima_defaults
 
+    def test_mode_s_auth_loaded_from_status_json(self, tmp_path):
+        """mode_s_auth in status.json is loaded into resolved config."""
+        status = {"mode_s_auth": "bedrock", "credential": "anthropic"}
+        (tmp_path / "status.json").write_text(json.dumps(status))
+        config = AnimaWorksConfig()
+        config.animas["alice"] = AnimaModelConfig()
+        resolved, _ = resolve_anima_config(config, "alice", anima_dir=tmp_path)
+        assert resolved.mode_s_auth == "bedrock"
+
     def test_custom_credential(self, tmp_path):
         """status.json credential overrides anima_defaults."""
         status = {"credential": "openai"}
@@ -388,6 +397,33 @@ class TestResolveAnimaConfig:
         )
         resolved, _ = resolve_anima_config(config, "bob")
         assert resolved.supervisor == "alice"
+
+    def test_status_json_supervisor_overrides_config_animas(self, tmp_path):
+        """status.json supervisor takes priority over config.animas."""
+        status = {"supervisor": "rin", "credential": "anthropic"}
+        (tmp_path / "status.json").write_text(json.dumps(status))
+        config = AnimaWorksConfig()
+        config.animas["bob"] = AnimaModelConfig(supervisor="sakura")
+        resolved, _ = resolve_anima_config(config, "bob", anima_dir=tmp_path)
+        assert resolved.supervisor == "rin"
+
+    def test_status_json_null_supervisor_makes_toplevel(self, tmp_path):
+        """Explicit null supervisor in status.json means top-level (no supervisor)."""
+        status = {"supervisor": None, "credential": "anthropic"}
+        (tmp_path / "status.json").write_text(json.dumps(status))
+        config = AnimaWorksConfig()
+        config.animas["bob"] = AnimaModelConfig(supervisor="sakura")
+        resolved, _ = resolve_anima_config(config, "bob", anima_dir=tmp_path)
+        assert resolved.supervisor is None
+
+    def test_config_animas_supervisor_used_as_fallback(self, tmp_path):
+        """config.animas supervisor is fallback when status.json omits it."""
+        status = {"model": "gpt-4o", "credential": "anthropic"}
+        (tmp_path / "status.json").write_text(json.dumps(status))
+        config = AnimaWorksConfig()
+        config.animas["bob"] = AnimaModelConfig(supervisor="sakura")
+        resolved, _ = resolve_anima_config(config, "bob", anima_dir=tmp_path)
+        assert resolved.supervisor == "sakura"
 
 
 # ── Pattern specificity ───────────────────────────────────

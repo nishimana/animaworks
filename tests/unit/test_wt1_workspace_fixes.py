@@ -87,26 +87,28 @@ class TestIssueA_WSEventMismatch:
         )
 
     def test_anima_py_dm_received_has_to_person(self) -> None:
-        """message_received (from_type=anima) log call in anima.py must include to_person=self.name."""
-        src = ANIMA_PY.read_text(encoding="utf-8")
-        # Find the message_received log call with from_type: "anima"
+        """message_received (from_type=anima) log call in anima modules must include to_person=self.name."""
+        src = "\n".join(
+            p.read_text(encoding="utf-8")
+            for p in [ANIMA_PY, *(REPO_ROOT / "core").glob("_anima_*.py")]
+        )
+        # Find activity.log("message_received" ...) calls — may span multiple lines
         matches = re.findall(
-            r'activity\.log\("message_received"[^)]+\)',
+            r'activity\.log\(\s*"message_received"[\s\S]*?\n\s*\)',
             src,
-            re.DOTALL,
         )
         assert len(matches) > 0, "No activity.log('message_received') call found in anima.py"
-        # At least one call must be for DM from anima (has meta from_type anima and to_person)
+        # At least one call must have from_type in meta and to_person=self.name
         anima_dm_calls = [
             m for m in matches
-            if "from_type" in m and "anima" in m and "to_person" in m
+            if "from_type" in m and "to_person" in m
         ]
         assert len(anima_dm_calls) >= 1, (
-            "No message_received log with from_type:anima meta and to_person found"
+            "No message_received log with from_type meta and to_person found"
         )
         for call in anima_dm_calls:
             assert "to_person=self.name" in call, (
-                f"to_person=self.name missing from message_received (anima DM) log: {call[:150]}"
+                f"to_person=self.name missing from message_received log: {call[:150]}"
             )
 
 

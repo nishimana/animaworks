@@ -40,6 +40,8 @@ class CommsToolsMixin:
     _posted_channels: dict[str, set[str]]
     _human_notifier: HumanNotifier | None
     _pending_notifications: list[dict[str, Any]]
+    _session_origin: str
+    _session_origin_chain: list[str]
 
     def _handle_send_message(self, args: dict[str, Any]) -> str:
         if not self._messenger:
@@ -100,6 +102,15 @@ class CommsToolsMixin:
                 suggestion="Check config.json external_messaging settings",
             )
 
+        # ── Build outgoing origin_chain (provenance Phase 3) ──
+        from core.execution._sanitize import ORIGIN_ANIMA, MAX_ORIGIN_CHAIN_LENGTH
+        outgoing_chain = list(self._session_origin_chain)
+        if self._session_origin and self._session_origin not in outgoing_chain:
+            outgoing_chain.append(self._session_origin)
+        if ORIGIN_ANIMA not in outgoing_chain:
+            outgoing_chain.append(ORIGIN_ANIMA)
+        outgoing_chain = outgoing_chain[:MAX_ORIGIN_CHAIN_LENGTH]
+
         # ── External routing ──
         if resolved is not None and not resolved.is_internal:
             logger.info(
@@ -115,6 +126,7 @@ class CommsToolsMixin:
                 thread_id=args.get("thread_id", ""),
                 reply_to=args.get("reply_to", ""),
                 intent=intent,
+                origin_chain=outgoing_chain,
             )
 
             if self._on_message_sent:
@@ -139,6 +151,7 @@ class CommsToolsMixin:
             thread_id=args.get("thread_id", ""),
             reply_to=args.get("reply_to", ""),
             intent=intent,
+            origin_chain=outgoing_chain,
         )
 
         if msg.type == "error":

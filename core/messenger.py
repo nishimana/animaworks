@@ -63,6 +63,7 @@ class Messenger:
         reply_to: str = "",
         skip_logging: bool = False,
         intent: str = "",
+        origin_chain: list[str] | None = None,
     ) -> Message:
         # ── Conversation depth check (internal Anima only) ──
         if msg_type not in ("ack", "error", "system_alert"):
@@ -104,6 +105,7 @@ class Messenger:
             thread_id=thread_id,
             reply_to=reply_to,
             intent=intent,
+            origin_chain=origin_chain or [],
         )
         # New thread: use message id as thread_id
         if not msg.thread_id:
@@ -446,6 +448,7 @@ class Messenger:
         Creates a Message with external source metadata and writes it to the
         anima's inbox directory.
         """
+        from core.execution._sanitize import ORIGIN_EXTERNAL_PLATFORM
         msg = Message(
             from_person=f"{source}:{external_user_id}" if external_user_id else source,
             to_person=self.anima_name,
@@ -454,6 +457,7 @@ class Messenger:
             source_message_id=source_message_id,
             external_user_id=external_user_id,
             external_channel_id=external_channel_id,
+            origin_chain=[ORIGIN_EXTERNAL_PLATFORM],
         )
         if not msg.thread_id:
             msg.thread_id = msg.id
@@ -477,6 +481,7 @@ class Messenger:
         thread_id: str = "",
         reply_to: str = "",
         intent: str = "",
+        origin_chain: list[str] | None = None,
     ) -> Message:
         """Async wrapper for filesystem-based send."""
         return self.send(
@@ -486,4 +491,5 @@ class Messenger:
             thread_id=thread_id,
             reply_to=reply_to,
             intent=intent,
+            origin_chain=origin_chain,
         )

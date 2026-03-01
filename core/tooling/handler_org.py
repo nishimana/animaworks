@@ -31,6 +31,8 @@ class OrgToolsMixin:
     _activity: ActivityLogger
     _process_supervisor: Any
     _messenger: Messenger | None
+    _session_origin: str
+    _session_origin_chain: list[str]
 
     # ── Anima creation ────────────────────────────────────────
 
@@ -49,7 +51,19 @@ class OrgToolsMixin:
         elif sheet_path_raw:
             md_path = Path(sheet_path_raw).expanduser()
             if not md_path.is_absolute():
-                md_path = self._anima_dir / md_path
+                md_path = (self._anima_dir / md_path).resolve()
+                if not md_path.is_relative_to(self._anima_dir.resolve()):
+                    return _error_result(
+                        "PermissionDenied",
+                        "character_sheet_path must be within anima directory.",
+                    )
+            else:
+                # Absolute paths are intentionally allowed without directory
+                # restriction — the CLI and human operators specify full paths.
+                # create_from_md validates the content as a character sheet,
+                # so passing an arbitrary file (e.g. /etc/passwd) will fail
+                # schema validation rather than leaking data.
+                md_path = md_path.resolve()
             if not md_path.exists():
                 return _error_result(
                     "FileNotFound",
@@ -676,6 +690,15 @@ class OrgToolsMixin:
         except ValueError as e:
             return _error_result("InvalidArguments", str(e))
 
+        # Build outgoing origin_chain (provenance Phase 3)
+        from core.execution._sanitize import ORIGIN_ANIMA, MAX_ORIGIN_CHAIN_LENGTH
+        outgoing_chain = list(self._session_origin_chain)
+        if self._session_origin and self._session_origin not in outgoing_chain:
+            outgoing_chain.append(self._session_origin)
+        if ORIGIN_ANIMA not in outgoing_chain:
+            outgoing_chain.append(ORIGIN_ANIMA)
+        outgoing_chain = outgoing_chain[:MAX_ORIGIN_CHAIN_LENGTH]
+
         dm_result = ""
         if self._messenger:
             try:
@@ -688,6 +711,7 @@ class OrgToolsMixin:
                         task_id=sub_entry.task_id,
                     ),
                     intent="delegation",
+                    origin_chain=outgoing_chain,
                 )
                 dm_result = t("handler.dm_sent")
             except Exception as e:
