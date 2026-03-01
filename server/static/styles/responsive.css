@@ -612,22 +612,7 @@ body.sidebar-collapsed .sidebar-collapse-btn {
 /* ── Chat Page Mobile (< 768px) ──────────── */
 
 @media (max-width: 768px) {
-  .chat-anima-tabs-header {
-    flex-direction: column;
-    gap: 0.45rem;
-  }
-
-  .chat-add-conversation {
-    width: 100%;
-  }
-
-  .chat-header-actions {
-    width: 100%;
-  }
-
-  .chat-add-conversation-btn {
-    width: 100%;
-  }
+  /* Anima header: icon row + inline ➕ (see main mobile block above) */
 
   .chat-right-pane-toggle-btn {
     display: none;
@@ -638,9 +623,9 @@ body.sidebar-collapsed .sidebar-collapse-btn {
   }
 
   .chat-add-conversation-menu {
-    left: 0;
-    right: auto;
-    width: 100%;
+    right: 0;
+    left: auto;
+    width: min(320px, 80vw);
     max-height: 280px;
   }
 
