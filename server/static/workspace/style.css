@@ -2876,6 +2876,53 @@ html, body {
   }
 }
 
+/* ── Tool Call Group (collapsible wrapper) ──────── */
+
+.tool-call-group {
+  margin-top: 6px;
+}
+
+.tool-call-group-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #fef3c7;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.78rem;
+  color: #92400e;
+}
+
+.tool-call-group-header:hover {
+  background: #fde68a;
+}
+
+.tool-call-group-icon {
+  flex-shrink: 0;
+  font-size: 0.65rem;
+  transition: transform 0.15s ease;
+}
+
+.tool-call-group.expanded .tool-call-group-icon {
+  transform: rotate(90deg);
+}
+
+.tool-call-group-label {
+  font-weight: 600;
+}
+
+.tool-group-error-badge {
+  color: #c0392b;
+  font-weight: 700;
+}
+
+.tool-call-group-body {
+  padding-left: 4px;
+  margin-top: 2px;
+}
+
 /* ── Tool Call Indicators (Collapsed) ──────── */
 
 .tool-call-row {
