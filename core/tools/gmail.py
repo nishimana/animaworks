@@ -19,8 +19,12 @@ import logging
 import os
 import sys
 from dataclasses import dataclass
+import mimetypes
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import parseaddr
+from email import encoders
 from pathlib import Path
 from typing import Any, cast
 
@@ -282,6 +286,31 @@ class GmailClient:
 
         return ""
 
+    def _resolve_reply_headers(
+        self, message_id: str,
+    ) -> tuple[str, str, str]:
+        """Fetch RFC Message-ID, threadId, and subject from a Gmail message.
+
+        Args:
+            message_id: Gmail internal message ID.
+
+        Returns:
+            (rfc_message_id, thread_id, subject) tuple.
+        """
+        msg = (
+            self.service.users()
+            .messages()
+            .get(userId="me", id=message_id, format="metadata",
+                 metadataHeaders=["Message-ID", "Subject"])
+            .execute()
+        )
+        headers = {h["name"]: h["value"] for h in msg["payload"]["headers"]}
+        return (
+            headers.get("Message-ID", ""),
+            msg.get("threadId", ""),
+            headers.get("Subject", ""),
+        )
+
     def create_draft(
         self,
         to: str,
@@ -289,6 +318,7 @@ class GmailClient:
         body: str,
         thread_id: str | None = None,
         in_reply_to: str | None = None,
+        attachments: list[Path] | None = None,
     ) -> DraftResult:
         """Create a draft email.
 
@@ -297,7 +327,9 @@ class GmailClient:
             subject: Email subject.
             body: Email body text.
             thread_id: Thread ID (for replies).
-            in_reply_to: Original message ID (for replies).
+            in_reply_to: Gmail message ID being replied to. The RFC
+                Message-ID header and threadId are resolved automatically.
+            attachments: List of file paths to attach.
 
         Returns:
             DraftResult with creation outcome.
@@ -306,13 +338,47 @@ class GmailClient:
             _, email_addr = parseaddr(to)
             recipient = email_addr if email_addr else to
 
-            message = MIMEText(body)
+            # Resolve reply threading from Gmail message ID
+            rfc_message_id = ""
+            if in_reply_to:
+                rfc_message_id, resolved_thread_id, orig_subject = (
+                    self._resolve_reply_headers(in_reply_to)
+                )
+                if not thread_id:
+                    thread_id = resolved_thread_id
+                if not subject.lower().startswith("re:"):
+                    subject = f"Re: {orig_subject}" if orig_subject else subject
+
+            if attachments:
+                message = MIMEMultipart()
+                message.attach(MIMEText(body))
+                for file_path in attachments:
+                    file_path = Path(file_path)
+                    if not file_path.exists():
+                        raise FileNotFoundError(f"Attachment not found: {file_path}")
+                    content_type, _ = mimetypes.guess_type(str(file_path))
+                    if content_type is None:
+                        content_type = "application/octet-stream"
+                    main_type, sub_type = content_type.split("/", 1)
+                    with open(file_path, "rb") as f:
+                        part = MIMEBase(main_type, sub_type)
+                        part.set_payload(f.read())
+                    encoders.encode_base64(part)
+                    part.add_header(
+                        "Content-Disposition",
+                        "attachment",
+                        filename=file_path.name,
+                    )
+                    message.attach(part)
+            else:
+                message = MIMEText(body)
+
             message["to"] = recipient
             message["subject"] = subject
 
-            if in_reply_to:
-                message["In-Reply-To"] = in_reply_to
-                message["References"] = in_reply_to
+            if rfc_message_id:
+                message["In-Reply-To"] = rfc_message_id
+                message["References"] = rfc_message_id
 
             raw = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
 
@@ -327,7 +393,8 @@ class GmailClient:
                 .execute()
             )
 
-            logger.info("Draft created: %s", draft["id"])
+            attached_names = [Path(p).name for p in attachments] if attachments else []
+            logger.info("Draft created: %s (attachments: %s)", draft["id"], attached_names)
 
             return DraftResult(
                 draft_id=draft["id"],
@@ -459,6 +526,11 @@ def get_tool_schemas() -> list[dict]:
                         "type": "string",
                         "description": "Message ID being replied to (optional).",
                     },
+                    "attachments": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of absolute file paths to attach (optional).",
+                    },
                 },
                 "required": ["to", "subject", "body"],
             },
@@ -479,6 +551,7 @@ def get_cli_guide() -> str:
 animaworks-tool gmail unread -j
 animaworks-tool gmail read <メッセージID>
 animaworks-tool gmail draft --to "宛先" --subject "件名" --body "本文"
+animaworks-tool gmail draft --to "宛先" --subject "件名" --body "本文" --attachment /path/to/file.pdf
 ```"""
 
 
@@ -508,6 +581,7 @@ def cli_main(argv: list[str] | None = None) -> None:
     p_draft.add_argument("--body", required=True, help="Body text")
     p_draft.add_argument("--thread-id", default=None, help="Thread ID (for replies)")
     p_draft.add_argument("--in-reply-to", default=None, help="Original message ID")
+    p_draft.add_argument("--attachment", action="append", default=[], help="File path to attach (repeatable)")
 
     args = parser.parse_args(argv)
 
@@ -537,12 +611,14 @@ def cli_main(argv: list[str] | None = None) -> None:
             sys.exit(1)
 
     elif args.command == "draft":
+        attach_paths = [Path(p) for p in args.attachment] if args.attachment else None
         result = client.create_draft(
             to=args.to,
             subject=args.subject,
             body=args.body,
             thread_id=args.thread_id,
             in_reply_to=args.in_reply_to,
+            attachments=attach_paths,
         )
         if result.success:
             print(f"Draft created: {result.draft_id}")
@@ -567,12 +643,15 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
         return client.get_email_body(args["message_id"])
     if name == "gmail_draft":
         client = GmailClient()
+        raw_attachments = args.get("attachments")
+        attach_paths = [Path(p) for p in raw_attachments] if raw_attachments else None
         result = client.create_draft(
             to=args["to"],
             subject=args["subject"],
             body=args["body"],
             thread_id=args.get("thread_id"),
             in_reply_to=args.get("in_reply_to"),
+            attachments=attach_paths,
         )
         return {"success": result.success, "draft_id": result.draft_id, "error": result.error}
     raise ValueError(f"Unknown tool: {name}")
