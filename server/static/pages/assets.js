@@ -445,6 +445,13 @@ function _openRemakeModal() {
         <!-- Controls -->
         <div class="assets-modal-controls">
           <div class="assets-modal-control-row">
+            <label class="assets-modal-label" for="assetsImageStyle">Image Style:</label>
+            <select id="assetsImageStyle" class="assets-modal-select">
+              <option value="realistic" ${imgStyle === "realistic" ? "selected" : ""}>${t("assets.realistic_section")}</option>
+              <option value="anime" ${imgStyle === "anime" ? "selected" : ""}>${t("assets.anime_section")}</option>
+            </select>
+          </div>
+          <div class="assets-modal-control-row">
             <label class="assets-modal-label" for="assetsStyleFrom">Style From:</label>
             <select id="assetsStyleFrom" class="assets-modal-select">
               ${styleOptions}
@@ -513,6 +520,28 @@ function _openRemakeModal() {
     _updateVibeSliderState();
   }
 
+  const imageStyleSelect = document.getElementById("assetsImageStyle");
+  const currentCol = overlay.querySelector(".assets-modal-col:first-child");
+  const animeUrl = animeAssets.avatar_fullbody?.url || "";
+  const realUrl = realAssets.avatar_fullbody_realistic?.url || "";
+  if (imageStyleSelect && currentCol) {
+    imageStyleSelect.addEventListener("change", () => {
+      const style = imageStyleSelect.value;
+      const url = style === "realistic" ? realUrl : animeUrl;
+      if (url) {
+        currentCol.innerHTML = `
+          <div class="assets-modal-col-label">${t("assets.current")}</div>
+          <img class="assets-modal-preview-img" src="${escapeHtml(url)}" alt="Current fullbody">
+        `;
+      } else {
+        currentCol.innerHTML = `
+          <div class="assets-modal-col-label">${t("assets.current")}</div>
+          <div class="assets-modal-preview-placeholder">${t("assets.no_fullbody")}</div>
+        `;
+      }
+    });
+  }
+
   // Bind action buttons
   document.getElementById("assetsGeneratePreviewBtn")?.addEventListener("click", _generatePreview);
   document.getElementById("assetsAcceptBtn")?.addEventListener("click", _confirmAcceptAndRebuild);
@@ -568,10 +597,11 @@ async function _generatePreview() {
 
   const enc = encodeURIComponent(_selectedAnima);
 
+  const imageStyle = document.getElementById("assetsImageStyle")?.value || _currentImageStyle();
   const requestBody = {
     vibe_strength: vibeStrength,
     vibe_info_extracted: infoExtracted,
-    image_style: _currentImageStyle(),
+    image_style: imageStyle,
   };
   if (styleFrom) requestBody.style_from = styleFrom;
   if (_previewBackupId) requestBody.backup_id = _previewBackupId;
@@ -732,7 +762,7 @@ async function _acceptAndRebuild() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         backup_id: _previewBackupId,
-        image_style: _currentImageStyle(),
+        image_style: document.getElementById("assetsImageStyle")?.value || _currentImageStyle(),
         preview_file: previewFile,
       }),
     });

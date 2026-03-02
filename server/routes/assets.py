@@ -478,7 +478,15 @@ def create_assets_router() -> APIRouter:
         if not anima_dir.exists():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
-        is_realistic = body.image_style == "realistic"
+        # Resolve image_style: request body > config default (not "anime" hardcode)
+        style = body.image_style
+        if not style:
+            try:
+                from core.config.models import load_config
+                style = load_config().image_gen.image_style or "realistic"
+            except Exception:
+                style = "realistic"
+        is_realistic = style == "realistic"
 
         # Resolve vibe image when style_from is provided
         vibe_image: bytes | None = None
@@ -533,9 +541,8 @@ def create_assets_router() -> APIRouter:
         from core.config.models import ImageGenConfig
         from core.tools.image_gen import ImageGenPipeline
 
-        style = body.image_style or "anime"
         pipeline = ImageGenPipeline(
-            anima_dir, config=ImageGenConfig(image_style=style),
+            anima_dir, config=ImageGenConfig(image_style=style or "realistic"),
         )
 
         gen_kwargs: dict = {
@@ -619,7 +626,15 @@ def create_assets_router() -> APIRouter:
                 detail=f"Backup not found: {body.backup_id}",
             )
 
-        is_realistic = body.image_style == "realistic"
+        # Resolve image_style: request body > config default
+        style = body.image_style
+        if not style:
+            try:
+                from core.config.models import load_config
+                style = load_config().image_gen.image_style or "realistic"
+            except Exception:
+                style = "realistic"
+        is_realistic = style == "realistic"
         fullbody_filename = (
             "avatar_fullbody_realistic.png" if is_realistic
             else "avatar_fullbody.png"
@@ -662,9 +677,8 @@ def create_assets_router() -> APIRouter:
         from core.config.models import ImageGenConfig
         from core.tools.image_gen import ImageGenPipeline
 
-        style = body.image_style or "anime"
         pipeline = ImageGenPipeline(
-            anima_dir, config=ImageGenConfig(image_style=style),
+            anima_dir, config=ImageGenConfig(image_style=style or "realistic"),
         )
 
         app = request.app
