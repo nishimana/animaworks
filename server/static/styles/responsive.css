@@ -373,9 +373,36 @@ body.sidebar-collapsed .sidebar-collapse-btn {
   }
   .chat-anima-tabs-header .anima-tabs::-webkit-scrollbar { display: none; }
 
-  .chat-anima-tabs-header .anima-tab-name,
-  .chat-anima-tabs-header .anima-tab-close {
+  .chat-anima-tabs-header .anima-tab-name {
     display: none;
+  }
+
+  .chat-anima-tabs-header .anima-tab-wrap {
+    position: relative;
+  }
+
+  .chat-anima-tabs-header .anima-tab-close {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    font-size: 0.7rem;
+    line-height: 1;
+    border-radius: 50%;
+    background: var(--aw-color-bg-secondary);
+    border: 1px solid var(--aw-color-border);
+    color: var(--aw-color-text-muted);
+    z-index: 2;
+  }
+
+  .chat-anima-tabs-header .anima-tab-close:active {
+    background: var(--aw-color-bg-hover);
+    color: var(--aw-color-text-primary);
   }
 
   .chat-anima-tabs-header .anima-tab {

@@ -133,7 +133,7 @@
   background: var(--aw-color-bg-primary);
   box-shadow: 0 14px 30px rgba(0, 0, 0, 0.18);
   padding: 0.35rem;
-  z-index: 10;
+  z-index: 9999;
   display: none;
 }
 
@@ -337,6 +337,27 @@
   color: var(--aw-color-text-primary);
 }
 
+/* --- Anima tab floating tooltip (icon-only mode) --- */
+.anima-tab-tooltip {
+  position: fixed;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: var(--aw-color-bg-tertiary, #333);
+  color: var(--aw-color-text-primary, #eee);
+  font-size: 0.78rem;
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+  z-index: 9999;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+.anima-tab-tooltip.visible {
+  opacity: 1;
+}
+
 /* --- Mobile-only unified header elements (hidden on desktop) --- */
 .chat-unified-hamburger,
 .chat-thread-dropdown,
@@ -344,6 +365,34 @@
 .chat-unified-user-btn,
 .chat-unified-user-menu {
   display: none;
+}
+
+/* ── Split / Close pane buttons ──────── */
+.chat-split-pane-btn,
+.chat-close-pane-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: none;
+  color: var(--aw-color-text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.chat-split-pane-btn:hover,
+.chat-close-pane-btn:hover {
+  background: var(--aw-color-bg-hover);
+  color: var(--aw-color-text-primary);
+}
+
+.chat-close-pane-btn:hover {
+  color: var(--aw-color-danger, #ef4444);
 }
 
 /* --- Desktop rail layout when sidebar is hidden --- */
@@ -398,6 +447,7 @@
   body.sidebar-collapsed .chat-anima-tabs-header .anima-tab-wrap {
     width: 100%;
     justify-content: center;
+    position: relative;
   }
 
   body.sidebar-collapsed .chat-anima-tabs-header .anima-tab {
@@ -409,14 +459,44 @@
     gap: 0;
   }
 
-  body.sidebar-collapsed .chat-anima-tabs-header .anima-tab-name,
-  body.sidebar-collapsed .chat-anima-tabs-header .anima-tab-close {
+  body.sidebar-collapsed .chat-anima-tabs-header .anima-tab-name {
     display: none;
+  }
+
+  body.sidebar-collapsed .chat-anima-tabs-header .anima-tab-close {
+    position: absolute;
+    top: -4px;
+    right: 2px;
+    display: none;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    font-size: 0.72rem;
+    line-height: 18px;
+    text-align: center;
+    border-radius: 50%;
+    background: var(--aw-color-bg-secondary);
+    border: 1px solid var(--aw-color-border);
+    color: var(--aw-color-text-muted);
+    z-index: 2;
+  }
+
+  body.sidebar-collapsed .chat-anima-tabs-header .anima-tab-wrap:hover .anima-tab-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   body.sidebar-collapsed .chat-anima-tabs-header .anima-tab-avatar {
     width: 36px;
     height: 36px;
+  }
+
+  body.sidebar-collapsed .chat-split-pane-btn,
+  body.sidebar-collapsed .chat-close-pane-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 999px;
   }
 
   body.sidebar-collapsed .chat-add-conversation {
@@ -460,7 +540,7 @@
     min-height: 0;
   }
 
-  body.sidebar-collapsed #chatPageForm {
+  body.sidebar-collapsed [data-chat-id="chatPageForm"] {
     grid-column: 2;
     grid-row: 3;
   }
@@ -2076,5 +2156,102 @@
 @media (max-width: 768px) {
   .chat-input {
     font-size: 16px;
+  }
+}
+
+/* ============================================
+   Multi-Pane Host & Splitter
+   ============================================ */
+
+.chat-pane-host {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.chat-pane {
+  display: flex;
+  flex: 1 0 0%;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+  transition: box-shadow 0.15s;
+}
+
+.chat-pane .chat-page-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.chat-pane.focused {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--aw-color-accent) 40%, transparent 60%);
+  z-index: 1;
+}
+
+.chat-pane:only-child.focused {
+  box-shadow: none;
+}
+
+/* ── Splitter ─────────────────────────── */
+
+.chat-pane-splitter {
+  width: 5px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: var(--aw-color-border-light, #e5e7eb);
+  position: relative;
+  z-index: 2;
+  transition: background 0.15s;
+}
+
+.chat-pane-splitter:hover,
+.chat-pane-splitter:active,
+.chat-pane-splitter.active {
+  background: var(--aw-color-accent, #3b82f6);
+}
+
+.chat-pane-splitter::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 3px;
+  height: 24px;
+  border-radius: 2px;
+  background: var(--aw-color-text-muted, #9ca3af);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.chat-pane-splitter:hover::before,
+.chat-pane-splitter.active::before {
+  opacity: 0.6;
+}
+
+/* ── Mobile: single pane only ─────────── */
+@media (max-width: 768px) {
+  .chat-pane-host {
+    flex-direction: column;
+  }
+
+  .chat-pane-splitter {
+    display: none;
+  }
+
+  .chat-pane:not(.focused) {
+    display: none;
+  }
+
+  .chat-pane.focused {
+    box-shadow: none;
+  }
+
+  .chat-split-pane-btn,
+  .chat-close-pane-btn {
+    display: none !important;
   }
 }

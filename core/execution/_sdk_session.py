@@ -16,7 +16,7 @@ import json
 import logging
 import shutil
 from collections.abc import AsyncGenerator
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -75,6 +75,11 @@ def _cleanup_prompt_files(files: list[Path]) -> None:
 
 # ── Session ID persistence ───────────────────────────────────
 
+# Align with conversation.py SESSION_GAP_MINUTES: if the session is older
+# than this, start fresh instead of resuming (avoids immediate compaction
+# when the restored transcript + new system prompt exceed context limits).
+SESSION_RESUME_TIMEOUT_MIN = 10
+
 def _session_file(session_type: str, thread_id: str = "default") -> str:
     """Return the session file name for the given session type."""
     if thread_id != "default":
@@ -83,15 +88,37 @@ def _session_file(session_type: str, thread_id: str = "default") -> str:
 
 
 def _load_session_id(anima_dir: Path, session_type: str = "chat", thread_id: str = "default") -> str | None:
-    """Load persisted session ID for SDK session resume."""
+    """Load persisted session ID for SDK session resume.
+
+    Returns ``None`` when the saved session is older than
+    ``SESSION_RESUME_TIMEOUT_MIN`` minutes so that idle conversations
+    start fresh and avoid immediate auto-compact on resume.
+    """
     path = anima_dir / "state" / _session_file(session_type, thread_id)
     if not path.exists():
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        return data.get("session_id")
-    except (json.JSONDecodeError, OSError):
-        logger.warning("Failed to load session ID from %s", path)
+        session_id = data.get("session_id")
+        if not session_id:
+            return None
+
+        ts_str = data.get("timestamp")
+        if ts_str:
+            saved = datetime.fromisoformat(ts_str)
+            if saved.tzinfo is None:
+                saved = saved.replace(tzinfo=timezone.utc)
+            elapsed_min = (datetime.now(timezone.utc) - saved).total_seconds() / 60
+            if elapsed_min > SESSION_RESUME_TIMEOUT_MIN:
+                logger.info(
+                    "Session resume skipped (%s/%s): idle %.1f min > %d min threshold",
+                    session_type, anima_dir.name, elapsed_min, SESSION_RESUME_TIMEOUT_MIN,
+                )
+                return None
+
+        return session_id
+    except (json.JSONDecodeError, OSError, ValueError) as exc:
+        logger.warning("Failed to load session ID from %s: %s", path, exc)
         return None
 
 
@@ -101,7 +128,7 @@ def _save_session_id(anima_dir: Path, session_id: str, session_type: str = "chat
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({
         "session_id": session_id,
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }, ensure_ascii=False), encoding="utf-8")
 
 

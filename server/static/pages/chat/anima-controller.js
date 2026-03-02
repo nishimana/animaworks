@@ -1,15 +1,55 @@
 // ── Anima Selection / Tab / Avatar Controller ──
 import {
-  $, isTabOpen, refreshAnimaUnread,
+  isTabOpen, refreshAnimaUnread,
   clearUnreadForActiveThread, loadDraft, saveDraft, chatInputMaxHeight,
   fetchChatUiState, scheduleSaveChatUiState, mergeThreadsFromSessions,
 } from "./ctx.js";
 import { bustupCandidates, resolveAvatar } from "../../modules/avatar-resolver.js";
 
 export function createAnimaController(ctx) {
+  const $ = ctx.$;
   const { state, deps } = ctx;
   const { api, escapeHtml, t, logger } = deps;
   let _selectGen = 0;
+  let _tooltipEl = null;
+  let _tooltipHideTimer = null;
+
+  function _getTooltip() {
+    if (_tooltipEl) return _tooltipEl;
+    _tooltipEl = document.createElement("div");
+    _tooltipEl.className = "anima-tab-tooltip";
+    document.body.appendChild(_tooltipEl);
+    return _tooltipEl;
+  }
+
+  function _showTabTooltip(btn) {
+    const name = btn.dataset?.anima;
+    if (!name) return;
+    const nameEl = btn.querySelector(".anima-tab-name");
+    if (nameEl && getComputedStyle(nameEl).display !== "none") return;
+
+    clearTimeout(_tooltipHideTimer);
+    const tip = _getTooltip();
+    tip.textContent = name;
+    tip.classList.add("visible");
+
+    const rect = btn.getBoundingClientRect();
+    const collapsed = document.body.classList.contains("sidebar-collapsed");
+    if (collapsed) {
+      tip.style.left = `${rect.right + 8}px`;
+      tip.style.top = `${rect.top + rect.height / 2}px`;
+      tip.style.transform = "translateY(-50%)";
+    } else {
+      tip.style.left = `${rect.left + rect.width / 2}px`;
+      tip.style.top = `${rect.bottom + 6}px`;
+      tip.style.transform = "translateX(-50%)";
+    }
+  }
+
+  function _hideTabTooltip() {
+    clearTimeout(_tooltipHideTimer);
+    if (_tooltipEl) _tooltipEl.classList.remove("visible");
+  }
 
   function ensureAnimaTabAvatar(name) {
     if (!name) return Promise.resolve();
@@ -112,6 +152,12 @@ export function createAnimaController(ctx) {
         }
         openOrSelectAnima(anima);
       });
+      btn.addEventListener("mouseenter", () => _showTabTooltip(btn));
+      btn.addEventListener("mouseleave", () => _hideTabTooltip());
+      btn.addEventListener("touchstart", () => {
+        _showTabTooltip(btn);
+        _tooltipHideTimer = setTimeout(_hideTabTooltip, 1500);
+      }, { passive: true });
     });
     container.querySelectorAll(".anima-tab-close").forEach(btn => {
       btn.addEventListener("click", e => {

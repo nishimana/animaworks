@@ -1,7 +1,48 @@
 // ── Event Binding Controller ──────────────────
-import { $, saveDraft, chatInputMaxHeight } from "./ctx.js";
+import { saveDraft, chatInputMaxHeight } from "./ctx.js";
+
+function _positionDropdown(menu, trigger, { align = "right" } = {}) {
+  const rect = trigger.getBoundingClientRect();
+  const gap = 5;
+  menu.style.position = "fixed";
+  menu.style.top = `${rect.bottom + gap}px`;
+  menu.style.bottom = "auto";
+
+  if (align === "right") {
+    menu.style.left = "auto";
+    menu.style.right = `${window.innerWidth - rect.right}px`;
+  } else {
+    menu.style.right = "auto";
+    menu.style.left = `${rect.left}px`;
+  }
+
+  requestAnimationFrame(() => {
+    const mRect = menu.getBoundingClientRect();
+    if (mRect.right > window.innerWidth - 8) {
+      menu.style.left = "auto";
+      menu.style.right = "8px";
+    }
+    if (mRect.left < 8) {
+      menu.style.right = "auto";
+      menu.style.left = "8px";
+    }
+    if (mRect.bottom > window.innerHeight - 8) {
+      menu.style.top = "auto";
+      menu.style.bottom = `${window.innerHeight - rect.top + gap}px`;
+    }
+  });
+}
+
+function _resetDropdownPosition(menu) {
+  menu.style.position = "";
+  menu.style.top = "";
+  menu.style.bottom = "";
+  menu.style.left = "";
+  menu.style.right = "";
+}
 
 export function createEventsController(ctx) {
+  const $ = ctx.$;
   const { state, deps } = ctx;
   const { t } = deps;
 
@@ -13,16 +54,7 @@ export function createEventsController(ctx) {
     }
   }
 
-  function bindEvents() {
-    // Mobile tab switching
-    for (const tabId of ["chatMobileTabChat", "chatMobileTabInfo"]) {
-      addListener(tabId, "click", e => ctx.controllers.sidebar.switchMobileTab(e.target.dataset.panel));
-    }
-
-    // Escape to dismiss bustup overlay
-    document.addEventListener("keydown", ctx.controllers.avatar.onBustupEscape);
-    state.boundListeners.push({ el: document, event: "keydown", handler: ctx.controllers.avatar.onBustupEscape });
-
+  function bindPaneEvents() {
     // Add conversation picker
     addListener("chatAddConversationBtn", "click", e => {
       e.stopPropagation();
@@ -30,13 +62,20 @@ export function createEventsController(ctx) {
       if (!area) return;
       const nextOpen = !area.classList.contains("open");
       area.classList.toggle("open", nextOpen);
-      if (nextOpen) ctx.controllers.anima.renderAddConversationMenu();
+      if (nextOpen) {
+        ctx.controllers.anima.renderAddConversationMenu();
+        const menu = $("chatAddConversationMenu");
+        const btn = $("chatAddConversationBtn");
+        if (menu && btn) _positionDropdown(menu, btn);
+      }
     });
     const closeMenu = e => {
       const area = $("chatAddConversationArea");
       if (!area || !area.classList.contains("open")) return;
       if (e.target instanceof Element && area.contains(e.target)) return;
       area.classList.remove("open");
+      const menu = $("chatAddConversationMenu");
+      if (menu) _resetDropdownPosition(menu);
     };
     document.addEventListener("pointerdown", closeMenu);
     state.boundListeners.push({ el: document, event: "pointerdown", handler: closeMenu });
@@ -85,27 +124,6 @@ export function createEventsController(ctx) {
       ctx.controllers.streaming.updateSendButton();
     });
 
-    // Right tab switching
-    for (const tabId of ["chatTabState", "chatTabActivity", "chatTabHistory"]) {
-      addListener(tabId, "click", e => ctx.controllers.sidebar.switchRightTab(e.target.dataset.tab));
-    }
-    addListener("chatRightPaneToggleBtn", "click", () => ctx.controllers.sidebar.toggleRightPane());
-
-    // Memory tabs
-    state.container.querySelectorAll(".memory-tab").forEach(btn => {
-      const handler = () => {
-        state.activeMemoryTab = btn.dataset.tab;
-        state.container.querySelectorAll(".memory-tab").forEach(b => b.classList.toggle("active", b.dataset.tab === state.activeMemoryTab));
-        const contentArea = $("chatMemoryContentArea");
-        const fileList = $("chatMemoryFileList");
-        if (contentArea) contentArea.style.display = "none";
-        if (fileList) fileList.style.display = "";
-        ctx.controllers.memory.loadMemoryTab();
-      };
-      btn.addEventListener("click", handler);
-      state.boundListeners.push({ el: btn, event: "click", handler });
-    });
-
     // Attach / file input
     addListener("chatPageAttachBtn", "click", () => { $("chatPageFileInput")?.click(); });
     addListener("chatPageFileInput", "change", () => {
@@ -113,24 +131,14 @@ export function createEventsController(ctx) {
       if (fi?.files.length > 0) { state.imageInputManager?.addFiles(fi.files); fi.value = ""; }
     });
 
+    // Split / close pane
+    addListener("chatSplitPaneBtn", "click", () => { state.paneHost?.splitPane(); });
+    addListener("chatClosePaneBtn", "click", () => {
+      if (state.paneId != null) state.paneHost?.removePane(state.paneId);
+    });
+
     // Image input + voice init
     ctx.controllers.imageVoice.initImageInput();
-
-    // Memory back
-    addListener("chatMemoryBackBtn", "click", () => {
-      const ca = $("chatMemoryContentArea");
-      const fl = $("chatMemoryFileList");
-      if (ca) ca.style.display = "none";
-      if (fl) fl.style.display = "";
-    });
-
-    // History back
-    addListener("chatHistoryBackBtn", "click", () => {
-      const detail = $("chatHistoryDetail");
-      const list = $("chatHistorySessionList");
-      if (detail) detail.style.display = "none";
-      if (list) list.style.display = "";
-    });
 
     // Infinite scroll observer + scroll-to-bottom tracking
     ctx.controllers.renderer.setupChatObserver();
@@ -141,16 +149,19 @@ export function createEventsController(ctx) {
   }
 
   function _bindUnifiedHeader(addListener) {
-    // Hamburger: reuse the same logic as the main hamburger
     addListener("chatUnifiedHamburger", "click", () => {
       document.body.classList.toggle("mobile-nav-open");
     });
 
-    // User menu toggle
     addListener("chatUnifiedUserBtn", "click", e => {
       e.stopPropagation();
       const menu = $("chatUnifiedUserMenu");
-      if (menu) menu.classList.toggle("open");
+      const btn = $("chatUnifiedUserBtn");
+      if (!menu) return;
+      const nextOpen = !menu.classList.contains("open");
+      menu.classList.toggle("open", nextOpen);
+      if (nextOpen && btn) _positionDropdown(menu, btn);
+      else _resetDropdownPosition(menu);
     });
     const closeUserMenu = e => {
       const menu = $("chatUnifiedUserMenu");
@@ -159,29 +170,29 @@ export function createEventsController(ctx) {
       if (btn && btn.contains(e.target)) return;
       if (menu.contains(e.target)) return;
       menu.classList.remove("open");
+      _resetDropdownPosition(menu);
     };
     document.addEventListener("pointerdown", closeUserMenu);
     state.boundListeners.push({ el: document, event: "pointerdown", handler: closeUserMenu });
 
-    // User logout
     addListener("chatUnifiedUserLogout", "click", () => {
       const mainLogout = document.getElementById("logoutBtn");
       if (mainLogout) mainLogout.click();
     });
 
-    // Info panel toggle (reuse sidebar toggle)
     addListener("chatUnifiedInfoBtn", "click", () => ctx.controllers.sidebar.toggleRightPane());
 
-    // Populate user info
     _populateUnifiedUser();
 
-    // Thread dropdown toggle
     addListener("chatThreadDropdownBtn", "click", e => {
       e.stopPropagation();
       const dd = $("chatThreadDropdown");
       if (dd) dd.classList.toggle("open");
       if (dd?.classList.contains("open")) {
         ctx.controllers.thread.renderThreadDropdownMenu?.();
+        const menu = $("chatThreadDropdownMenu");
+        const btn = $("chatThreadDropdownBtn");
+        if (menu && btn) _positionDropdown(menu, btn);
       }
     });
     const closeThreadDropdown = e => {
@@ -189,6 +200,8 @@ export function createEventsController(ctx) {
       if (!dd || !dd.classList.contains("open")) return;
       if (dd.contains(e.target)) return;
       dd.classList.remove("open");
+      const menu = $("chatThreadDropdownMenu");
+      if (menu) _resetDropdownPosition(menu);
     };
     document.addEventListener("pointerdown", closeThreadDropdown);
     state.boundListeners.push({ el: document, event: "pointerdown", handler: closeThreadDropdown });
@@ -205,5 +218,5 @@ export function createEventsController(ctx) {
     if (initialEl) initialEl.textContent = (userName.charAt(0) || "?").toUpperCase();
   }
 
-  return { bindEvents };
+  return { bindPaneEvents };
 }
