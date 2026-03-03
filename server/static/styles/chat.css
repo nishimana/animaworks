@@ -248,9 +248,18 @@
   position: relative;
 }
 
+.anima-tab.is-streaming:not(.active) {
+  animation: none;
+}
+
 .anima-tab.is-streaming .anima-tab-avatar {
   animation: streaming-avatar-ring 1.4s ease-in-out infinite;
   animation-play-state: running !important;
+}
+
+.anima-tab.is-streaming:not(.active) .anima-tab-avatar {
+  animation: none;
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--aw-color-accent) 45%, transparent 55%);
 }
 
 .anima-tab.is-streaming::after {
@@ -269,6 +278,13 @@
   pointer-events: none;
 }
 
+.anima-tab.is-streaming:not(.active)::after {
+  background: color-mix(in srgb, var(--aw-color-accent) 55%, var(--aw-color-bg-secondary) 45%);
+  width: 8px;
+  height: 8px;
+  animation: streaming-badge-fade 2s ease-in-out infinite;
+}
+
 @keyframes streaming-avatar-ring {
   0%, 100% {
     box-shadow: 0 0 0 2px var(--aw-color-accent), 0 0 6px 2px color-mix(in srgb, var(--aw-color-accent) 40%, transparent 60%);
@@ -283,6 +299,11 @@
 @keyframes streaming-badge-pulse {
   0%, 100% { transform: scale(1); opacity: 1; }
   50% { transform: scale(1.4); opacity: 0.6; }
+}
+
+@keyframes streaming-badge-fade {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 0.3; }
 }
 
 .anima-tab.has-unread-complete {
@@ -535,6 +556,11 @@
     right: 0;
     width: 12px;
     height: 12px;
+  }
+
+  .chat-anima-tabs-header .anima-tab.is-streaming:not(.active)::after {
+    width: 7px;
+    height: 7px;
   }
 
   .chat-split-pane-btn,
