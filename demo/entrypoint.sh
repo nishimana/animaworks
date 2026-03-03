@@ -83,6 +83,18 @@ with open(cfg_path, 'w') as f:
         echo "Config overlay applied."
     fi
 
+    # 5. Copy pre-built character assets
+    for char_dir in "${PRESET_DIR}/assets/"*/; do
+        [ -d "$char_dir" ] || continue
+        char_name="$(basename "$char_dir")"
+        target_dir="${DATA_DIR}/animas/${char_name}/assets"
+        if [ ! -d "$target_dir" ]; then
+            mkdir -p "$target_dir"
+        fi
+        cp "$char_dir"/* "$target_dir/" 2>/dev/null || true
+    done
+    echo "Character assets installed."
+
     echo "=== Initialization complete ==="
 else
     echo "Existing configuration found — skipping initialization."
