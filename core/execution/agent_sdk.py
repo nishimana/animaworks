@@ -330,8 +330,7 @@ class AgentSDKExecutor(BaseExecutor):
             "WebFetch", "WebSearch",
             "mcp__aw__*",
         ]
-        if not _has_subs:
-            _allowed_tools.append("Task")
+        _allowed_tools.append("Task")
 
         kwargs: dict[str, Any] = dict(
             system_prompt=prompt_kwarg,

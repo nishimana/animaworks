@@ -5,7 +5,8 @@ This is a Heartbeat. Follow the process below.
 
 ## Plan
 Based on your observations, decide what to do next.
-- If a new task is needed: write a task file to state/pending/
+- Tasks for subordinates: delegate via delegate_task
+- Tasks for yourself to do later: write a task file to state/pending/
 - If there is a blocker: report only (send_message / call_human)
 - If nothing: HEARTBEAT_OK
 

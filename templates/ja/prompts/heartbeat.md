@@ -5,7 +5,8 @@
 
 ## Plan（計画）
 観察結果に基づき、次に行うべきタスクを判断してください。
-- 新しいタスクが必要な場合: state/pending/ にタスクファイルを書き出す
+- 部下に任せるべきタスク: delegate_task で委任する
+- 自分で後でやるタスク: state/pending/ にタスクファイルを書き出す
 - ブロッカーがある場合: 報告のみ行う（send_message / call_human）
 - 何もない場合: HEARTBEAT_OK
 
