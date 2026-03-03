@@ -183,12 +183,11 @@ def _build_mcp_tools() -> tuple[list[Tool], frozenset[str]]:
     """Convert canonical AnimaWorks schemas to MCP Tool objects.
 
     Reads all relevant schema lists from ``core.tooling.schemas`` and
-    filters to the exposed tools.  Additionally loads permitted external
-    tool schemas (chatwork, slack, etc.) from permissions.md.
+    filters to the exposed tools.
 
     Returns:
         Tuple of (tool_list, exposed_name_set) where exposed_name_set
-        is the union of internal and external tool names.
+        is the set of internal tool names.
     """
     from core.tooling.schemas import (
         CHANNEL_TOOLS,
@@ -199,6 +198,7 @@ def _build_mcp_tools() -> tuple[list[Tool], frozenset[str]]:
         SKILL_TOOLS,
         SUPERVISOR_TOOLS,
         TASK_TOOLS,
+        USE_TOOL,
     )
 
     all_schemas: list[dict[str, Any]] = [
@@ -210,32 +210,10 @@ def _build_mcp_tools() -> tuple[list[Tool], frozenset[str]]:
         *KNOWLEDGE_TOOLS,
         *SUPERVISOR_TOOLS,
         *SKILL_TOOLS,
+        *USE_TOOL,
     ]
 
-    # Load permitted external tool schemas from permissions.md
-    external_schemas: list[dict[str, Any]] = []
-    anima_dir_env = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
-    if anima_dir_env:
-        anima_dir = Path(anima_dir_env).resolve()
-        if anima_dir.is_dir():
-            try:
-                from core.tooling.schemas import load_external_schemas_by_category
-
-                permitted = _load_permitted_categories(anima_dir)
-                if permitted:
-                    external_schemas = load_external_schemas_by_category(permitted)
-                    all_schemas.extend(external_schemas)
-                    logger.info(
-                        "Loaded %d external tool schemas for categories: %s",
-                        len(external_schemas),
-                        ", ".join(sorted(permitted)),
-                    )
-            except Exception:
-                logger.debug("External tool schema loading failed", exc_info=True)
-
-    # Build the dynamic exposed set: internal + external tool names
-    external_names = frozenset(s["name"] for s in external_schemas)
-    exposed = _EXPOSED_TOOL_NAMES | external_names
+    exposed = _EXPOSED_TOOL_NAMES | frozenset(s["name"] for s in USE_TOOL)
 
     # Apply DB description overrides
     from core.tooling.schemas import apply_db_descriptions

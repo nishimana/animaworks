@@ -83,62 +83,11 @@ def build_tools_guide(
 ) -> str:
     """Build a compact summary table of allowed external tools.
 
-    Replaces the previous verbose CLI-example format with a concise
-    table that saves ~60-80% of system prompt tokens.  Agents can use
-    ``animaworks-tool <tool> --help`` or the ``discover_tools`` MCP tool
-    for detailed usage.
+    .. deprecated::
+        External tools are now accessed via ``use_tool`` with skill-based
+        documentation.  This function returns an empty string.
     """
-    if not tool_registry and not personal_tools:
-        return ""
-
-    from core.tools import TOOL_MODULES
-    from core.tools._base import load_execution_profiles
-
-    profiles = load_execution_profiles(TOOL_MODULES, personal_tools)
-
-    parts: list[str] = [
-        _gs("header"),
-        "",
-        _gs("intro"),
-        "",
-        _gs("table_header"),
-        _gs("table_separator"),
-    ]
-
-    bg_tools: list[str] = []
-
-    for tool_name in sorted(tool_registry):
-        if tool_name not in TOOL_MODULES:
-            continue
-        row = _get_tool_summary(tool_name, TOOL_MODULES[tool_name])
-        if row:
-            parts.append(row)
-        # Track background-eligible subcommands
-        profile = profiles.get(tool_name, {})
-        bg_subcmds = [name for name, info in profile.items() if info.get("background_eligible")]
-        if bg_subcmds:
-            bg_tools.append(f"{tool_name} ({', '.join(sorted(bg_subcmds))})")
-
-    if personal_tools:
-        for tool_name in sorted(personal_tools):
-            row = _get_tool_summary_from_file(tool_name, personal_tools[tool_name])
-            if row:
-                parts.append(row)
-            profile = profiles.get(tool_name, {})
-            bg_subcmds = [name for name, info in profile.items() if info.get("background_eligible")]
-            if bg_subcmds:
-                bg_tools.append(f"{tool_name} ({', '.join(sorted(bg_subcmds))})")
-
-    parts.append("")
-
-    if bg_tools:
-        parts.append(f"{_gs('long_running_label')}: {', '.join(bg_tools)}")
-        parts.append(_gs("long_running"))
-        parts.append("")
-
-    parts.append(_gs("footer"))
-
-    return "\n".join(parts)
+    return ""
 
 
 def load_tool_schemas(

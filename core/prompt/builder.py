@@ -854,23 +854,7 @@ def build_system_prompt(
             if _non_s:
                 parts.append(_non_s)
 
-    # External tools guide (skip for heartbeat)
-    _EXTERNAL_TOOLS_KEYWORDS = {"外部ツール", "External Tools", "external tools"}
-    if not is_heartbeat and permissions and any(kw in permissions for kw in _EXTERNAL_TOOLS_KEYWORDS) and (tool_registry or personal_tools):
-        if execution_mode == "a":
-            categories = ", ".join(sorted(tool_registry or []))
-            if personal_tools:
-                personal_cats = ", ".join(sorted(personal_tools.keys()))
-                categories = f"{categories}, {personal_cats}" if categories else personal_cats
-            parts.append(load_prompt(
-                "builder/external_tools_guide",
-                categories=categories,
-            ))
-        else:
-            from core.tooling.guide import build_tools_guide
-            tools_guide = build_tools_guide(tool_registry or [], personal_tools)
-            if tools_guide:
-                parts.append(tools_guide)
+    # External tools guide removed: use_tool + skill-based documentation replaces it
 
     # ── Group 5: 組織とコミュニケーション ─────────────────────
     parts.append(_ss.get("group5_header", "# 5. Organization and Communication"))
