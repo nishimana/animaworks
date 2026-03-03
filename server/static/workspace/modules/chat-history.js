@@ -36,6 +36,7 @@ export function renderOpts() {
     smartTimestamp,
     renderChatImages,
     animaName: getState().conversationAnima,
+    avatarMap: getState().chatAvatarMap || {},
     truncateLen: TOOL_RESULT_TRUNCATE,
     labels: {
       thinking: "考え中...",

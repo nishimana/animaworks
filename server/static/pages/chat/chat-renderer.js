@@ -57,6 +57,7 @@ export function createChatRenderer(ctx) {
   const _renderOpts = () => ({
     escapeHtml, renderMarkdown, smartTimestamp, renderChatImages,
     animaName: state.selectedAnima,
+    avatarMap: state.animaTabAvatarUrls || {},
     truncateLen: CONSTANTS.TOOL_RESULT_TRUNCATE,
     labels: {
       thinking: t("chat.thinking"),

@@ -10,6 +10,29 @@ function _stripVoiceSuffix(text) {
   return text ? text.replace(_RE_VOICE_MODE_SUFFIX, "") : text;
 }
 
+const _USER_SVG = `<svg class="chat-msg-avatar-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>`;
+
+function _renderAvatar(name, avatarMap) {
+  if (!avatarMap) return "";
+  const url = avatarMap[name];
+  if (url) {
+    return `<div class="chat-msg-avatar"><img class="chat-msg-avatar-img" src="${url}" alt=""></div>`;
+  }
+  if (name) {
+    const ch = (name.charAt(0) || "?").toUpperCase();
+    return `<div class="chat-msg-avatar"><span class="chat-msg-avatar-initial">${ch}</span></div>`;
+  }
+  return `<div class="chat-msg-avatar">${_USER_SVG}</div>`;
+}
+
+function _wrapRow(role, bubbleHtml, avatarHtml) {
+  if (!avatarHtml) return bubbleHtml;
+  if (role === "user") {
+    return `<div class="chat-msg-row user">${bubbleHtml}${avatarHtml}</div>`;
+  }
+  return `<div class="chat-msg-row assistant">${avatarHtml}${bubbleHtml}</div>`;
+}
+
 /**
  * Render a history message (from conversation API) to HTML.
  * @param {object} msg - Message object with role, content, tool_calls, images, ts, from_person
@@ -25,6 +48,7 @@ export function renderHistoryMessage(msg, opts) {
   const { escapeHtml, renderMarkdown, smartTimestamp } = opts;
   const renderImages = opts.renderChatImages || (() => "");
   const truncLen = opts.truncateLen || DEFAULT_TOOL_RESULT_TRUNCATE;
+  const avatarMap = opts.avatarMap || null;
 
   const ts = msg.ts ? smartTimestamp(msg.ts) : "";
   const tsHtml = ts ? `<span class="chat-ts">${escapeHtml(ts)}</span>` : "";
@@ -40,14 +64,18 @@ export function renderHistoryMessage(msg, opts) {
     const toLabel = msg.to_person
       ? `<div style="font-size:0.72rem; opacity:0.7; margin-bottom:2px;">→ ${escapeHtml(msg.to_person)}</div>`
       : "";
-    return `<div class="chat-bubble assistant">${toLabel}${content}${imagesHtml}${toolHtml}${tsHtml}</div>`;
+    const bubble = `<div class="chat-bubble assistant">${toLabel}${content}${imagesHtml}${toolHtml}${tsHtml}</div>`;
+    return _wrapRow("assistant", bubble, _renderAvatar(opts.animaName, avatarMap));
   }
 
   const fromLabel = msg.from_person && msg.from_person !== "human"
     ? `<div style="font-size:0.72rem; opacity:0.7; margin-bottom:2px;">${escapeHtml(msg.from_person)}</div>`
     : "";
   const userContent = _stripVoiceSuffix(msg.content || "");
-  return `<div class="chat-bubble user">${fromLabel}<div class="chat-text">${escapeHtml(userContent)}</div>${tsHtml}</div>`;
+  const bubble = `<div class="chat-bubble user">${fromLabel}<div class="chat-text">${escapeHtml(userContent)}</div>${tsHtml}</div>`;
+  const isAnima = msg.from_person && msg.from_person !== "human";
+  const avatarHtml = _renderAvatar(isAnima ? msg.from_person : null, avatarMap);
+  return _wrapRow("user", bubble, avatarHtml);
 }
 
 /**
@@ -206,13 +234,15 @@ export function renderLiveBubble(msg, opts) {
   const { escapeHtml, renderMarkdown, smartTimestamp } = opts;
   const renderImages = opts.renderChatImages || (() => "");
   const labels = opts.labels || {};
+  const avatarMap = opts.avatarMap || null;
 
   const ts = msg.timestamp ? smartTimestamp(msg.timestamp) : "";
   const tsHtml = ts ? `<span class="chat-ts">${escapeHtml(ts)}</span>` : "";
 
   if (msg.role === "thinking") {
     const thinkLabel = labels.thinking || "考え中...";
-    return `<div class="chat-bubble thinking"><span class="thinking-animation">${thinkLabel}</span></div>`;
+    const bubble = `<div class="chat-bubble thinking"><span class="thinking-animation">${thinkLabel}</span></div>`;
+    return _wrapRow("assistant", bubble, _renderAvatar(opts.animaName, avatarMap));
   }
 
   if (msg.role === "system") {
@@ -223,7 +253,8 @@ export function renderLiveBubble(msg, opts) {
     const imagesHtml = renderImages(msg.images, { animaName: opts.animaName });
     const userText = _stripVoiceSuffix(msg.text || "");
     const textHtml = userText ? `<div class="chat-text">${escapeHtml(userText)}</div>` : "";
-    return `<div class="chat-bubble user">${imagesHtml}${textHtml}${tsHtml}</div>`;
+    const bubble = `<div class="chat-bubble user">${imagesHtml}${textHtml}${tsHtml}</div>`;
+    return _wrapRow("user", bubble, _renderAvatar(null, avatarMap));
   }
 
   // assistant
@@ -255,7 +286,8 @@ export function renderLiveBubble(msg, opts) {
     : "";
   const imagesHtml = renderImages(msg.images, { animaName: opts.animaName });
 
-  return `<div class="chat-bubble assistant${streamClass}"${streamIdAttr}>${content}${imagesHtml}${compressionHtml}${toolHtml}${thinkingHtml}${tsHtml}</div>`;
+  const bubble = `<div class="chat-bubble assistant${streamClass}"${streamIdAttr}>${content}${imagesHtml}${compressionHtml}${toolHtml}${thinkingHtml}${tsHtml}</div>`;
+  return _wrapRow("assistant", bubble, _renderAvatar(opts.animaName, avatarMap));
 }
 
 /**
