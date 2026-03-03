@@ -118,6 +118,7 @@ export function createPaneHost(rootContainer) {
   let nextId = 0;
   const _sharedListeners = [];
   let _sharedBound = false;
+  let _savedPaneStates = null;
 
   const hostEl = rootContainer.querySelector('[data-chat-id="chatPaneHost"]');
 
@@ -147,7 +148,8 @@ export function createPaneHost(rootContainer) {
     ctx.state.container = paneEl;
     ctx.state.rootContainer = rootContainer;
     ctx.state.paneId = id;
-    ctx.state.paneHost = { splitPane, removePane };
+    ctx.state.paneIdx = panes.length;
+    ctx.state.paneHost = { splitPane, removePane, savePaneStates, getPaneState };
 
     ctx.controllers.anima = createAnimaController(ctx);
     ctx.controllers.thread = createThreadController(ctx);
@@ -384,9 +386,22 @@ export function createPaneHost(rootContainer) {
         paneCount: panes.length,
         focusedIdx,
         widths: panes.map(p => p.el.style.flex || ""),
+        paneStates: panes.map(p => ({
+          anima: p.ctx.state.selectedAnima || null,
+          threadId: p.ctx.state.selectedThreadId || "default",
+        })),
       };
       localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
     } catch { /* quota exceeded */ }
+  }
+
+  function savePaneStates() {
+    _saveLayout();
+  }
+
+  function getPaneState(idx) {
+    if (!_savedPaneStates || idx < 0 || idx >= _savedPaneStates.length) return null;
+    return _savedPaneStates[idx];
   }
 
   function _saveSplitterWidths(widths) {
@@ -404,6 +419,10 @@ export function createPaneHost(rootContainer) {
       if (!raw) return;
       const layout = JSON.parse(raw);
       if (!layout || typeof layout.paneCount !== "number") return;
+
+      if (Array.isArray(layout.paneStates)) {
+        _savedPaneStates = layout.paneStates;
+      }
 
       const count = _isMobile() ? 1 : Math.min(layout.paneCount, MAX_PANES);
       while (panes.length < count) addPane();

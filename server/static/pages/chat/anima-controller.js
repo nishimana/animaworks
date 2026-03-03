@@ -264,6 +264,7 @@ export function createAnimaController(ctx) {
 
     ctx.controllers.streaming.resumeActiveStream(name);
     scheduleSaveChatUiState(ctx);
+    state.paneHost?.savePaneStates?.();
   }
 
   function openOrSelectAnima(name) {
@@ -358,7 +359,18 @@ export function createAnimaController(ctx) {
       restoreChatUiState(uiState);
       renderAddConversationMenu();
       renderAnimaTabs();
-      if (state.animas.length > 0 && !state.selectedAnima) {
+
+      const paneState = state.paneHost?.getPaneState?.(state.paneIdx);
+      const known = new Set(state.animas.map(a => a.name));
+      if (paneState?.anima && known.has(paneState.anima)) {
+        state.selectedAnima = null;
+        if (!isTabOpen(ctx, paneState.anima)) {
+          state.animaTabs.push({ name: paneState.anima, unreadStar: false });
+        }
+        state.activeThreadByAnima[paneState.anima] = paneState.threadId || "default";
+        renderAnimaTabs();
+        openOrSelectAnima(paneState.anima);
+      } else if (state.animas.length > 0 && !state.selectedAnima) {
         const firstTab = state.animaTabs[0]?.name;
         openOrSelectAnima(firstTab || state.animas[0].name);
       } else if (state.selectedAnima) {
