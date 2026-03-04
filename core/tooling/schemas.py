@@ -929,6 +929,45 @@ SKILL_TOOLS: list[dict[str, Any]] = [
     },
 ]
 
+BACKGROUND_TASK_TOOLS: list[dict[str, Any]] = [
+    {
+        "name": "check_background_task",
+        "description": (
+            "バックグラウンドタスクの状態を確認する。"
+            "task_idを指定して、実行中・完了・失敗の状態と結果を取得する。"
+            "ツール呼び出しが background ステータスで返された場合に使用する。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "task_id": {
+                    "type": "string",
+                    "description": "確認するタスクのID（submit時に返されたID）",
+                },
+            },
+            "required": ["task_id"],
+        },
+    },
+    {
+        "name": "list_background_tasks",
+        "description": (
+            "バックグラウンドタスクの一覧を取得する。"
+            "ステータスでフィルタリング可能（running/completed/failed）。"
+            "省略時は全件を返す。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "enum": ["running", "completed", "failed", "pending"],
+                    "description": "フィルタするステータス（省略時は全件）",
+                },
+            },
+        },
+    },
+]
+
 PLAN_TASKS_TOOLS: list[dict[str, Any]] = [
     {
         "name": "plan_tasks",
@@ -1235,6 +1274,7 @@ def build_tool_list(
     include_tool_management: bool = False,
     include_task_tools: bool = False,
     include_plan_tasks: bool = False,
+    include_background_task_tools: bool = False,
     include_skill_tools: bool = False,
     skill_metas: list[Any] | None = None,
     common_skill_metas: list[Any] | None = None,
@@ -1253,6 +1293,7 @@ def build_tool_list(
         include_tool_management: Include refresh_tools/share_tool tools.
         include_task_tools: Include task queue tools (add_task, update_task, list_tasks).
         include_plan_tasks: Include plan_tasks DAG batch submission tool.
+        include_background_task_tools: Include background task check/list tools.
         include_skill_tools: Include skill on-demand loading tool.
         skill_metas: Personal skill metadata for dynamic description generation.
         common_skill_metas: Common skill metadata for dynamic description generation.
@@ -1289,6 +1330,8 @@ def build_tool_list(
         tools.extend(TASK_TOOLS)
     if include_plan_tasks:
         tools.extend(PLAN_TASKS_TOOLS)
+    if include_background_task_tools:
+        tools.extend(BACKGROUND_TASK_TOOLS)
     if external_schemas:
         tools.extend(external_schemas)
     tools = apply_db_descriptions(tools)

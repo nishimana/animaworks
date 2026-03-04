@@ -220,6 +220,8 @@ class ToolHandler(
             "update_task": self._handle_update_task,
             "list_tasks": self._handle_list_tasks,
             "plan_tasks": self._handle_plan_tasks,
+            "check_background_task": self._handle_check_background_task,
+            "list_background_tasks": self._handle_list_background_tasks,
         }
 
     # ── Properties and session management ─────────────────────
