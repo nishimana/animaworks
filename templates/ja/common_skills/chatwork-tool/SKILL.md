@@ -35,8 +35,9 @@ Chatworkのメッセージ送受信・検索・管理を行う外部ツール。
 
 ### unreplied — 未返信メッセージ確認
 ```json
-{"tool_name": "chatwork", "action": "unreplied", "args": {}}
+{"tool_name": "chatwork", "action": "unreplied", "args": {"include_toall": false}}
 ```
+- `include_toall` (任意, デフォルト: false): 全体宛メッセージを含めるか
 
 ### rooms — ルーム一覧
 ```json
@@ -45,8 +46,9 @@ Chatworkのメッセージ送受信・検索・管理を行う外部ツール。
 
 ### mentions — メンション取得
 ```json
-{"tool_name": "chatwork", "action": "mentions", "args": {}}
+{"tool_name": "chatwork", "action": "mentions", "args": {"include_toall": false}}
 ```
+- `include_toall` (任意, デフォルト: false): 全体宛メッセージを含めるか
 
 ### delete — メッセージ削除（自分の発言のみ）
 ```json

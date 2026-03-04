@@ -106,7 +106,7 @@ class AnthropicFallbackExecutor(BaseExecutor):
         """Build the Anthropic-format tool list."""
         canonical = build_tool_list(
             include_file_tools=False,
-            include_use_tool=bool(self._tool_registry),
+            include_use_tool=False,
             include_notification_tools=self._tool_handler._human_notifier is not None,
             include_admin_tools=(self._anima_dir / "skills" / "newstaff.md").exists(),
             include_supervisor_tools=self._has_subordinates(),

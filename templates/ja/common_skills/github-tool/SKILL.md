@@ -35,8 +35,9 @@ GitHubのIssue・PRをgh CLI経由で操作する外部ツール。
 
 ### create_pr — PR作成
 ```json
-{"tool_name": "github", "action": "create_pr", "args": {"title": "タイトル", "body": "本文", "head": "feature-branch", "base": "main"}}
+{"tool_name": "github", "action": "create_pr", "args": {"title": "タイトル", "body": "本文", "head": "feature-branch", "base": "main", "draft": false}}
 ```
+- `draft` (任意, デフォルト: false): ドラフトPRとして作成するか
 
 ## CLI使用法（Sモード）
 

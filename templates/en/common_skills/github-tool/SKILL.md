@@ -35,8 +35,9 @@ External tool for GitHub issue and PR management via gh CLI.
 
 ### create_pr — Create pull request
 ```json
-{"tool_name": "github", "action": "create_pr", "args": {"title": "Title", "body": "Description", "head": "feature-branch", "base": "main"}}
+{"tool_name": "github", "action": "create_pr", "args": {"title": "Title", "body": "Description", "head": "feature-branch", "base": "main", "draft": false}}
 ```
+- `draft` (optional, default: false): Create as draft PR
 
 ## CLI Usage (S-mode)
 

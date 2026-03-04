@@ -126,8 +126,8 @@ class TestBuildBaseTools:
         assert "search_code" in names
         assert "list_directory" in names
 
-    def test_includes_use_tool_when_tool_registry_set(self, anima_dir, model_config, memory):
-        """use_tool is included when tool_registry has permitted categories."""
+    def test_excludes_use_tool_in_mode_a(self, anima_dir, model_config, memory):
+        """use_tool is NOT included in Mode A (LiteLLM) — Mode B only."""
         th = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=["chatwork"])
         from core.execution.litellm_loop import LiteLLMExecutor
         ex = LiteLLMExecutor(
@@ -139,7 +139,7 @@ class TestBuildBaseTools:
         )
         tools = ex._build_base_tools()
         names = [t["function"]["name"] for t in tools]
-        assert "use_tool" in names
+        assert "use_tool" not in names
 
     def test_excludes_use_tool_when_tool_registry_empty(self, executor):
         """use_tool is excluded when tool_registry is empty."""

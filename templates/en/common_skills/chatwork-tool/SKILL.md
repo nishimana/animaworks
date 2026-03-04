@@ -35,8 +35,9 @@ External tool for Chatwork messaging, search, and room management.
 
 ### unreplied — Check unreplied messages
 ```json
-{"tool_name": "chatwork", "action": "unreplied", "args": {}}
+{"tool_name": "chatwork", "action": "unreplied", "args": {"include_toall": false}}
 ```
+- `include_toall` (optional, default: false): Include messages addressed to all
 
 ### rooms — List rooms
 ```json
@@ -45,12 +46,18 @@ External tool for Chatwork messaging, search, and room management.
 
 ### mentions — Get mentions
 ```json
-{"tool_name": "chatwork", "action": "mentions", "args": {}}
+{"tool_name": "chatwork", "action": "mentions", "args": {"include_toall": false}}
 ```
+- `include_toall` (optional, default: false): Include messages addressed to all
 
 ### delete — Delete message (own messages only)
 ```json
 {"tool_name": "chatwork", "action": "delete", "args": {"room": "room name or ID", "message_id": "message ID"}}
+```
+
+### sync — Sync messages (cache update)
+```json
+{"tool_name": "chatwork", "action": "sync", "args": {"room": "room name or ID"}}
 ```
 
 ## CLI Usage (S-mode)
@@ -62,9 +69,12 @@ animaworks-tool chatwork search KEYWORD [-r ROOM] [-n 50]
 animaworks-tool chatwork unreplied [--json]
 animaworks-tool chatwork rooms
 animaworks-tool chatwork mentions [--json]
+animaworks-tool chatwork delete ROOM MESSAGE_ID
+animaworks-tool chatwork sync [ROOM]
 ```
 
 ## Notes
 
 - Chatwork API Token must be configured in credentials
 - Room can be specified by name or room ID
+- Write token may be required for sending messages

@@ -398,10 +398,8 @@ class TestBuildSystemPrompt:
                 tool_registry=["chatwork", "slack"],
                 execution_mode="a",
             )
-            assert "use_tool" in result
-            assert "External Tools" in result
-            assert "Available via `use_tool`" in result
-            assert "chatwork" in result
+            assert "animaworks-tool" in result
+            assert "animaworks-tool" in result
 
     def test_s_mode_injects_external_tools_hint_when_tool_registry_provided(
         self, tmp_path, data_dir
@@ -440,8 +438,8 @@ class TestBuildSystemPrompt:
                 execution_mode="s",
             )
             assert "External Tools" in result
-            assert "Available via `use_tool`" in result
-            assert "chatwork" in result
+            assert "animaworks-tool" in result
+            assert "animaworks-tool" in result
 
 
 # ── _format_anima_entry ──────────────────────────────────

@@ -569,10 +569,10 @@ class TestLoadPermittedCategories:
 class TestExternalToolsInMcpTools:
     """Tests for external tool schema loading in _build_mcp_tools()."""
 
-    def test_use_tool_exposed_for_external_tools(
+    def test_use_tool_not_exposed_in_mcp(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """MCP server exposes use_tool instead of per-category external schemas."""
+        """MCP server does NOT expose use_tool (Mode B only)."""
         from core.mcp.server import _build_mcp_tools
 
         anima_dir = tmp_path / "test-anima"
@@ -584,8 +584,8 @@ class TestExternalToolsInMcpTools:
         tools, exposed = _build_mcp_tools()
 
         tool_names = {t.name for t in tools}
-        assert "use_tool" in tool_names
-        assert "use_tool" in exposed
+        assert "use_tool" not in tool_names
+        assert "use_tool" not in exposed
 
     def test_unpermitted_tools_excluded(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,

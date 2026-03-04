@@ -489,6 +489,8 @@ class ToolHandler(
         tool_name = args.get("tool_name", "")
         action = args.get("action", "")
         tool_args = args.get("args") or {}
+        if not isinstance(tool_args, dict):
+            tool_args = {}
 
         if not tool_name or not action:
             return _error_result(

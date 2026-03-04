@@ -245,6 +245,11 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
         end = _args.get("end", "")
         if not summary or not start or not end:
             return {"error": "summary, start, and end are required"}
+        raw_attendees = _args.get("attendees")
+        if isinstance(raw_attendees, str):
+            raw_attendees = [raw_attendees]
+        elif not isinstance(raw_attendees, list):
+            raw_attendees = None
         return client.add_event(
             summary=summary,
             start=start,
@@ -252,7 +257,7 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
             description=_args.get("description", ""),
             location=_args.get("location", ""),
             calendar_id=_args.get("calendar_id", "primary"),
-            attendees=_args.get("attendees"),
+            attendees=raw_attendees,
         )
 
     return {"error": f"Unknown action: {name}"}

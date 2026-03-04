@@ -101,7 +101,7 @@ class TestUseToolE2E:
         """LLM calls use_tool() → dispatch → responds."""
         tc_use = make_tool_call(
             "use_tool",
-            {"tool_name": "chatwork", "action": "list_rooms", "args": {}},
+            {"tool_name": "chatwork", "action": "rooms", "args": {}},
             "call_001",
         )
         resp1 = make_litellm_response(content="", tool_calls=[tc_use])
@@ -230,13 +230,13 @@ class TestBaseToolCount:
     """Verify the base tool set matches the design spec."""
 
     def test_base_tool_count(self, executor):
-        """Base tools should be 28 (including use_tool + skill + create_skill)."""
+        """Base tools should be 27 (use_tool is Mode B only, not in Mode A)."""
         tools = executor._build_base_tools()
-        assert len(tools) == 28
+        assert len(tools) == 27
         names = {t["function"]["name"] for t in tools}
         assert "search_code" in names
         assert "list_directory" in names
-        assert "use_tool" in names
+        assert "use_tool" not in names
         assert "read_file" in names
         assert "search_memory" in names
         assert "refresh_tools" in names
