@@ -749,8 +749,8 @@ class PrimingEngine:
             message: Original message text. Prepended (truncated to 200 chars)
                 to the keyword query to preserve phrase-level semantics.
         """
-        if not self.knowledge_dir.is_dir() or not keywords:
-            logger.debug("Channel C: No knowledge dir or no keywords")
+        if not self.knowledge_dir.is_dir():
+            logger.debug("Channel C: No knowledge dir")
             return ("", "")
 
         try:
@@ -759,8 +759,14 @@ class PrimingEngine:
                 logger.debug("Channel C: Retriever unavailable")
                 return ("", "")
 
-            kw_part = " ".join(keywords[:5])
-            query = f"{message[:200]} {kw_part}" if message else kw_part
+            kw_part = " ".join(keywords[:5]) if keywords else ""
+            if message:
+                query = f"{message[:200]} {kw_part}".strip()
+            elif kw_part:
+                query = kw_part
+            else:
+                logger.debug("Channel C: No keywords and no message")
+                return ("", "")
             anima_name = self.anima_dir.name
 
             # Vector search (personal + shared common_knowledge)
@@ -962,7 +968,7 @@ class PrimingEngine:
         (recent activity timeline) by looking further back in time and
         ranking by semantic similarity rather than recency alone.
         """
-        if not self.episodes_dir.is_dir() or not keywords:
+        if not self.episodes_dir.is_dir():
             return ""
 
         try:
@@ -970,8 +976,13 @@ class PrimingEngine:
             if retriever is None:
                 return ""
 
-            kw_part = " ".join(keywords[:5])
-            query = f"{message[:200]} {kw_part}" if message else kw_part
+            kw_part = " ".join(keywords[:5]) if keywords else ""
+            if message:
+                query = f"{message[:200]} {kw_part}".strip()
+            elif kw_part:
+                query = kw_part
+            else:
+                return ""
             anima_name = self.anima_dir.name
 
             results = retriever.search(

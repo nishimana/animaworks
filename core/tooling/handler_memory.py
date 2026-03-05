@@ -59,7 +59,10 @@ class MemoryToolsMixin:
         )
         if not results:
             return f"No results for '{query}'"
-        return "\n".join(f"- {fname}: {line}" for fname, line in results[:10])
+        shown = results[:10]
+        header = f"Found {len(results)} results (showing top {len(shown)}):"
+        lines = [f"- {fname}: {line}" for fname, line in shown]
+        return header + "\n" + "\n".join(lines)
 
     def _handle_read_memory_file(self, args: dict[str, Any]) -> str:
         rel = args["path"]

@@ -174,13 +174,16 @@ class RAGMemorySearch:
             if common_knowledge_dir.is_dir():
                 dirs.append(common_knowledge_dir)
 
-        # Keyword search
+        # Keyword search — OR-split: match any whitespace-separated token
         results: list[tuple[str, str]] = []
-        q = query.lower()
+        tokens = [tok for tok in query.lower().split() if tok]
+        if not tokens:
+            return results
         for d in dirs:
             for f in d.glob("*.md"):
                 for line in f.read_text(encoding="utf-8").splitlines():
-                    if q in line.lower():
+                    line_lower = line.lower()
+                    if any(tok in line_lower for tok in tokens):
                         results.append((f.name, line.strip()))
 
         # Search compressed_summary from conversation.json
@@ -190,10 +193,10 @@ class RAGMemorySearch:
                 try:
                     conv_data = json.loads(conv_file.read_text(encoding="utf-8"))
                     summary = conv_data.get("compressed_summary", "")
-                    if summary and q in summary.lower():
-                        # Return matching lines from compressed_summary
+                    if summary:
                         for line in summary.splitlines():
-                            if q in line.lower() and line.strip():
+                            line_lower = line.lower()
+                            if any(tok in line_lower for tok in tokens) and line.strip():
                                 results.append(("conversation_summary", line.strip()))
                 except Exception as e:
                     logger.debug("Failed to search conversation_summary: %s", e)
@@ -272,12 +275,15 @@ class RAGMemorySearch:
         return hits
 
     def search_knowledge(self, query: str, knowledge_dir: Path) -> list[tuple[str, str]]:
-        """Search knowledge/ by keyword."""
+        """Search knowledge/ by keyword (OR-split on whitespace tokens)."""
         results: list[tuple[str, str]] = []
-        q = query.lower()
+        tokens = [tok for tok in query.lower().split() if tok]
+        if not tokens:
+            return results
         for f in knowledge_dir.glob("*.md"):
             for line in f.read_text(encoding="utf-8").splitlines():
-                if q in line.lower():
+                line_lower = line.lower()
+                if any(tok in line_lower for tok in tokens):
                     results.append((f.name, line.strip()))
         logger.debug("search_knowledge query='%s' results=%d", query, len(results))
         return results
