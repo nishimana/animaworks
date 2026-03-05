@@ -1064,7 +1064,7 @@ class PrimingEngine:
                             preview = content[:150].replace("\n", " ")
                             lines.append(f"- [{task_id}] {preview}")
                         except Exception:
-                            pass
+                            logger.debug("Channel E: failed to read %s", rf.name, exc_info=True)
                     if len(lines) > 1:
                         parts.append("\n".join(lines))
             except Exception:
