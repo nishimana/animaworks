@@ -90,6 +90,32 @@ async def test_async_retry_zero_retries():
 
 
 @pytest.mark.asyncio
+async def test_async_retry_strips_retry_params_from_fn_kwargs():
+    """Retry-control kwargs must not leak into the wrapped function."""
+    received_kwargs: dict = {}
+
+    async def capture(**kwargs):
+        received_kwargs.update(kwargs)
+        return "ok"
+
+    result = await async_retry_with_backoff(
+        capture,
+        max_retries=2,
+        base_delay=0.01,
+        max_delay=5.0,
+        retry_on=(_TransientError,),
+        model="test-model",
+        temperature=0.7,
+    )
+    assert result == "ok"
+    assert "model" in received_kwargs
+    assert "temperature" in received_kwargs
+    assert "max_retries" not in received_kwargs
+    assert "base_delay" not in received_kwargs
+    assert "retry_on" not in received_kwargs
+
+
+@pytest.mark.asyncio
 async def test_async_retry_respects_max_delay():
     delays: list[float] = []
     _orig_sleep = asyncio.sleep
@@ -245,13 +271,15 @@ async def test_anthropic_non_streaming_retries_on_rate_limit():
 # ── _stream_with_retry ────────────────────────────────────────
 
 
+class _FakeTransientAPIError(Exception):
+    """Simulates a transient Anthropic API error for stream retry tests."""
+    pass
+
+
 @pytest.mark.asyncio
 async def test_stream_with_retry_succeeds_after_failures():
     """_stream_with_retry retries stream connection on transient errors."""
     from core.execution.anthropic_fallback import _stream_with_retry
-
-    class FakeAPIConnectionError(Exception):
-        pass
 
     call_count = 0
 
@@ -260,7 +288,7 @@ async def test_stream_with_retry_succeeds_after_failures():
             nonlocal call_count
             call_count += 1
             if call_count < 2:
-                raise FakeAPIConnectionError("connection reset")
+                raise _FakeTransientAPIError("connection reset")
             return self
 
         async def __aexit__(self, *args):
@@ -275,14 +303,11 @@ async def test_stream_with_retry_succeeds_after_failures():
     client = MagicMock()
     client.messages.stream = MagicMock(return_value=FakeStreamCM())
 
-    # Patch anthropic module to expose our fake exception
-    fake_anthropic = MagicMock()
-    fake_anthropic.RateLimitError = FakeAPIConnectionError
-    fake_anthropic.APIConnectionError = FakeAPIConnectionError
-    fake_anthropic.InternalServerError = FakeAPIConnectionError
-
     with patch("core.execution.anthropic_fallback.asyncio.sleep", new_callable=AsyncMock):
-        with patch.dict("sys.modules", {"anthropic": fake_anthropic}):
+        with patch(
+            "core.execution.anthropic_fallback._anthropic_retryable_errors",
+            return_value=(_FakeTransientAPIError,),
+        ):
             async with _stream_with_retry(client, {}, max_retries=3) as stream:
                 events = [e async for e in stream]
 
@@ -295,12 +320,9 @@ async def test_stream_with_retry_raises_after_max_retries():
     """_stream_with_retry raises after exhausting retries."""
     from core.execution.anthropic_fallback import _stream_with_retry
 
-    class FakeRateLimitError(Exception):
-        pass
-
     class FakeStreamCM:
         async def __aenter__(self):
-            raise FakeRateLimitError("429")
+            raise _FakeTransientAPIError("429")
 
         async def __aexit__(self, *args):
             pass
@@ -308,13 +330,11 @@ async def test_stream_with_retry_raises_after_max_retries():
     client = MagicMock()
     client.messages.stream = MagicMock(return_value=FakeStreamCM())
 
-    fake_anthropic = MagicMock()
-    fake_anthropic.RateLimitError = FakeRateLimitError
-    fake_anthropic.APIConnectionError = FakeRateLimitError
-    fake_anthropic.InternalServerError = FakeRateLimitError
-
     with patch("core.execution.anthropic_fallback.asyncio.sleep", new_callable=AsyncMock):
-        with patch.dict("sys.modules", {"anthropic": fake_anthropic}):
-            with pytest.raises(FakeRateLimitError):
+        with patch(
+            "core.execution.anthropic_fallback._anthropic_retryable_errors",
+            return_value=(_FakeTransientAPIError,),
+        ):
+            with pytest.raises(_FakeTransientAPIError):
                 async with _stream_with_retry(client, {}, max_retries=2) as stream:
                     pass

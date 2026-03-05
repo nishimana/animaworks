@@ -79,21 +79,29 @@ def _extract_tool_uses_from_messages(messages: list[dict]) -> list[dict]:
     return tool_uses[-20:]  # Keep last 20 entries
 
 
-@_acm
-async def _stream_with_retry(client, stream_kwargs, max_retries):
-    """Open Anthropic streaming connection with retry on transient errors.
-
-    Retries only connection establishment (429/5xx).  Once streaming begins,
-    errors are re-raised immediately (handled by the upper
-    StreamDisconnectedError layer).
-    """
+def _anthropic_retryable_errors():
+    """Return the tuple of transient Anthropic exceptions worth retrying."""
     import anthropic as _anth
-
-    _retry_on = (
+    return (
         _anth.RateLimitError,
         _anth.APIConnectionError,
         _anth.InternalServerError,
+        _anth.APITimeoutError,
     )
+
+
+@_acm
+async def _stream_with_retry(
+    client, stream_kwargs, max_retries,
+    base_delay=1.0, max_delay=60.0,
+):
+    """Open Anthropic streaming connection with retry on transient errors.
+
+    Retries only connection establishment (429/5xx/timeout).  Once streaming
+    begins, errors are re-raised immediately (handled by the upper
+    StreamDisconnectedError layer).
+    """
+    _retry_on = _anthropic_retryable_errors()
     _entered = False
     for attempt in range(1 + max_retries):
         try:
@@ -104,7 +112,7 @@ async def _stream_with_retry(client, stream_kwargs, max_retries):
         except _retry_on as exc:
             if _entered or attempt >= max_retries:
                 raise
-            wait = min(1.0 * (2 ** attempt), 60.0)
+            wait = min(base_delay * (2 ** attempt), max_delay)
             logger.warning(
                 "Stream connect retry %d/%d after %.1fs – %s: %s",
                 attempt + 1,
@@ -273,18 +281,13 @@ class AnthropicFallbackExecutor(BaseExecutor):
                 create_kwargs["tools"] = tools
 
             try:
-                import anthropic as _anthropic
                 from core.tools._retry import async_retry_with_backoff
 
                 response = await async_retry_with_backoff(
                     client.messages.create,
                     **create_kwargs,
                     max_retries=self._resolve_num_retries(),
-                    retry_on=(
-                        _anthropic.RateLimitError,
-                        _anthropic.APIConnectionError,
-                        _anthropic.InternalServerError,
-                    ),
+                    retry_on=_anthropic_retryable_errors(),
                 )
             except LLMAPIError:
                 raise

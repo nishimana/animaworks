@@ -151,6 +151,11 @@ def retry_on_rate_limit(
 # ── Async Public API ──────────────────────────────────────
 
 
+_RETRY_PARAM_NAMES = frozenset({
+    "max_retries", "base_delay", "max_delay", "retry_on",
+})
+
+
 async def async_retry_with_backoff(
     fn: Callable[..., Awaitable[T]],
     *args: Any,
@@ -161,6 +166,10 @@ async def async_retry_with_backoff(
     **kwargs: Any,
 ) -> T:
     """Execute async *fn* with exponential backoff retry.
+
+    Retry-control parameters (``max_retries``, ``base_delay``, ``max_delay``,
+    ``retry_on``) are stripped from *kwargs* before forwarding to *fn*, so
+    callers can safely pass ``**create_kwargs`` without collision risk.
 
     Args:
         fn: The async callable to execute.
@@ -177,10 +186,11 @@ async def async_retry_with_backoff(
     Raises:
         The last caught exception when all retries are exhausted.
     """
+    fn_kwargs = {k: v for k, v in kwargs.items() if k not in _RETRY_PARAM_NAMES}
     last_exc: Exception | None = None
     for attempt in range(1 + max_retries):
         try:
-            return await fn(*args, **kwargs)
+            return await fn(*args, **fn_kwargs)
         except retry_on as exc:
             last_exc = exc
             if attempt >= max_retries:
