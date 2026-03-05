@@ -5,10 +5,10 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date, timedelta
+from datetime import timedelta
 from pathlib import Path
 
-from core.time_utils import now_iso
+from core.time_utils import now_iso, now_jst
 
 logger = logging.getLogger("animaworks.memory")
 
@@ -36,7 +36,7 @@ class CronLogger:
         """Append a cron execution result to the daily log."""
         log_dir = self._log_dir()
         log_dir.mkdir(parents=True, exist_ok=True)
-        path = log_dir / f"{date.today().isoformat()}.jsonl"
+        path = log_dir / f"{now_jst().date().isoformat()}.jsonl"
 
         entry = json.dumps({
             "timestamp": now_iso(),
@@ -70,7 +70,7 @@ class CronLogger:
         """
         log_dir = self._log_dir()
         log_dir.mkdir(parents=True, exist_ok=True)
-        path = log_dir / f"{date.today().isoformat()}.jsonl"
+        path = log_dir / f"{now_jst().date().isoformat()}.jsonl"
 
         # Count lines
         stdout_lines_list = stdout.splitlines()
@@ -122,18 +122,32 @@ class CronLogger:
             return ""
 
         parts: list[str] = []
+        today = now_jst().date()
         for i in range(days):
-            target = date.today() - timedelta(days=i)
+            target = today - timedelta(days=i)
             path = log_dir / f"{target.isoformat()}.jsonl"
             if not path.exists():
                 continue
             for line in path.read_text(encoding="utf-8").strip().splitlines():
                 try:
                     e = json.loads(line)
-                    parts.append(
-                        f"- {e['timestamp']}: [{e['task']}] {e['summary'][:200]} "
-                        f"({e['duration_ms']}ms)"
-                    )
+                    if "summary" in e:
+                        line_text = (
+                            f"- {e['timestamp']}: [{e['task']}] "
+                            f"{e['summary'][:200]} ({e['duration_ms']}ms)"
+                        )
+                    else:
+                        exit_code = e.get("exit_code", "?")
+                        preview = (
+                            e.get("stdout_preview", "")
+                            or e.get("stderr_preview", "")
+                        )[:100]
+                        dur = e.get("duration_ms", 0)
+                        line_text = (
+                            f"- {e['timestamp']}: [{e['task']}] "
+                            f"exit={exit_code} {preview} ({dur}ms)"
+                        )
+                    parts.append(line_text)
                 except (json.JSONDecodeError, KeyError):
                     continue
         return "\n".join(parts)
