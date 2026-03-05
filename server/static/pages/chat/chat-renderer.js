@@ -123,7 +123,8 @@ export function createChatRenderer(ctx) {
       const lastSession = hs.sessions[hs.sessions.length - 1];
       const lastSessionLastTs = lastSession?.messages?.slice(-1)[0]?.ts ?? "";
       const lastLiveTs = history[history.length - 1]?.timestamp ?? "";
-      const liveIsNewer = hasStreaming || !lastSessionLastTs || lastLiveTs > lastSessionLastTs;
+      const liveIsNewer = hasStreaming || !lastSessionLastTs
+        || new Date(lastLiveTs).getTime() > new Date(lastSessionLastTs).getTime();
       if (liveIsNewer) {
         if (hs.sessions.length > 0) {
           liveHtml += `<div class="session-divider"><span class="session-divider-label">${t("chat.current_session")}</span></div>`;

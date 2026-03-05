@@ -93,7 +93,8 @@ export function renderConvMessages() {
     const lastSession = hs?.sessions?.[hs.sessions.length - 1];
     const lastSessionLastTs = lastSession?.messages?.slice(-1)[0]?.ts ?? "";
     const lastLiveTs = threadMessages[threadMessages.length - 1]?.timestamp ?? "";
-    const liveIsNewer = hasStreaming || !lastSessionLastTs || lastLiveTs > lastSessionLastTs;
+    const liveIsNewer = hasStreaming || !lastSessionLastTs
+      || new Date(lastLiveTs).getTime() > new Date(lastSessionLastTs).getTime();
     if (liveIsNewer) {
       if (hs && hs.sessions.length > 0) {
         html += '<div class="session-divider"><span class="session-divider-label">現在のセッション</span></div>';
