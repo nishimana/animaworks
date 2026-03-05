@@ -74,7 +74,7 @@ class LifecycleMixin:
                     _unread = 0
                     try:
                         _unread = self.messenger.unread_count()
-                    except Exception:
+                    except OSError:
                         pass
                     await self._handle_heartbeat_failure(exc, [], _unread)
                     raise

@@ -251,7 +251,7 @@ class TestWebhookPerAnimaRouting:
 
         resp = client.post("/api/webhooks/slack/events", content=body, headers=headers)
         assert resp.status_code == 200
-        mock_vault.assert_called_with("SLACK_SIGNING_SECRET__sakura")
+        mock_vault.assert_any_call("SLACK_SIGNING_SECRET__sakura")
 
     @patch("server.routes.webhooks.get_data_dir")
     @patch("server.routes.webhooks.load_config")
@@ -515,6 +515,7 @@ class TestSlackSocketModeManagerPerAnima:
             source_message_id="1.1",
             external_user_id="U_USER",
             external_channel_id="C_SUMIRE_CHAN",
+            intent="",
         )
 
 

@@ -297,7 +297,7 @@ class TestHeartbeatUnreadCount:
         unread_init_idx = next(i for i, l in enumerate(lines) if "_unread = 0" in l)
         try_idx = next(i for i, l in enumerate(lines) if i > unread_init_idx and "try:" in l)
         unread_call_idx = next(i for i, l in enumerate(lines) if i > try_idx and "unread_count()" in l)
-        except_idx = next(i for i, l in enumerate(lines) if i > unread_call_idx and "except Exception:" in l)
+        except_idx = next(i for i, l in enumerate(lines) if i > unread_call_idx and "except OSError:" in l)
         assert unread_init_idx < try_idx < unread_call_idx < except_idx
 
 

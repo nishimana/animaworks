@@ -827,6 +827,7 @@ _TEMPLATES_CK_DIR = (
 _EXPECTED_FILES = [
     "00_index.md",
     "communication/board-guide.md",
+    "communication/call-human-guide.md",
     "communication/instruction-patterns.md",
     "communication/messaging-guide.md",
     "communication/reporting-guide.md",

@@ -135,10 +135,7 @@ class RAGMemorySearch:
         if self._indexer is None:
             return
         try:
-            from core.memory.rag.singleton import get_vector_store
-
-            anima_name = self._anima_dir.name
-            vector_store = get_vector_store(anima_name)
+            vector_store = self._indexer.vector_store
             self._ensure_shared_knowledge_indexed(vector_store)
             self._ensure_shared_skills_indexed(vector_store)
         except ImportError:
