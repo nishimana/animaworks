@@ -36,7 +36,38 @@ if [ ! -f "$CONFIG_JSON" ]; then
         echo "Company vision installed."
     fi
 
-    # 3. Create animas from character sheets
+    # 3. Apply config overlay BEFORE anima creation so locale is correct
+    overlay="${PRESET_DIR}/config_overlay.json"
+    if [ -f "$overlay" ]; then
+        python3 -c "
+import json, sys
+def deep_merge(base, patch):
+    for k, v in patch.items():
+        if k in base and isinstance(base[k], dict) and isinstance(v, dict):
+            deep_merge(base[k], v)
+        else:
+            base[k] = v
+cfg_path, ovl_path = sys.argv[1], sys.argv[2]
+with open(cfg_path) as f:
+    cfg = json.load(f)
+with open(ovl_path) as f:
+    ovl = json.load(f)
+deep_merge(cfg, ovl)
+with open(cfg_path, 'w') as f:
+    json.dump(cfg, f, indent=2, ensure_ascii=False)
+" "$CONFIG_JSON" "$overlay"
+        echo "Config overlay applied."
+
+        rm -rf "${DATA_DIR}/prompts" "${DATA_DIR}/common_knowledge" "${DATA_DIR}/common_skills"
+        python3 -c "
+from core.init import merge_templates
+from pathlib import Path
+merge_templates(Path('$DATA_DIR'))
+"
+        echo "Templates re-merged with locale from overlay."
+    fi
+
+    # 4. Create animas from character sheets (locale is now correct)
     for md_file in "${PRESET_DIR}/characters/"*.md; do
         [ -f "$md_file" ] || continue
         name="$(basename "$md_file" .md)"
@@ -60,38 +91,25 @@ if [ ! -f "$CONFIG_JSON" ]; then
         "${create_args[@]}"
     done
 
-    # 4. Apply config overlay (deep-merge into config.json)
-    overlay="${PRESET_DIR}/config_overlay.json"
-    if [ -f "$overlay" ]; then
-        python3 -c "
-import json, sys
-def deep_merge(base, patch):
-    for k, v in patch.items():
-        if k in base and isinstance(base[k], dict) and isinstance(v, dict):
-            deep_merge(base[k], v)
-        else:
-            base[k] = v
-cfg_path, ovl_path = sys.argv[1], sys.argv[2]
-with open(cfg_path) as f:
-    cfg = json.load(f)
-with open(ovl_path) as f:
-    ovl = json.load(f)
-deep_merge(cfg, ovl)
-with open(cfg_path, 'w') as f:
-    json.dump(cfg, f, indent=2, ensure_ascii=False)
-" "$CONFIG_JSON" "$overlay"
-        echo "Config overlay applied."
-
-        # Re-merge templates with correct locale (init used default "ja")
-        # Remove locale-dependent dirs so merge_templates re-copies them
-        rm -rf "${DATA_DIR}/prompts" "${DATA_DIR}/common_knowledge" "${DATA_DIR}/common_skills"
-        python3 -c "
-from core.init import merge_templates
-from pathlib import Path
-merge_templates(Path('$DATA_DIR'))
-"
-        echo "Templates re-merged with locale from overlay."
-    fi
+    # 4a. Copy preset-specific heartbeat/cron files (override blank templates)
+    for hb_file in "${PRESET_DIR}/heartbeat/"*.md; do
+        [ -f "$hb_file" ] || continue
+        name="$(basename "$hb_file" .md)"
+        target="${DATA_DIR}/animas/${name}/heartbeat.md"
+        if [ -d "${DATA_DIR}/animas/${name}" ]; then
+            cp "$hb_file" "$target"
+            echo "Custom heartbeat installed for: ${name}"
+        fi
+    done
+    for cron_file in "${PRESET_DIR}/cron/"*.md; do
+        [ -f "$cron_file" ] || continue
+        name="$(basename "$cron_file" .md)"
+        target="${DATA_DIR}/animas/${name}/cron.md"
+        if [ -d "${DATA_DIR}/animas/${name}" ]; then
+            cp "$cron_file" "$target"
+            echo "Custom cron installed for: ${name}"
+        fi
+    done
 
     # 4b. Create auth.json (local_trust mode, no password)
     cat > "${DATA_DIR}/auth.json" <<AUTHEOF
