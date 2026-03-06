@@ -57,6 +57,16 @@ class TestEstimateToolOverhead:
         overhead = agent._estimate_tool_overhead()
         assert overhead <= 20000
 
+    def test_mode_s_uses_higher_per_schema(self, tmp_path: Path):
+        """Mode S/C uses 200 tokens/schema; Mode A uses 150."""
+        agent = _make_agent(tmp_path)
+        agent._tool_registry = ["t"] * 50  # 50 tools
+        overhead_s = agent._estimate_tool_overhead(mode="s")
+        overhead_a = agent._estimate_tool_overhead(mode="a")
+        assert overhead_s > overhead_a
+        assert overhead_s == min(50 * 200, 20000)
+        assert overhead_a == min(50 * 150, 20000)
+
 
 class TestFitPromptBudgetShrink:
     """Test _fit_prompt_to_context_window uses budget shrinking."""

@@ -198,10 +198,10 @@ class PrimingMixin:
     _MIN_TOOL_OVERHEAD = 5000
     _MAX_TOOL_OVERHEAD = 20000
 
-    def _estimate_tool_overhead(self) -> int:
+    def _estimate_tool_overhead(self, mode: str | None = None) -> int:
         """Estimate tool definition overhead in tokens based on schema count."""
         registry = getattr(self, "_tool_registry", None) or []
-        mode = getattr(self, "_execution_mode", "a")
+        mode = mode or getattr(self, "_execution_mode", "a")
         per_schema = self._TOKENS_PER_MCP_SCHEMA if mode in ("s", "c") else self._TOKENS_PER_TOOL_SCHEMA
         return min(max(len(registry) * per_schema, self._MIN_TOOL_OVERHEAD), self._MAX_TOOL_OVERHEAD)
 
@@ -225,7 +225,7 @@ class PrimingMixin:
         """
         from core.prompt.builder import _compute_system_budget
 
-        tool_overhead = self._estimate_tool_overhead()
+        tool_overhead = self._estimate_tool_overhead(mode)
         sys_bytes = len(system_prompt.encode("utf-8"))
         prompt_bytes = len(prompt.encode("utf-8"))
         estimated_tokens = (sys_bytes + prompt_bytes) // self._BYTES_PER_TOKEN_ESTIMATE + tool_overhead
