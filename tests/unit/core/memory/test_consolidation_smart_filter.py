@@ -5,10 +5,13 @@ from __future__ import annotations
 
 """Unit tests for consolidation smart filtering and reflection extraction."""
 
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+from core.time_utils import now_jst
 
 
 @pytest.fixture
@@ -93,8 +96,15 @@ class TestExtractReflections:
 # ── _collect_activity_entries (smart filtering) ──────────────────
 
 
-def _make_entry(type_: str, ts: str = "2026-03-05T10:00:00+09:00", **kwargs):
+def _recent_ts(minutes_ago: int = 60) -> str:
+    """Return an ISO timestamp *minutes_ago* minutes before now (JST)."""
+    return (now_jst() - timedelta(minutes=minutes_ago)).isoformat()
+
+
+def _make_entry(type_: str, ts: str | None = None, **kwargs):
     from core.memory._activity_models import ActivityEntry
+    if ts is None:
+        ts = _recent_ts(60)
     return ActivityEntry(ts=ts, type=type_, **kwargs)
 
 
@@ -103,13 +113,13 @@ class TestCollectActivityEntries:
 
     def test_comm_events_prioritized(self, engine) -> None:
         entries = [
-            _make_entry("message_received", ts="2026-03-05T10:00:00+09:00",
+            _make_entry("message_received", ts=_recent_ts(60),
                         content="Hello from user", from_person="human"),
-            _make_entry("response_sent", ts="2026-03-05T10:01:00+09:00",
+            _make_entry("response_sent", ts=_recent_ts(59),
                         content="Hello back"),
-            _make_entry("tool_result", ts="2026-03-05T10:02:00+09:00",
+            _make_entry("tool_result", ts=_recent_ts(58),
                         tool="web_search", meta={"result_status": "ok", "result_bytes": 2048}),
-            _make_entry("error", ts="2026-03-05T10:03:00+09:00",
+            _make_entry("error", ts=_recent_ts(57),
                         content="Something failed"),
         ]
 
@@ -127,9 +137,9 @@ class TestCollectActivityEntries:
 
     def test_tool_use_excluded(self, engine) -> None:
         entries = [
-            _make_entry("message_received", ts="2026-03-05T10:00:00+09:00",
+            _make_entry("message_received", ts=_recent_ts(60),
                         content="User message"),
-            _make_entry("tool_result", ts="2026-03-05T10:01:00+09:00",
+            _make_entry("tool_result", ts=_recent_ts(59),
                         tool="search", meta={"result_status": "ok", "result_bytes": 100}),
         ]
 
@@ -144,7 +154,7 @@ class TestCollectActivityEntries:
 
     def test_tool_result_fail_has_content(self, engine) -> None:
         entries = [
-            _make_entry("tool_result", ts="2026-03-05T10:00:00+09:00",
+            _make_entry("tool_result", ts=_recent_ts(60),
                         tool="web_search", content="Connection timeout error",
                         meta={"result_status": "fail"}),
         ]
@@ -161,7 +171,7 @@ class TestCollectActivityEntries:
 
     def test_tool_result_ok_is_meta_only(self, engine) -> None:
         entries = [
-            _make_entry("tool_result", ts="2026-03-05T10:00:00+09:00",
+            _make_entry("tool_result", ts=_recent_ts(60),
                         tool="web_search",
                         content="Very long search result content that should not appear",
                         meta={"result_status": "ok", "result_bytes": 5120, "result_count": 10}),

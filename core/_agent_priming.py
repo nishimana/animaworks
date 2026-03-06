@@ -261,9 +261,7 @@ class PrimingMixin:
             )
             best_prompt = build_result.system_prompt
             new_sys_bytes = len(best_prompt.encode("utf-8"))
-            new_estimated = (
-                new_sys_bytes + prompt_bytes
-            ) // self._BYTES_PER_TOKEN_ESTIMATE + tool_overhead
+            new_estimated = (new_sys_bytes + prompt_bytes) // self._BYTES_PER_TOKEN_ESTIMATE + tool_overhead
             if new_estimated <= max_input_tokens:
                 logger.warning(
                     "Prompt budget shrunk: %d -> %d chars (estimated %d -> %d tokens, limit %d)",

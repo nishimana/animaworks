@@ -637,9 +637,7 @@ class ProcessSupervisor(HealthMixin, ReconcileMixin, SchedulerMixin):
             "uptime_sec": uptime,
             "restart_count": self._restart_counts.get(anima_name, 0),
             "missed_pings": handle.stats.missed_pings,
-            "last_busy_since": (
-                handle.stats.last_busy_since.isoformat() if handle.stats.last_busy_since else None
-            ),
+            "last_busy_since": (handle.stats.last_busy_since.isoformat() if handle.stats.last_busy_since else None),
             "bootstrapping": self.is_bootstrapping(anima_name),
             "last_ping_at": (handle.stats.last_ping_at.isoformat() if handle.stats.last_ping_at else None),
         }

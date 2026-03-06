@@ -14,8 +14,6 @@ from pathlib import Path
 from typing import Any
 
 from core.exceptions import (
-    ConfigError,
-    ConfigNotFoundError,
     DeliveryError,
     RecipientNotFoundError,
 )  # noqa: F401

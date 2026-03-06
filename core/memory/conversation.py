@@ -27,7 +27,6 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
-from core.exceptions import ConfigError
 from core.i18n import t
 from core.memory._io import atomic_write_text
 from core.paths import load_prompt

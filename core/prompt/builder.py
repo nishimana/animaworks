@@ -161,8 +161,7 @@ def _compute_system_budget(context_window: int, system_budget: int | None = None
     then returns the remaining space as the system prompt budget.
     """
     usable = int(
-        context_window
-        * (1.0 - _TOOL_RESERVATION_PCT - _OUTPUT_RESERVATION_PCT - _CONVERSATION_RESERVATION_PCT)
+        context_window * (1.0 - _TOOL_RESERVATION_PCT - _OUTPUT_RESERVATION_PCT - _CONVERSATION_RESERVATION_PCT)
     )
     auto = max(usable, _MIN_SYSTEM_BUDGET)
     if system_budget is not None:
@@ -1027,7 +1026,6 @@ def build_system_prompt(
     # ── Budget allocation + Final assembly ─────────────────────
     allocated = _allocate_sections(sections, budget)
     prompt = "\n\n---\n\n".join(s.content for s in allocated)
-    included_ids = {s.id for s in allocated}
     logger.debug(
         "System prompt built: %d/%d sections, total_len=%d, budget=%d, tier=%s, cw=%d",
         len(allocated),

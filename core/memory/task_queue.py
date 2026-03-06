@@ -20,6 +20,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
+from core.exceptions import TaskPersistenceError as TaskPersistenceError  # noqa: F401
 from core.i18n import t
 from core.schemas import TaskEntry
 from core.time_utils import ensure_aware, now_iso, now_jst
@@ -29,10 +30,6 @@ logger = logging.getLogger("animaworks.task_queue")
 # Valid task statuses
 _VALID_STATUSES = frozenset({"pending", "in_progress", "done", "cancelled", "blocked", "delegated", "failed"})
 _TERMINAL_STATUSES = frozenset({"done", "cancelled", "failed"})
-
-
-from core.exceptions import TaskPersistenceError as TaskPersistenceError  # noqa: F401
-
 
 # Valid task sources
 _VALID_SOURCES = frozenset({"human", "anima"})
