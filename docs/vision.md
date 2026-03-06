@@ -20,7 +20,7 @@ There's an approach that gives AI everything to know and everything to handle â€
 
 We design AI as *imperfect individuals* and make them collaborate as an organization. Human organizations work precisely because each member has a limited perspective and partial memory, makes decisions within their expertise, and communicates imperfect information in their own words. If everyone knew everything, there would be no reason to organize.
 
-### The Genius and the Underdog, Each in Their Place
+### The Genius and the Less Capable, Each in Their Place
 
 In AnimaWorks, no single model carries the entire load. Claude Opus and Sonnet handle complex reasoning as engineers or managers. GPT-4o and Gemini handle information gathering and general-purpose tasks. Local models (vLLM, Ollama) quietly handle log monitoring and routine operations, day in and day out.
 
@@ -97,7 +97,7 @@ Can multiple Animas collaborate through messages and achieve something no indivi
 
 > Example: A supervisor sets a direction, each Anima contributes its expertise, results are reported and integrated. That's success.
 
-### Can the Underdog Grow?
+### Can the Less Capable Grow?
 
 Can a modest model, given enough time and memory, make better decisions than it could on day one?
 
