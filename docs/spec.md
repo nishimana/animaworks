@@ -1,4 +1,4 @@
-# Digital Anima Requirements Specification v1.1
+# Digital Anima Requirements Specification v1.2
 
 ## 1. Overview
 
@@ -63,18 +63,22 @@ animaworks/
 │   ├── paths.py               # Path resolution
 │   ├── messenger.py           # Inter-Anima message send/receive
 │   ├── lifecycle.py           # Heartbeat/cron management (APScheduler)
-│   ├── outbound.py            # Outbound message routing
-│   ├── schedule_parser.py     # Schedule notation parser
+│   ├── outbound.py            # Unified outbound routing (Slack/Chatwork/internal auto-detection)
+│   ├── background.py          # Background task management
+│   ├── asset_reconciler.py    # Automatic asset generation
+│   ├── org_sync.py            # Organization structure sync (status.json → config.json)
+│   ├── schedule_parser.py     # cron.md/heartbeat.md parser
 │   ├── logging_config.py      # Log configuration
-│   ├── memory/                # Memory subsystem
+│   ├── memory/                # Memory subsystem (see memory.md for details)
 │   │   ├── manager.py         #   Archive-based memory search/write
-│   │   ├── conversation.py    #   Conversation memory (state/conversation.json, rolling compression)
+│   │   ├── conversation.py    #   Conversation memory (rolling compression)
 │   │   ├── shortterm.py       #   Short-term memory (chat/heartbeat separated)
 │   │   ├── activity.py        #   Unified activity log (JSONL timeline)
 │   │   ├── streaming_journal.py #  Streaming journal (WAL)
 │   │   ├── priming.py         #   Automatic recall layer (6 channels)
 │   │   ├── consolidation.py   #   Memory consolidation (daily/weekly)
 │   │   ├── forgetting.py      #   Active forgetting (3 stages)
+│   │   ├── reconsolidation.py #   Memory reconsolidation
 │   │   ├── task_queue.py      #   Persistent task queue
 │   │   ├── resolution_tracker.py # Resolution registry
 │   │   └── rag/               #   RAG engine (ChromaDB + sentence-transformers)
@@ -84,28 +88,33 @@ animaworks/
 │   │   ├── manager.py         #   ProcessSupervisor (child process launch, monitoring)
 │   │   ├── ipc.py             #   Unix Domain Socket IPC
 │   │   ├── runner.py          #   Anima process runner
-│   │   └── pending_executor.py #   TaskExec (state/pending/ task execution)
-│   ├── notification/         # Human notification
+│   │   ├── process_handle.py  #   Process handle management
+│   │   ├── pending_executor.py #   TaskExec (state/pending/ task execution)
+│   │   └── scheduler_manager.py #  APScheduler integration
+│   ├── notification/          # Human notification
 │   │   ├── notifier.py        #   HumanNotifier (call_human integration)
-│   │   └── channels/         #   Slack, Chatwork, LINE, Telegram, ntfy
+│   │   ├── reply_routing.py   #   Reply routing
+│   │   └── channels/          #   Slack, Chatwork, LINE, Telegram, ntfy
 │   ├── voice/                 # Voice chat subsystem
 │   │   ├── stt.py             #   VoiceSTT (faster-whisper)
 │   │   ├── tts_*.py           #   TTS providers (VOICEVOX, ElevenLabs, SBV2)
-│   │   └── session.py        #   VoiceSession (STT→Chat IPC→TTS)
+│   │   └── session.py         #   VoiceSession (STT→Chat IPC→TTS)
 │   ├── mcp/                   # MCP server (for Mode S/C)
 │   │   └── server.py
 │   ├── config/                # Configuration management
 │   │   ├── models.py          #   Pydantic unified config model
+│   │   ├── vault.py           #   Credential Vault (encrypted secret management)
 │   │   ├── cli.py             #   config subcommand
 │   │   └── migrate.py         #   Legacy config migration
 │   ├── prompt/                # Prompt and context management
 │   │   ├── builder.py         #   System prompt construction (6-group structure)
 │   │   └── context.py         #   Context window tracking
 │   ├── tooling/               # Tool infrastructure
-│   │   ├── handler.py         #   Tool execution dispatch, permission checks
+│   │   ├── handler*.py        #   Tool execution dispatch, permission checks (split by domain)
 │   │   ├── schemas.py         #   Tool schema definitions
 │   │   ├── guide.py           #   Dynamic tool guide generation
-│   │   └── dispatch.py        #   External tool routing
+│   │   ├── dispatch.py        #   External tool routing
+│   │   └── permissions.py     #   Permission evaluation engine
 │   ├── execution/             # Execution engines
 │   │   ├── base.py            #   BaseExecutor ABC
 │   │   ├── agent_sdk.py       #   Mode S: Claude Agent SDK
@@ -117,6 +126,7 @@ animaworks/
 │   └── tools/                 # External tool implementations
 │       ├── web_search.py, x_search.py, slack.py
 │       ├── chatwork.py, gmail.py, github.py
+│       ├── google_calendar.py, call_human.py
 │       ├── transcribe.py, aws_collector.py
 │       ├── image_gen.py       #   Image and 3D model generation
 │       └── local_llm.py
@@ -125,29 +135,28 @@ animaworks/
 │   └── commands/              #   Subcommand implementations
 ├── server/
 │   ├── app.py                 # FastAPI application
+│   ├── slack_socket.py        # Slack Socket Mode client
 │   ├── routes/                # API routes (split by domain)
 │   │   ├── animas.py, chat.py, sessions.py
 │   │   ├── memory_routes.py, logs_routes.py
-│   │   ├── channels.py       #   Board/shared channel and DM history API
-│   │   ├── voice.py          #   Voice chat WebSocket (/ws/voice/{name})
+│   │   ├── channels.py        #   Board/shared channel and DM history API
+│   │   ├── voice.py           #   Voice chat WebSocket (/ws/voice/{name})
 │   │   ├── system.py, assets.py, config_routes.py
 │   │   ├── webhooks.py        #   External messaging webhooks
 │   │   └── websocket_route.py
 │   ├── websocket.py           # WebSocket management
 │   └── static/                # Web UI
 │       ├── index.html         # Dashboard
-│       ├── modules/           # JS modules (activity, animas, api, app,
-│       │                      #   chat, history, login, memory, router,
-│       │                      #   state, status, touch, websocket,
-│       │                      #   voice, voice-ui, voice-worklet, voice-playback, voice-vad)
-│       └── workspace/         # Interactive Workspace
+│       ├── modules/           # JS modules
+│       └── workspace/         # Interactive Workspace (3D office)
 ├── templates/
-│   ├── prompts/               # Prompt templates
-│   ├── anima_templates/       # Anima scaffolding (_blank)
-│   ├── roles/                 # Role templates (engineer, researcher, manager, writer, ops, general)
-│   ├── common_knowledge/      # Shared knowledge templates
-│   ├── common_skills/         # Common skill templates
-│   └── company/               # Organization vision templates
+│   ├── ja/, en/               # Locale-specific templates
+│   │   ├── prompts/           #   Prompt templates
+│   │   ├── anima_templates/   #   Anima scaffolding (_blank)
+│   │   ├── roles/             #   Role templates (engineer, researcher, manager, writer, ops, general)
+│   │   ├── common_knowledge/  #   Shared knowledge templates
+│   │   └── common_skills/     #   Common skill templates
+│   └── _shared/               # Locale-independent (organization vision, etc.)
 ├── main.py                    # CLI entry point
 └── tests/                     # Test suite
 ```
@@ -201,6 +210,7 @@ All settings are consolidated in `~/.animaworks/config.json`. Validated with the
 |`activity_log`         |Log rotation settings (rotation_mode, max_size_mb, max_age_days)|
 |`heartbeat`            |Heartbeat schedule and cascade prevention settings|
 |`voice`                |Voice chat settings (STT/TTS providers)|
+|`vault`                |Credential Vault settings (encrypted secret management)|
 |`housekeeping`         |Periodic disk cleanup settings|
 
 **Configuration Resolution (2-Layer Merge — status.json SSoT):**
@@ -232,6 +242,7 @@ The `animas` section in `config.json` holds only the organization layout (`super
 |`context_threshold`                  |`float`         |`0.50`                    |Threshold for short-term memory externalization (context usage ratio)|
 |`max_chains`                         |`int`           |`2`                       |Maximum automatic session continuations|
 |`conversation_history_threshold`     |`float`         |`0.30`                    |Compression trigger for conversation memory (context usage ratio)|
+|`background_model`                   |`str \| null`   |`null` (inherits main)    |Model for background paths (heartbeat, inbox, cron). Falls back to `model` when unset|
 |`execution_mode`                     |`str \| null`   |`null` (auto-detect)      |`"S"` / `"A"` / `"B"` / `"C"`. Resolved via models.json or DEFAULT_MODEL_MODE_PATTERNS when unset|
 |`supervisor`                         |`str \| null`   |`null`                    |Name of the supervisory Anima      |
 |`speciality`                         |`str \| null`   |`null`                    |Free-text area of expertise        |
@@ -265,9 +276,10 @@ The `animas` section in `config.json` holds only the organization layout (`super
 
 **Context Window Resolution** (`resolve_context_window()` in `core/prompt/context.py`):
 
-1. config.json `model_context_windows` (highest priority — fnmatch wildcard patterns)
-2. `MODEL_CONTEXT_WINDOWS` hardcoded dict (fallback — prefix match)
-3. `_DEFAULT_CONTEXT_WINDOW` = 128,000 (final fallback)
+1. `~/.animaworks/models.json` `context_window` (highest priority — fnmatch wildcard patterns)
+2. config.json `model_context_windows` (fnmatch wildcard patterns)
+3. `MODEL_CONTEXT_WINDOWS` hardcoded dict (fallback — prefix match)
+4. `_DEFAULT_CONTEXT_WINDOW` = 128,000 (final fallback)
 
 Hardcoded defaults use conservative values (e.g. `claude-sonnet-4-6: 128,000`). Override via config when a larger window is needed. The compaction threshold is auto-scaled: models with >= 200K windows use the configured value (default 0.50); smaller models scale linearly toward 0.98.
 
@@ -482,124 +494,17 @@ The archive-based approach is different. Just as a person retrieves the document
 |Directory                     |Brain Analog              |Contents              |Update Method                |
 |------------------------------|--------------------------|----------------------|-----------------------------|
 |`state/`                      |Persistent part of working memory|Current state, incomplete tasks|Overwritten each cycle       |
-|`state/conversation.json`     |Conversation memory       |Rolling conversation history|LLM summarization when threshold exceeded|
 |`shortterm/chat/`            |Short-term memory (chat)  |Context carry-over    |Auto-externalized on session switch|
 |`shortterm/heartbeat/`       |Short-term memory (heartbeat)|Context carry-over    |Separate from chat/heartbeat |
 |`episodes/`                   |Episodic memory (hippocampus)|Daily action logs     |Appended to date-based files |
 |`knowledge/`                  |Semantic memory (temporal cortex)|Lessons, rules, counterpart traits|Created/updated by topic     |
 |`procedures/`                 |Procedural memory (basal ganglia)|Work runbooks         |Revised as needed            |
 
-### 4.4 Memory Operations
+### 4.4 Overview of Memory Operations
 
-**Recall (remembering)** — Always search the archive before making decisions.
+**Recall** — Search the archive before making decisions. **Encoding** — Update memories after taking action. **Consolidation** — Periodically transfer patterns from episodic memory to semantic memory (analogous to memory consolidation during sleep). **Forgetting** — Actively archive or merge low-activity memories to maintain signal quality.
 
-1. Search `knowledge/` by keywords (counterpart name, topic, etc.)
-1. Search `episodes/` as needed (what happened in the past)
-1. Check `procedures/` if the procedure is unclear
-1. Load relevant memories before making a decision
-
-**Encoding (writing)** — Update memories after taking action.
-
-1. Append an action log to `episodes/YYYY-MM-DD.md`
-1. Write to `knowledge/` if something new was learned
-1. Protect important lessons with the `[IMPORTANT]` tag
-1. Update `state/current_task.md`
-
-**Consolidation (reflection)** — Transfer from episodic to semantic memory. Corresponds to memory consolidation during sleep in neuroscience.
-
-- Extract patterns from `episodes/` logs and generalize them into `knowledge/`
-- Run periodically via heartbeat or cron
-
-### 4.5 Episodic Memory Format
-
-```markdown
-# 2026-02-12 Action Log
-
-## 09:15 Chatwork Unreplied Check
-- Trigger: Heartbeat
-- Decision: Found 2 unreplied messages. Handle internal ones myself, escalate external ones
-- Result: Drafted replies and obtained approval
-- Lesson: None
-
-## 14:30 Reply to Tanaka-san
-- Trigger: Message received
-- Decision: Recalled previous rejection for casual tone → drafted formal version
-- Result: Approved
-- Lesson: Reconfirmed that the approach for the construction industry is correct
-```
-
-### 4.6 Knowledge Format
-
-```markdown
-# Response Guidelines
-
-## Communication Rules
-- [IMPORTANT] Always respond with formal business language
-- Casual tone is not acceptable (rejected on 2026-02-11)
-- The construction industry values formal communication
-
-## Contacts
-- Primary contact: Tanaka-san
-```
-
-### 4.7 Experimental Validation Results
-
-Archive-based memory achieved S-rank on all 5 criteria in manual testing (conducted 2026-02-12).
-
-- **Recall**: Successfully searched for and utilized past memories not present in the prompt
-- **Encoding**: Properly wrote action logs, lessons, and new knowledge to files
-- **Reflexion**: Extracted lessons from rejection (failure) and changed subsequent decisions
-- **Consolidation**: Extracted meta-patterns from individual episodes and generalized them as knowledge
-- **Restoration**: Restored state from `state/` and `episodes/` after context was cleared
-
-The key to success was a strong system prompt instruction: "Making decisions without searching memory is prohibited."
-
-### 4.8 Conversation Memory (ConversationMemory)
-
-Rolling chat history. When the accumulated size exceeds `conversation_history_threshold` (default 30%), older turns are compressed via LLM summarization while recent turns retain their original text. Saved in `{anima_dir}/state/conversation.json`.
-
-### 4.9 Short-Term Memory (ShortTermMemory)
-
-Externalized memory for session continuity. When the context threshold is exceeded in A mode, `session_state.json` (machine-readable) and `session_state.md` (for next prompt injection) are generated. `shortterm/{chat|heartbeat}/` separates chat and heartbeat; auto-archived to `archive/`.
-
-### 4.10 Unified Activity Log (ActivityLogger)
-
-An append-only JSONL log that records all interactions as a single timeline.
-
-- **File location**: `{anima_dir}/activity_log/{date}.jsonl`
-- **Event types**: `message_received`, `message_sent`, `response_sent`, `channel_read`, `channel_post`, `human_notify`, `tool_use`, `heartbeat_start`, `heartbeat_end`, `cron_executed`, `memory_write`, `error` (`dm_sent` is a backward-compatible alias for `message_sent`, `dm_received` for `message_received`)
-- **Entry fields**: `ts` (ISO 8601), `type`, `content`, `summary`, `from`/`to`, `channel`, `tool`, `via`, `meta`
-- **Priming integration**: Injects recent activity into the system prompt, enabling cross-session context continuity
-- **Purpose**: The single data source for the Priming layer's "recent activity" channel. Unifies previously scattered transcript, dm_log, and heartbeat_history files
-
-### 4.11 Streaming Journal (StreamingJournal)
-
-A crash-resilient Write-Ahead Log (WAL). Incrementally persists streaming output to disk.
-
-- **File location**: `{anima_dir}/shortterm/streaming_journal_{session_type}.jsonl` (separated by `chat` / `heartbeat`)
-- **Lifecycle**: `open()` → `write_text()` / `write_tool_*()` → `finalize()` (file deleted on normal completion)
-- **Crash recovery**: On next startup, `recover()` reads orphaned journals and restores them as `JournalRecovery`
-- **Buffering**: Flushed at 1-second intervals or 500 characters, with persistence guaranteed via fsync
-- **Event types**: `start` (trigger and session info), `text` (text chunks), `tool_start` / `tool_end`, `done`
-
-### 4.12 Priming (Automatic Recall)
-
-Injects 6-channel parallel automatic memory search into the system prompt. `PrimingEngine` acts as the sole activity leader (hippocampal model) for prompt construction.
-
-| Channel | Budget | Source |
-|---------|--------|--------|
-| A: sender_profile | 500 tokens | Direct read of shared/users/{sender}/index.md |
-| B: recent_activity | 1300 tokens | Unified timeline from ActivityLogger |
-| C: related_knowledge | 700–1200 tokens | Dense vector search (RAG) |
-| D: skill_match | 200 tokens | Description-based 3-stage matching (skill names only, max 5) |
-| E: pending_tasks | 300 tokens | TaskQueueManager (persistent task queue summary) |
-| F: episodes | 400–500 tokens | Dense vector search (RAG, episodes/) |
-
-Channel D returns only the **names** of matched skills/procedures. Full text is not injected (progressive disclosure: agent loads details via `skill` tool when needed).
-
-### 4.13 RAG Configuration
-
-The embedding model is selectable via `rag.embedding_model` in `config.json`. Default is `intfloat/multilingual-e5-small` (384 dimensions). GPU usage and graph-based spreading activation are also configured in config.json.
+> For implementation details covering Conversation Memory, Short-Term Memory, Activity Log, Streaming Journal, Priming (6-channel automatic recall), RAG configuration, Consolidation, and Forgetting, see **[memory.md](memory.md)**.
 
 -----
 
@@ -680,23 +585,53 @@ Since the frontend code is unreadable, the agent needs to ask a colleague, "What
   "reply_to": "",
   "from_person": "Tanaka",
   "to_person": "Suzuki",
-  "type": "message",
+  "intent": "report",
+  "source": "chat",
   "content": "I've revised the auth API design. I placed it in auth-api-design.md, please review.",
   "attachments": [],
   "timestamp": "2026-02-13T10:00:00Z"
 }
 ```
 
-### Message Types
+### Intent (Message Purpose)
 
-In the current implementation, the `type` field defaults to the single type `"message"`. The following type classifications are retained in the design for future extension.
+Every message carries an `intent` field indicating its purpose. This determines priority and handling behavior.
 
-|type (future extension) |Description          |
-|------------------------|---------------------|
-|request                 |Request or instruction from a superior|
-|report                  |Report to a superior |
-|consultation            |Consultation with a peer|
-|broadcast               |Organization-wide announcement|
+|intent        |Description                               |
+|--------------|------------------------------------------|
+|`report`      |Status report or deliverable to a superior|
+|`delegation`  |Task delegation to a subordinate          |
+|`question`    |Question to a peer or superior            |
+
+Lightweight communication such as acknowledgments, thank-yous, and FYIs should use the **Board** (shared channels) instead of direct messages.
+
+### Board (Shared Channels)
+
+Slack-style shared channels stored in `shared/channels/{name}.jsonl` as append-only JSONL. Used for broadcasts, acknowledgments, and cross-team coordination.
+
+- `post_channel` — Post to a channel
+- `read_channel` — Read channel history
+- `read_channel_mentions` — Search for mentions
+
+### Rate Limiting (3 Layers)
+
+|Layer              |Limit                                           |Implementation                        |
+|-------------------|------------------------------------------------|--------------------------------------|
+|Per-run            |No duplicate sends to the same recipient; one channel post per session|`_replied_to`, `_posted_channels`     |
+|Cross-run          |30 messages/hour, 100 messages/day              |activity_log sliding window           |
+|Behavior-awareness |Recent send history injected into Priming       |`PrimingEngine._collect_recent_outbound()`|
+
+`ack`, `error`, and `system_alert` intents are exempt from rate limits. `call_human` is also exempt.
+
+### Communication Routing Rules
+
+|Situation              |Recipient           |Notes                        |
+|-----------------------|--------------------|-----------------------------|
+|Progress/issue reports |Supervisor          |MUST                         |
+|Task delegation        |Direct subordinate  |Use delegate_task            |
+|Coordination           |Peer (same supervisor)|Direct communication OK      |
+|Cross-department contact|Via own supervisor  |Direct contact prohibited in principle|
+|Contacting humans      |call_human          |Top-level Anima responsibility|
 
 Suzuki sees only the design document. Tanaka's thought process and discarded alternatives are invisible. This information asymmetry is what enables fresh perspectives from different backgrounds.
 
@@ -747,18 +682,28 @@ Performs predetermined tasks at predetermined times on its own clock. Unlike hea
 
 cron does not depend on external schedulers or organizational structure. **Each Digital Anima owns its own cron.** Just as a person has their own habit of writing a diary every morning.
 
+Defined in `cron.md` using Markdown + YAML format. Standard 5-field cron expressions (Asia/Tokyo timezone):
+
 ```markdown
-# Cron: Tanaka
+## Morning Work Planning
+schedule: 0 9 * * *
+type: llm
+Review yesterday's progress from episodes/ and plan today's tasks.
 
-## Morning Work Planning (Daily 9:00 JST)
-Review yesterday's progress from long-term memory and plan today's tasks.
-Prioritize based on principles and objectives.
-Output the result to /workspace/Tanaka/daily-plan.md.
-
-## Weekly Retrospective (Every Friday 17:00 JST)
+## Weekly Retrospective
+schedule: 0 17 * * 5
+type: llm
 Re-read this week's episodes/ and extract patterns, consolidating them into knowledge/.
-(Memory consolidation = the neuroscience analog of memory fixation during sleep)
+
+## Backup Execution
+schedule: 0 2 * * *
+type: command
+command: /usr/local/bin/backup.sh
 ```
+
+- **LLM type**: The agent executes with judgment and reasoning (incurs API cost)
+- **Command type**: Runs bash or internal tools deterministically (no API cost)
+- **Hot-reload**: cron.md changes are automatically picked up on the next execution cycle
 
 **Differences Between Heartbeat and cron:**
 
@@ -777,7 +722,7 @@ Activation (message or heartbeat or cron)
   ↓
 Recall: Search the archive for relevant memories
   ↓
-Think & Act: Agent Core (S/A/B mode) processes
+Think & Act: Agent Core (S/A/B/C mode) processes
   ↓
 Communicate: Summarize results and send as text or create files
   ↓
@@ -874,29 +819,67 @@ Including "Making decisions without searching memory is prohibited" in `behavior
 
 - **Digital Anima class** — Encapsulation and autonomous operation. 1 Anima = 1 directory
 - **4 execution modes** — S: Claude Agent SDK / A: Anthropic SDK or LiteLLM + tool_use / B: Assisted (one-shot) / C: Codex CLI wrapper
+- **Background model** — Separate lightweight model for heartbeat/inbox/cron paths to reduce cost
 - **ProcessSupervisor** — Launches and monitors each Anima as an independent child process with Unix socket
 - **Archive-based memory** — episodes (daily logs) / knowledge (lessons and knowledge) / procedures (runbooks) / state (working memory)
-- **Conversation memory** — state/conversation.json, rolling compression. Older turns compressed via LLM summarization when threshold exceeded
-- **Short-term memory** — shortterm/chat/ and heartbeat/ separated. Externalized as JSON+MD when context threshold exceeded
-- **Unified activity log** — All interactions recorded in activity_log/ as JSONL timeline. Priming integration for context continuity
-- **Streaming journal (WAL)** — streaming_journal_{session_type}.jsonl. Crash-resilient incremental persistence
+- **Memory consolidation** — Daily episode → knowledge extraction; weekly knowledge merge + episode compression
+- **Active forgetting** — 3-stage lifecycle: synaptic downscaling → neurogenesis reorganization → complete forgetting
 - **Priming (6 channels)** — sender_profile, recent_activity, related_knowledge, skill_match, pending_tasks, episodes
 - **Board/shared channels** — Slack-style shared channels. REST API for channel posts, mentions, DM history
+- **Intent-based messaging** — Messages carry `intent` (report/delegation/question). 3-layer rate limiting
 - **Unified outbound routing** — Auto-resolves recipient names to internal Anima or external platforms (Slack/Chatwork) for delivery
 - **Heartbeat, cron, TaskExec** — Schedule management via APScheduler. Tasks in state/pending/ executed by TaskExec via 3-second polling
 - **Inter-Anima messaging** — Text communication via Messenger. Hierarchical delegation (supervisor → subordinate, delegate_task tool)
 - **Supervisor tools** — Auto-enabled for Animas with subordinates: disable/enable_subordinate, delegate_task, org_dashboard, audit_subordinate, etc.
 - **Unified configuration** — config.json + Pydantic validation. status.json SSoT, models.json for execution mode override
+- **Credential Vault** — Encrypted secret storage accessible to Animas via vault_get/vault_store/vault_list tools
+- **plan_tasks** — DAG-based parallel task execution with dependency resolution
 - **FastAPI server** — REST + WebSocket + Web UI (3D office, conversation view)
 - **Voice chat** — WebSocket /ws/voice/{name}. STT (faster-whisper) → Chat IPC → TTS (VOICEVOX/ElevenLabs/SBV2)
 - **External tools** — web_search, x_search, slack, chatwork, gmail, github, transcribe, aws_collector, local_llm, image_gen, google_calendar, call_human
 - **Anima creation** — From template / blank (_blank) / MD file (create --from-md)
 - **Skill progressive disclosure** — Only matched skill names injected. Full text loaded on demand via `skill` tool
 - **External messaging integration** — Slack Socket Mode (real-time bidirectional), Chatwork Webhook (inbound)
-- **Embedding model configuration** — RAG embedding model selectable via config.json
 - **Persistent task queue** — task_queue.jsonl. Staleness detection and delegation prompt injection
 - **Resolution registry** — Cross-Anima issue resolution tracking via shared/resolutions.jsonl
 - **Human notification** — call_human integration. Slack, Chatwork, LINE, Telegram, ntfy channels
+
+### 11.1 Internal Tools Catalog
+
+Internal tools provided by the framework (MCP tools in Mode S, ToolHandler dispatch in Mode A/B).
+
+| Category | Tool | Description |
+|----------|------|-------------|
+| **Memory** | `search_memory` | Search long-term memory (knowledge/episodes/procedures/common_knowledge) |
+|  | `read_memory_file` | Read a specific memory file |
+|  | `write_memory_file` | Write to a memory file |
+|  | `archive_memory_file` | Archive a memory file |
+| **Communication** | `send_message` | Send a direct message to another Anima or external user |
+|  | `post_channel` | Post to a shared Board channel |
+|  | `read_channel` | Read shared channel history |
+|  | `read_channel_mentions` | Search for mentions in a channel |
+|  | `read_dm_history` | Read DM history |
+| **Task** | `add_task` | Add a task to the persistent queue |
+|  | `update_task` | Update task status |
+|  | `list_tasks` | List tasks by status |
+|  | `plan_tasks` | Submit a batch of tasks with dependency DAG for parallel execution |
+| **Skill** | `skill` | Look up a skill (progressive disclosure: name only → full text on demand) |
+|  | `create_skill` | Create a new skill |
+| **Vault** | `vault_get` | Retrieve a secret from the Vault |
+|  | `vault_store` | Store a secret in the Vault |
+|  | `vault_list` | List available Vault keys |
+| **Background** | `background_task` | Submit a long-running tool for async execution |
+| **Supervisor** | `delegate_task` | Delegate a task to a direct subordinate |
+|  | `org_dashboard` | Display organization tree with process states and tasks |
+|  | `ping_subordinate` | Liveness check for subordinates |
+|  | `read_subordinate_state` | Read subordinate's current_task.md and pending.md |
+|  | `audit_subordinate` | Activity summary, error frequency, and tool usage stats |
+|  | `task_tracker` | Track progress of delegated tasks |
+|  | `disable/enable_subordinate` | Suspend or resume a subordinate |
+|  | `set_subordinate_model` | Change a subordinate's model |
+|  | `restart_subordinate` | Restart a subordinate's process |
+| **Other** | `call_human` | Notify a human via configured channels |
+|  | `create_anima` | Create a new Anima (requires newstaff skill) |
 
 -----
 
