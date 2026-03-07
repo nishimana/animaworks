@@ -301,3 +301,19 @@
   font-size: 1.125rem;
   min-width: 4rem;
 }
+
+/* ── Settings Status Banner ─────────────────── */
+
+.settings-status {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  margin-bottom: 0.75rem;
+  animation: nightModeSlide 0.2s ease-out;
+}
+
+.settings-status-error {
+  background: var(--aw-color-error-bg, #fef2f2);
+  color: var(--aw-color-error, #dc2626);
+  border: 1px solid var(--aw-color-error-border, #fecaca);
+}

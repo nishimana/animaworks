@@ -186,8 +186,14 @@ async function _initActivityLevel(container) {
         _updateActivityEffect(container, level);
         _updatePresetButtons(container, level);
       }
+    } else {
+      console.warn("[Settings] GET activity-level failed:", res.status);
+      _showSettingsStatus(container, t("settings.load_error"), true);
     }
-  } catch { /* best-effort */ }
+  } catch (err) {
+    console.warn("[Settings] GET activity-level error:", err);
+    _showSettingsStatus(container, t("settings.load_error"), true);
+  }
 
   const slider = container.querySelector("#activityLevelSlider");
   if (slider) {
@@ -250,18 +256,25 @@ function _updatePresetButtons(container, level) {
 
 async function _setActivityLevel(level, container) {
   try {
-    await fetch("/api/settings/activity-level", {
+    const res = await fetch("/api/settings/activity-level", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ activity_level: level }),
     });
-  } catch { /* best-effort */ }
+    if (!res.ok) {
+      console.warn("[Settings] PUT activity-level failed:", res.status);
+      _showSettingsStatus(container, t("settings.save_error"), true);
+    }
+  } catch (err) {
+    console.warn("[Settings] PUT activity-level error:", err);
+    _showSettingsStatus(container, t("settings.save_error"), true);
+  }
 
   // When night mode is ON, also update the schedule with the new day-level
   if (container) {
     const toggle = container.querySelector("#nightModeToggle");
     if (toggle && toggle.checked) {
-      _saveNightMode(container);
+      _saveNightMode(container, false);
     }
   }
 }
@@ -304,10 +317,10 @@ function _initNightMode(container, schedule) {
   toggle.addEventListener("change", () => {
     if (toggle.checked) {
       settings.style.display = "";
-      _saveNightMode(container);
+      _saveNightMode(container, true);
     } else {
       settings.style.display = "none";
-      _clearNightMode();
+      _clearNightMode(container);
     }
   });
 
@@ -316,14 +329,14 @@ function _initNightMode(container, schedule) {
       const val = parseInt(nightSlider.value, 10);
       _updateActivityDisplay(nightDisplay, val);
     });
-    nightSlider.addEventListener("change", () => _saveNightMode(container));
+    nightSlider.addEventListener("change", () => _saveNightMode(container, false));
   }
 
-  if (nightStart) nightStart.addEventListener("change", () => _saveNightMode(container));
-  if (nightEnd) nightEnd.addEventListener("change", () => _saveNightMode(container));
+  if (nightStart) nightStart.addEventListener("change", () => _saveNightMode(container, false));
+  if (nightEnd) nightEnd.addEventListener("change", () => _saveNightMode(container, false));
 }
 
-async function _saveNightMode(container) {
+async function _saveNightMode(container, revertOnFail) {
   const nightStart = container.querySelector("#nightStart");
   const nightEnd = container.querySelector("#nightEnd");
   const nightSlider = container.querySelector("#nightLevelSlider");
@@ -343,20 +356,61 @@ async function _saveNightMode(container) {
   ];
 
   try {
-    await fetch("/api/settings/activity-schedule", {
+    const res = await fetch("/api/settings/activity-schedule", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ activity_schedule: schedule }),
     });
-  } catch { /* best-effort */ }
+    if (!res.ok) {
+      console.warn("[Settings] PUT activity-schedule failed:", res.status);
+      _showSettingsStatus(container, t("settings.save_error"), true);
+      if (revertOnFail) _revertNightModeToggle(container, false);
+    }
+  } catch (err) {
+    console.warn("[Settings] PUT activity-schedule error:", err);
+    _showSettingsStatus(container, t("settings.save_error"), true);
+    if (revertOnFail) _revertNightModeToggle(container, false);
+  }
 }
 
-async function _clearNightMode() {
+async function _clearNightMode(container) {
   try {
-    await fetch("/api/settings/activity-schedule", {
+    const res = await fetch("/api/settings/activity-schedule", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ activity_schedule: [] }),
     });
-  } catch { /* best-effort */ }
+    if (!res.ok) {
+      console.warn("[Settings] PUT clear schedule failed:", res.status);
+      if (container) _showSettingsStatus(container, t("settings.save_error"), true);
+      if (container) _revertNightModeToggle(container, true);
+    }
+  } catch (err) {
+    console.warn("[Settings] PUT clear schedule error:", err);
+    if (container) _showSettingsStatus(container, t("settings.save_error"), true);
+    if (container) _revertNightModeToggle(container, true);
+  }
+}
+
+function _revertNightModeToggle(container, checked) {
+  const toggle = container.querySelector("#nightModeToggle");
+  const settings = container.querySelector("#nightModeSettings");
+  if (toggle) toggle.checked = checked;
+  if (settings) settings.style.display = checked ? "" : "none";
+}
+
+function _showSettingsStatus(container, msg, isError) {
+  if (!container) return;
+  let el = container.querySelector("#settingsStatus");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "settingsStatus";
+    const header = container.querySelector(".page-header");
+    if (header) header.after(el);
+    else container.prepend(el);
+  }
+  el.textContent = msg;
+  el.className = isError ? "settings-status settings-status-error" : "settings-status";
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => el.remove(), 5000);
 }
