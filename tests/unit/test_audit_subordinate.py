@@ -9,8 +9,6 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from core.tooling.handler import ToolHandler
 
 
@@ -114,7 +112,7 @@ class TestAuditSubordinateSummary:
             "hinata": {"supervisor": "sakura"},
         })
         with p1, p2, p3:
-            result = handler.handle("audit_subordinate", {"name": "hinata"})
+            result = handler.handle("audit_subordinate", {"name": "hinata", "mode": "summary"})
 
         assert "hinata" in result
         assert "監査サマリー" in result or "Audit Summary" in result
@@ -130,7 +128,7 @@ class TestAuditSubordinateSummary:
             "hinata": {"supervisor": "sakura"},
         })
         with p1, p2, p3:
-            result = handler.handle("audit_subordinate", {"name": "hinata"})
+            result = handler.handle("audit_subordinate", {"name": "hinata", "mode": "summary"})
 
         assert "openai/gpt-4.1" in result
 
@@ -143,7 +141,7 @@ class TestAuditSubordinateSummary:
             "hinata": {"supervisor": "sakura"},
         })
         with p1, p2, p3:
-            result = handler.handle("audit_subordinate", {"name": "hinata"})
+            result = handler.handle("audit_subordinate", {"name": "hinata", "mode": "summary"})
 
         assert "hinata" in result
         assert "0" in result
@@ -162,7 +160,7 @@ class TestAuditSubordinateSummary:
             "hinata": {"supervisor": "sakura"},
         })
         with p1, p2, p3:
-            result = handler.handle("audit_subordinate", {"name": "hinata"})
+            result = handler.handle("audit_subordinate", {"name": "hinata", "mode": "summary"})
 
         assert "API timeout" in result
         assert "Connection refused" in result
@@ -182,7 +180,7 @@ class TestAuditSubordinateSummary:
             "hinata": {"supervisor": "sakura"},
         })
         with p1, p2, p3:
-            result = handler.handle("audit_subordinate", {"name": "hinata"})
+            result = handler.handle("audit_subordinate", {"name": "hinata", "mode": "summary"})
 
         assert "sakura" in result
         assert "rin" in result
@@ -210,15 +208,16 @@ class TestAuditSubordinateReport:
             result = handler.handle("audit_subordinate", {"name": "hinata", "mode": "report"})
 
         assert "行動レポート" in result or "Activity Report" in result
-        # High-value events appear in their sections
+        # High-value events appear in unified timeline
         assert "🔄" in result  # heartbeat
         assert "📨" in result  # message_sent
         # tool_use appears only in summary, not as individual entries
         assert "github_pr_review" in result
         assert "ツール使用サマリー" in result or "Tool Usage Summary" in result
-        # Category sections present
-        assert "思考" in result or "Thinking" in result
-        assert "コミュニケーション" in result or "Communication" in result
+        # Chronological: heartbeat appears before message_sent in output
+        hb_pos = result.index("🔄")
+        dm_pos = result.index("📨")
+        assert hb_pos < dm_pos
 
     def test_report_tool_use_summary_only_no_individual_entries(self, tmp_path):
         """tool_use must appear only as summary line, never as individual entries."""
@@ -348,8 +347,11 @@ class TestAuditSubordinateBatch:
 
     def test_batch_all_direct_subordinates(self, tmp_path):
         handler = _make_handler(tmp_path, "sakura")
-        _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
-        _setup_subordinate(tmp_path, "rin", supervisor="sakura")
+        dir_h = _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
+        dir_r = _setup_subordinate(tmp_path, "rin", supervisor="sakura")
+
+        _write_activity(dir_h, [{"type": "heartbeat_end", "summary": "hinata check"}])
+        _write_activity(dir_r, [{"type": "heartbeat_end", "summary": "rin check"}])
 
         p1, p2, p3 = _patches(tmp_path, {
             "sakura": {},
@@ -359,6 +361,7 @@ class TestAuditSubordinateBatch:
         with p1, p2, p3:
             result = handler.handle("audit_subordinate", {})
 
+        assert "組織タイムライン" in result or "Org Timeline" in result
         assert "hinata" in result
         assert "rin" in result
 
@@ -373,8 +376,10 @@ class TestAuditSubordinateBatch:
 
     def test_batch_direct_only(self, tmp_path):
         handler = _make_handler(tmp_path, "sakura")
-        _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
+        dir_h = _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
         _setup_subordinate(tmp_path, "rin", supervisor="hinata")
+
+        _write_activity(dir_h, [{"type": "heartbeat_end", "summary": "hinata only"}])
 
         p1, p2, p3 = _patches(tmp_path, {
             "sakura": {},
@@ -470,3 +475,139 @@ class TestAuditSubordinateParams:
             result = handler.handle("audit_subordinate", {"name": "hinata", "hours": 12, "days": 3})
 
         assert "12h" in result
+
+
+class TestMergedTimeline:
+    """Tests for generate_merged_timeline (cross-anima unified view)."""
+
+    def test_merged_timeline_chronological_order(self, tmp_path):
+        """Events from multiple animas are sorted by timestamp."""
+        dir_a = _setup_subordinate(tmp_path, "alice", supervisor="boss")
+        dir_b = _setup_subordinate(tmp_path, "bob", supervisor="boss")
+
+        ts_early = "2026-03-07T01:00:00+09:00"
+        ts_mid = "2026-03-07T02:00:00+09:00"
+        ts_late = "2026-03-07T03:00:00+09:00"
+
+        _write_activity(dir_a, [
+            {"type": "heartbeat_end", "summary": "Alice HB", "ts": ts_early},
+            {"type": "response_sent", "content": "Alice response", "ts": ts_late},
+        ])
+        _write_activity(dir_b, [
+            {"type": "error", "summary": "Bob error", "ts": ts_mid, "meta": {"phase": "tool_use"}},
+        ])
+
+        from core.memory.audit import AuditAggregator
+
+        result = AuditAggregator.generate_merged_timeline([dir_a, dir_b], hours=24)
+
+        assert "組織タイムライン" in result or "Org Timeline" in result
+        assert "2名" in result or "2 animas" in result
+        alice_hb = result.index("alice")
+        bob_err = result.index("bob")
+        alice_resp = result.rindex("alice")
+        assert alice_hb < bob_err < alice_resp
+
+    def test_merged_timeline_includes_anima_names(self, tmp_path):
+        """Each timeline entry is prefixed with the anima name."""
+        dir_a = _setup_subordinate(tmp_path, "alice", supervisor="boss")
+        _write_activity(dir_a, [
+            {"type": "heartbeat_end", "summary": "checking tasks"},
+        ])
+
+        from core.memory.audit import AuditAggregator
+
+        result = AuditAggregator.generate_merged_timeline([dir_a], hours=24)
+
+        assert "alice 🔄" in result
+
+    def test_merged_timeline_tool_summary_per_anima(self, tmp_path):
+        """Tool usage summary is shown per-anima."""
+        dir_a = _setup_subordinate(tmp_path, "alice", supervisor="boss")
+        dir_b = _setup_subordinate(tmp_path, "bob", supervisor="boss")
+
+        _write_activity(dir_a, [
+            {"type": "tool_use", "tool": "Read", "content": "foo"},
+            {"type": "tool_use", "tool": "Read", "content": "bar"},
+        ])
+        _write_activity(dir_b, [
+            {"type": "tool_use", "tool": "Write", "content": "baz"},
+        ])
+
+        from core.memory.audit import AuditAggregator
+
+        result = AuditAggregator.generate_merged_timeline([dir_a, dir_b], hours=24)
+
+        assert "alice" in result and "Read: 2" in result
+        assert "bob" in result and "Write: 1" in result
+
+    def test_merged_timeline_no_individual_tool_entries(self, tmp_path):
+        """tool_use events must not appear as individual timeline entries."""
+        dir_a = _setup_subordinate(tmp_path, "alice", supervisor="boss")
+
+        _write_activity(dir_a, [
+            {"type": "tool_use", "tool": "Read", "content": "reading"},
+            {"type": "heartbeat_end", "summary": "HB done"},
+        ])
+
+        from core.memory.audit import AuditAggregator
+
+        result = AuditAggregator.generate_merged_timeline([dir_a], hours=24)
+
+        assert "🔧" not in result
+        assert "🔄" in result
+
+    def test_merged_timeline_empty(self, tmp_path):
+        """Empty anima dirs produce no-activity message."""
+        dir_a = _setup_subordinate(tmp_path, "alice", supervisor="boss")
+
+        from core.memory.audit import AuditAggregator
+
+        result = AuditAggregator.generate_merged_timeline([dir_a], hours=24)
+
+        assert "活動ログはありません" in result or "No activity" in result
+
+    def test_merged_timeline_footer_stats(self, tmp_path):
+        """Footer shows aggregate stats across all animas."""
+        dir_a = _setup_subordinate(tmp_path, "alice", supervisor="boss")
+        dir_b = _setup_subordinate(tmp_path, "bob", supervisor="boss")
+
+        _write_activity(dir_a, [
+            {"type": "heartbeat_end", "summary": "HB1"},
+            {"type": "tool_use", "tool": "Read", "content": "x"},
+        ])
+        _write_activity(dir_b, [
+            {"type": "error", "summary": "timeout", "meta": {}},
+        ])
+
+        from core.memory.audit import AuditAggregator
+
+        result = AuditAggregator.generate_merged_timeline([dir_a, dir_b], hours=24)
+
+        assert "全2名" in result or "2 animas" in result
+        assert "HB1" in result
+
+    def test_batch_report_mode_uses_merged_timeline(self, tmp_path):
+        """audit_subordinate with multiple targets + report mode triggers merged timeline."""
+        handler = _make_handler(tmp_path, "sakura")
+        dir_a = _setup_subordinate(tmp_path, "alice", supervisor="sakura")
+        dir_b = _setup_subordinate(tmp_path, "bob", supervisor="sakura")
+
+        _write_activity(dir_a, [
+            {"type": "heartbeat_end", "summary": "Alice check"},
+        ])
+        _write_activity(dir_b, [
+            {"type": "response_sent", "content": "Bob reply"},
+        ])
+
+        p1, p2, p3 = _patches(tmp_path, {
+            "sakura": {},
+            "alice": {"supervisor": "sakura"},
+            "bob": {"supervisor": "sakura"},
+        })
+        with p1, p2, p3:
+            result = handler.handle("audit_subordinate", {"mode": "report"})
+
+        assert "組織タイムライン" in result or "Org Timeline" in result
+        assert "alice" in result
+        assert "bob" in result

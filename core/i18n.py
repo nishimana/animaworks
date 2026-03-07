@@ -316,6 +316,18 @@ _STRINGS: dict[str, dict[str, str]] = {
         "ja": "─── 統計: 活動{total}件 | ツール{tools} | HB{hb} | 応答{resp_sent} | DM{dm_sent} | エラー{errors} ───",
         "en": "─── Stats: {total} events | Tools {tools} | HB {hb} | Responses {resp_sent} | DM {dm_sent} | Errors {errors} ───",
     },
+    "handler.audit_merged_title": {
+        "ja": "═══ 組織タイムライン (直近{hours}h) — {count}名 ═══",
+        "en": "═══ Org Timeline (last {hours}h) — {count} animas ═══",
+    },
+    "handler.audit_merged_footer": {
+        "ja": "─── 統計: 全{count}名 | 活動{total}件 | ツール{tools} | HB{hb} | 応答{resp_sent} | DM{dm_sent} | エラー{errors} ───",
+        "en": "─── Stats: {count} animas | {total} events | Tools {tools} | HB {hb} | Responses {resp_sent} | DM {dm_sent} | Errors {errors} ───",
+    },
+    "handler.audit_merged_tool_header": {
+        "ja": "■ ツール使用サマリー",
+        "en": "■ Tool Usage Summary",
+    },
     "handler.audit_section_thinking": {
         "ja": "■ 思考・判断（ハートビート / 振り返り）",
         "en": "■ Thinking & Decisions (Heartbeat / Reflection)",
@@ -1372,8 +1384,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "en": "Target Anima name (omit for all direct subordinates)",
     },
     "schema.audit_subordinate.mode": {
-        "ja": "出力モード。summary=統計サマリー、report=日報形式（デフォルト: summary）",
-        "en": "Output mode. summary=statistics, report=chronological daily report (default: summary)",
+        "ja": "出力モード。report=タイムライン日報（デフォルト）、summary=統計サマリー",
+        "en": "Output mode. report=timeline daily report (default), summary=statistics",
     },
     "schema.audit_subordinate.hours": {
         "ja": "監査期間（時間単位、デフォルト: 24、最大: 168）",

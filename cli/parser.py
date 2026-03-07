@@ -503,7 +503,8 @@ def cli_main() -> None:
         "audit",
         help="Audit a subordinate anima's recent activity",
     )
-    p_anima_audit.add_argument("anima", help="Target anima name to audit")
+    p_anima_audit.add_argument("anima", nargs="?", default=None, help="Target anima name (omit with --all for all)")
+    p_anima_audit.add_argument("--all", action="store_true", dest="audit_all", help="Audit all animas")
     p_anima_audit.add_argument(
         "--days",
         type=int,
@@ -513,8 +514,8 @@ def cli_main() -> None:
     p_anima_audit.add_argument(
         "--mode",
         choices=["summary", "report"],
-        default="summary",
-        help="Output mode: summary (default) or report (chronological narrative)",
+        default="report",
+        help="Output mode: report (default, chronological timeline) or summary (statistics)",
     )
     p_anima_audit.set_defaults(func=_lazy_anima_audit)
 

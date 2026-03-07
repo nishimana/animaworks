@@ -853,7 +853,7 @@ class OrgToolsMixin:
         from core.paths import get_animas_dir
 
         target_name = args.get("name")
-        mode = args.get("mode", "summary")
+        mode = args.get("mode", "report")
         # Backward compat: accept legacy "days" param, convert to hours
         raw_hours = args.get("hours")
         if raw_hours is None and "days" in args:
@@ -877,15 +877,21 @@ class OrgToolsMixin:
                 return t("handler.no_subordinates")
 
         animas_dir = get_animas_dir()
-        results: list[str] = []
         is_batch = len(targets) > 1
 
-        for name in targets:
-            agg = AuditAggregator(animas_dir / name)
-            if mode == "report":
-                results.append(agg.generate_report(hours=hours))
-            else:
-                results.append(agg.generate_summary(hours=hours, compact=is_batch))
+        if mode == "report" and is_batch:
+            result = AuditAggregator.generate_merged_timeline(
+                [animas_dir / n for n in targets], hours=hours
+            )
+        else:
+            results: list[str] = []
+            for name in targets:
+                agg = AuditAggregator(animas_dir / name)
+                if mode == "report":
+                    results.append(agg.generate_report(hours=hours))
+                else:
+                    results.append(agg.generate_summary(hours=hours, compact=is_batch))
+            result = "\n\n".join(results)
 
         self._activity.log(
             "tool_use",
@@ -898,7 +904,7 @@ class OrgToolsMixin:
             meta={"targets": targets, "mode": mode, "hours": hours},
         )
 
-        return "\n\n".join(results)
+        return result
 
     # ── Task tracking ────────────────────────────────────────
 

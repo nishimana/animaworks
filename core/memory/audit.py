@@ -33,11 +33,6 @@ _REPORT_ENTRY_TRUNCATE = 300
 _BATCH_PER_ANIMA_CHARS = 500
 _MAX_ERRORS_SHOWN = 5
 
-# Category-specific limits for report mode
-_MAX_HB_ENTRIES = 10  # heartbeat_end + heartbeat_reflection
-_MAX_RESPONSE_ENTRIES = 10  # response_sent + cron_executed
-_MAX_ACTION_ENTRIES = 10  # message_sent + task_exec_end + issue_resolved
-_MAX_ERROR_ENTRIES = 5  # error
 _MAX_TOOL_SUMMARY = 10  # tool usage TOP N (summary line, not individual entries)
 
 _REPORT_ICONS: dict[str, str] = {
@@ -225,7 +220,11 @@ class AuditAggregator:
     # ── Report mode ──────────────────────────────────────────
 
     def generate_report(self, hours: int = 24) -> str:
-        """Generate a priority-based category report (日報形式)."""
+        """Generate a unified timeline report (日報形式).
+
+        All non-tool_use events are displayed chronologically.
+        tool_use events are aggregated into a summary at the bottom.
+        """
         entries = self._load_entries(hours)
         process_status, model_name = self._get_status_info()
 
@@ -247,59 +246,20 @@ class AuditAggregator:
             if e.type == "tool_use" and e.tool:
                 tool_counts[e.tool] += 1
 
-        # Split entries into categories
-        hb_entries: list[Any] = []
-        response_entries: list[Any] = []
-        action_entries: list[Any] = []
-        error_entries: list[Any] = []
+        timeline_entries = [e for e in entries if e.type != "tool_use"]
 
-        for e in entries:
-            if e.type in ("heartbeat_end", "heartbeat_reflection"):
-                hb_entries.append(e)
-            elif e.type in ("response_sent", "cron_executed"):
-                response_entries.append(e)
-            elif e.type in ("message_sent", "task_exec_end", "issue_resolved"):
-                action_entries.append(e)
-            elif e.type == "error":
-                error_entries.append(e)
-            # tool_use: not shown as individual entries
+        for e in timeline_entries:
+            ts_short = e.ts[11:16] if len(e.ts) >= 16 else e.ts
+            icon = _REPORT_ICONS.get(e.type, "📝")
+            label = self._event_label(e)
+            content = self._extract_content(e)
+            lines.append(f"[{ts_short}] {icon} {label}")
+            if content:
+                for cl in content.split("\n")[:3]:
+                    lines.append(f"  {cl}")
+            lines.append("")
 
-        # Sort each category chronologically (entries already loaded in order)
-        def _render_category(cat_entries: list[Any], limit: int) -> list[str]:
-            out: list[str] = []
-            for e in cat_entries[:limit]:
-                ts_short = e.ts[11:16] if len(e.ts) >= 16 else e.ts
-                icon = _REPORT_ICONS.get(e.type, "📝")
-                label = self._event_label(e)
-                content = self._extract_content(e)
-                out.append(f"[{ts_short}] {icon} {label}")
-                if content:
-                    for cl in content.split("\n")[:3]:
-                        out.append(f"  {cl}")
-                out.append("")
-            return out
-
-        # Section: Thinking (heartbeat / reflection)
-        if hb_entries:
-            lines.append(t("handler.audit_section_thinking"))
-            lines.extend(_render_category(hb_entries, _MAX_HB_ENTRIES))
-
-        # Section: Dialogue & Responses
-        if response_entries:
-            lines.append(t("handler.audit_section_responses"))
-            lines.extend(_render_category(response_entries, _MAX_RESPONSE_ENTRIES))
-
-        # Section: Communication & Tasks
-        if action_entries:
-            lines.append(t("handler.audit_section_actions"))
-            lines.extend(_render_category(action_entries, _MAX_ACTION_ENTRIES))
-
-        # Section: Errors
-        if error_entries:
-            lines.append(t("handler.audit_section_errors_report"))
-            lines.extend(_render_category(error_entries, _MAX_ERROR_ENTRIES))
-
-        # Section: Tool usage summary (not individual entries)
+        # Tool usage summary (not individual entries)
         tool_count = type_counts.get("tool_use", 0)
         if tool_count > 0:
             lines.append(t("handler.audit_section_tool_summary", count=tool_count))
@@ -323,6 +283,89 @@ class AuditAggregator:
                 resp_sent=resp_count,
                 dm_sent=dm_count,
                 errors=err_count,
+            )
+        )
+
+        return "\n".join(lines)
+
+    # ── Merged timeline ────────────────────────────────────────
+
+    @classmethod
+    def generate_merged_timeline(cls, anima_dirs: list[Path], hours: int = 24) -> str:
+        """Generate a unified cross-anima timeline sorted chronologically.
+
+        Merges events from multiple Animas into a single timeline.
+        tool_use events are aggregated per-anima at the bottom.
+        """
+        from core.memory.activity import ActivityLogger
+
+        tagged: list[tuple[str, Any]] = []
+        per_anima_tool_counts: dict[str, Counter[str]] = {}
+        per_anima_total_tools: Counter[str] = Counter()
+        global_type_counts: Counter[str] = Counter()
+
+        for anima_dir in anima_dirs:
+            name = anima_dir.name
+            al = ActivityLogger(anima_dir)
+            entries = al._load_entries(hours=hours, types=AUDIT_EVENT_TYPES)
+            per_anima_tool_counts[name] = Counter()
+            for e in entries:
+                global_type_counts[e.type] += 1
+                if e.type == "tool_use":
+                    if e.tool:
+                        per_anima_tool_counts[name][e.tool] += 1
+                    per_anima_total_tools[name] += 1
+                else:
+                    tagged.append((name, e))
+
+        tagged.sort(key=lambda x: x[1].ts)
+
+        lines: list[str] = [
+            t("handler.audit_merged_title", hours=hours, count=len(anima_dirs)),
+            "",
+        ]
+
+        if not tagged and not any(per_anima_total_tools.values()):
+            lines.append(t("handler.audit_no_activity"))
+            return "\n".join(lines)
+
+        for name, e in tagged:
+            ts_short = e.ts[11:16] if len(e.ts) >= 16 else e.ts
+            icon = _REPORT_ICONS.get(e.type, "📝")
+            label = cls._event_label(e)
+            content = cls._extract_content(e)
+            lines.append(f"[{ts_short}] {name} {icon} {label}")
+            if content:
+                for cl in content.split("\n")[:3]:
+                    lines.append(f"  {cl}")
+            lines.append("")
+
+        has_tools = any(c for c in per_anima_tool_counts.values() if c)
+        if has_tools:
+            lines.append(t("handler.audit_merged_tool_header"))
+            for name in sorted(per_anima_tool_counts):
+                tc = per_anima_tool_counts[name]
+                total = per_anima_total_tools[name]
+                if total == 0:
+                    continue
+                top = tc.most_common(_MAX_TOOL_SUMMARY)
+                parts = [f"{tn}: {cnt}" for tn, cnt in top]
+                lines.append(f"  {name} (全{total}回): " + " | ".join(parts))
+            lines.append("")
+
+        total = sum(global_type_counts.values())
+        tool_total = sum(per_anima_total_tools.values())
+        lines.append(
+            t(
+                "handler.audit_merged_footer",
+                count=len(anima_dirs),
+                total=total,
+                tools=tool_total,
+                hb=global_type_counts.get("heartbeat_end", 0),
+                resp_sent=global_type_counts.get("response_sent", 0)
+                + global_type_counts.get("cron_executed", 0),
+                dm_sent=global_type_counts.get("message_sent", 0),
+                errors=global_type_counts.get("error", 0),
             )
         )
 

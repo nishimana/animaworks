@@ -778,25 +778,54 @@ def cmd_anima_audit(args: argparse.Namespace) -> None:
     from core.memory.activity import ActivityLogger
     from core.paths import get_animas_dir
 
-    name: str = args.anima
+    name: str | None = args.anima
+    audit_all: bool = getattr(args, "audit_all", False)
     days: int = max(1, min(getattr(args, "days", 1), 30))
-    mode = getattr(args, "mode", "summary")
+    mode = getattr(args, "mode", "report")
+
+    if not name and not audit_all:
+        print("Error: specify an anima name or use --all")
+        sys.exit(1)
+
+    animas_dir = get_animas_dir()
 
     if mode == "report":
         from core.memory.audit import AuditAggregator
-        from core.paths import get_animas_dir as _get_animas_dir
 
-        animas_dir = _get_animas_dir()
-        anima_dir = animas_dir / name
-        if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
-            print(f"Error: Anima '{name}' not found")
-            sys.exit(1)
-        agg = AuditAggregator(anima_dir)
-        print(agg.generate_report(hours=days * 24))
+        if audit_all:
+            dirs = sorted(
+                [d for d in animas_dir.iterdir() if d.is_dir() and (d / "identity.md").exists()]
+            )
+            if not dirs:
+                print("No animas found.")
+                sys.exit(1)
+            print(AuditAggregator.generate_merged_timeline(dirs, hours=days * 24))
+        elif name:
+            anima_dir = animas_dir / name
+            if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
+                print(f"Error: Anima '{name}' not found")
+                sys.exit(1)
+            agg = AuditAggregator(anima_dir)
+            print(agg.generate_report(hours=days * 24))
         return
 
-    animas_dir = get_animas_dir()
-    anima_dir = animas_dir / name
+    if audit_all:
+        from core.memory.audit import AuditAggregator
+
+        dirs = sorted(
+            [d for d in animas_dir.iterdir() if d.is_dir() and (d / "identity.md").exists()]
+        )
+        if not dirs:
+            print("No animas found.")
+            sys.exit(1)
+        parts: list[str] = []
+        for d in dirs:
+            agg = AuditAggregator(d)
+            parts.append(agg.generate_summary(hours=days * 24, compact=True))
+        print("\n\n".join(parts))
+        return
+
+    anima_dir = animas_dir / name  # type: ignore[arg-type]
 
     if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
         print(f"Error: Anima '{name}' not found")
