@@ -6,5 +6,8 @@
   },
   "image_gen": {
     "image_style": "anime"
+  },
+  "ui": {
+    "demo_mode": true
   }
 }

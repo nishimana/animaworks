@@ -152,6 +152,7 @@ AUTHEOF
         for char_dir in "$EXAMPLES_DIR"/*/; do
             char_name="$(basename "$char_dir")"
             [ "$char_name" = "channels" ] && continue
+            [ "$char_name" = "users" ] && continue
             target_dir="${DATA_DIR}/animas/${char_name}"
             if [ -d "$target_dir" ]; then
                 cp -r "$char_dir"/* "$target_dir/" 2>/dev/null || true
@@ -160,6 +161,10 @@ AUTHEOF
         if [ -d "$EXAMPLES_DIR/channels" ]; then
             mkdir -p "${DATA_DIR}/shared/channels"
             cp "$EXAMPLES_DIR/channels/"* "${DATA_DIR}/shared/channels/" 2>/dev/null || true
+        fi
+        if [ -d "$EXAMPLES_DIR/users" ]; then
+            mkdir -p "${DATA_DIR}/shared/users"
+            cp -r "$EXAMPLES_DIR/users/"* "${DATA_DIR}/shared/users/" 2>/dev/null || true
         fi
         echo "Example runtime data installed."
     fi

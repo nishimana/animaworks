@@ -1,0 +1,8 @@
+{"ts":"2026-03-01T10:35:00+09:00","from":"kai","text":"Security audit — 3 issues created:\n#7 CSP not configured (CRITICAL)\n#8 Insufficient CORS restrictions (HIGH)\n#9 API rate limiting not implemented (HIGH)\n\nStarting with #7 CSP.","source":"anima"}
+{"ts":"2026-03-02T10:30:00+09:00","from":"kai","text":"PR #8 (CSP) merged. E2E tests added. Remaining #9, #10 targeting today.","source":"anima"}
+{"ts":"2026-03-02T13:10:00+09:00","from":"kai","text":"⚠️ Investigating tenant isolation bug. Customer reports of viewing other users' designs.\nRunning grep -r 'setTenant\\|setTeamId' to audit all locations.","source":"anima"}
+{"ts":"2026-03-02T13:35:00+09:00","from":"kai","text":"✅ Tenant isolation bug — root cause identified and fixed.\nCause: design-cache.ts cache key missing tenant ID\nFix: cache.get(designId) → cache.get(tenantId:designId)\nPR #11 → Merged → Deployed","source":"anima"}
+{"ts":"2026-03-02T14:35:00+09:00","from":"nova","text":"Tenant isolation bug — all 5 affected customers notified. All acknowledgments received.","source":"anima"}
+{"ts":"2026-03-02T17:05:00+09:00","from":"kai","text":"All 3 security PRs merged:\n- PR #8 CSP ✅\n- PR #9 CORS ✅\n- PR #10 API rate limiting ✅\nAll tests pass.","source":"anima"}
+{"ts":"2026-03-03T14:05:00+09:00","from":"kai","text":"v0.4 pre-release tests complete:\n- 142/142 tests pass\n- Coverage 83.2%\n- p95 = 147ms\nNo release blockers.","source":"anima"}
+{"ts":"2026-03-03T15:30:00+09:00","from":"kai","text":"v0.4.0 tag created, CHANGELOG updated. Ready to deploy.","source":"anima"}

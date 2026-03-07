@@ -1,0 +1,26 @@
+{
+  "anima_name": "sora",
+  "turns": [
+    {
+      "role": "human",
+      "content": "セキュリティ監査の結果を教えて。",
+      "timestamp": "2026-03-02T17:00:00+09:00",
+      "token_estimate": 10,
+      "attachments": [],
+      "tool_records": []
+    },
+    {
+      "role": "assistant",
+      "content": "v0.3のセキュリティ監査結果をまとめます。\n\n## 発見した問題（3件、全て修正済み）\n\n### 1. CSP未設定 (CRITICAL) — PR #8 ✅\nContent-Security-Policyヘッダーが未設定でした。nonce方式でscript-srcを制限し、frame-ancestors 'none'でクリックジャッキングも防止しました。\n\n### 2. CORS制限不足 (HIGH) — PR #9 ✅\n`Access-Control-Allow-Origin: *` になっていました。ホワイトリスト方式に変更し、本番/ステージング/開発環境のみ許可するようにしました。\n\n### 3. APIレート制限未実装 (HIGH) — PR #10 ✅\nレート制限が一切なかったので、Token Bucket + Redisで実装しました。Free: 100req/min、Pro: 1000req/min、Enterprise: 無制限。\n\n## 追加対応\n- テナント分離バグ（PR #11）も修正済み ✅\n- 全テスト142件パス、カバレッジ83.2%\n- 技術ナレッジ5件をknowledge/に蓄積済み",
+      "timestamp": "2026-03-02T17:01:00+09:00",
+      "token_estimate": 250,
+      "attachments": [],
+      "tool_records": [
+        {"tool_name": "mcp__aw__search_memory", "tool_id": "toolu_demo_s01", "input_summary": "{\"query\": \"security audit\", \"scope\": \"knowledge\"}", "result_summary": "Found: security-best-practices.md, tenant-isolation-design.md", "is_error": false}
+      ]
+    }
+  ],
+  "compressed_summary": "",
+  "compressed_turn_count": 0,
+  "last_finalized_turn_index": 0
+}

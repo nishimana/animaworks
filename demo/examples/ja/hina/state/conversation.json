@@ -1,0 +1,26 @@
+{
+  "anima_name": "hina",
+  "turns": [
+    {
+      "role": "human",
+      "content": "競合調査の結果をまとめて教えて。",
+      "timestamp": "2026-03-03T12:30:00+09:00",
+      "token_estimate": 12,
+      "attachments": [],
+      "tool_records": []
+    },
+    {
+      "role": "assistant",
+      "content": "競合5社の調査結果をまとめますね！\n\n## PixelForge vs 競合5社\n\n| 会社 | 強み | 弱み | PixelForgeとの比較 |\n|------|------|------|--------------------|\n| **Figma** | コラボレーション機能が業界最高 | AI機能が弱い | PixelForgeはAIで差別化 |\n| **Canva** | テンプレート数が圧倒的 | カスタマイズ性に限界 | PixelForgeはAIカスタム生成で優位 |\n| **Adobe Express** | Adobeエコシステム連携 | 単体では機能限定的 | PixelForgeはAPIファースト設計で柔軟 |\n| **Designs.ai** | AI特化だがUIが古い | 価格が高い | PixelForgeは1/3の価格 |\n| **Looka** | ブランドデザインに特化 | 汎用デザインに弱い | PixelForgeは汎用+AIで広範囲 |\n\n## 差別化ポイント Top 3\n1. **リアルタイムAIカスタム生成** — Figma/Canvaにない機能\n2. **APIファースト設計** — 開発者フレンドリー\n3. **低価格** — Designs.aiの1/3\n\n詳細は650行のHTMLレポートにまとめてあります。CEOにはエグゼクティブサマリー（1ページ版）を送付済みです♪",
+      "timestamp": "2026-03-03T12:31:00+09:00",
+      "token_estimate": 280,
+      "attachments": [],
+      "tool_records": [
+        {"tool_name": "mcp__aw__search_memory", "tool_id": "toolu_demo_h01", "input_summary": "{\"query\": \"competitor analysis\", \"scope\": \"knowledge\"}", "result_summary": "Found: competitor-analysis-method.md", "is_error": false}
+      ]
+    }
+  ],
+  "compressed_summary": "",
+  "compressed_turn_count": 0,
+  "last_finalized_turn_index": 0
+}

@@ -360,6 +360,7 @@ class UIConfig(BaseModel):
     """UI appearance and theme settings."""
 
     theme: str = "default"
+    demo_mode: bool = False
 
 
 # ── Main Config ─────────────────────────────────────────────────────────────

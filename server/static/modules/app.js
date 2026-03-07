@@ -60,13 +60,31 @@ async function initTheme() {
 import { checkAuth, logout, showLoginScreen, hideLoginScreen, setStartDashboard } from "./login.js";
 import { initRouter } from "./router.js";
 
+// ── Demo Mode ────────────────────────────────
+
+async function initDemoMode() {
+  try {
+    const resp = await fetch("/api/system/config");
+    if (resp.ok) {
+      const cfg = await resp.json();
+      state.demoMode = cfg?.ui?.demo_mode === true;
+    } else {
+      state.demoMode = false;
+    }
+  } catch {
+    state.demoMode = false;
+  }
+}
+
 // ── Dashboard Startup ───────────────────────
 
 async function startDashboard() {
+  await initDemoMode();
   initRouter("pageContent");
   connectWebSocket();
   loadSystemStatus();
   showAuthBannerIfNeeded();
+  if (state.demoMode) showDemoSplashIfNeeded();
 }
 
 function showAuthBannerIfNeeded() {
@@ -87,6 +105,59 @@ function showAuthBannerIfNeeded() {
 
   const shell = document.querySelector(".app-shell");
   if (shell) shell.parentElement.insertBefore(banner, shell);
+}
+
+function showDemoSplashIfNeeded() {
+  if (localStorage.getItem("aw-demo-splash-seen")) return;
+
+  const splash = document.createElement("div");
+  splash.id = "demoSplash";
+  splash.className = "demo-splash";
+
+  const locale = document.documentElement.lang || "ja";
+  const isJa = locale.startsWith("ja");
+
+  splash.innerHTML = `
+    <div class="demo-splash-inner">
+      <h1 class="demo-splash-title">AnimaWorks Demo</h1>
+      <p class="demo-splash-subtitle">${t("demo.splash_subtitle")}</p>
+      <div class="demo-splash-achievements">
+        <div class="demo-splash-card">
+          <div class="demo-splash-card-icon">📊</div>
+          <div class="demo-splash-card-name">${isJa ? "Sora" : "Kai"} <span class="demo-splash-card-role">${t("demo.splash_role_engineer")}</span></div>
+          <p class="demo-splash-card-text">${t("demo.splash_engineer_desc")}</p>
+        </div>
+        <div class="demo-splash-card">
+          <div class="demo-splash-card-icon">🤝</div>
+          <div class="demo-splash-card-name">${isJa ? "Hina" : "Nova"} <span class="demo-splash-card-role">${t("demo.splash_role_assistant")}</span></div>
+          <p class="demo-splash-card-text">${t("demo.splash_assistant_desc")}</p>
+        </div>
+        <div class="demo-splash-card">
+          <div class="demo-splash-card-icon">🎯</div>
+          <div class="demo-splash-card-name">${isJa ? "Kaito" : "Alex"} <span class="demo-splash-card-role">${t("demo.splash_role_pm")}</span></div>
+          <p class="demo-splash-card-text">${t("demo.splash_pm_desc")}</p>
+        </div>
+      </div>
+      <div class="demo-splash-actions">
+        <button class="demo-splash-btn demo-splash-btn-primary" data-action="chat">${t("demo.splash_cta_chat")}</button>
+        <button class="demo-splash-btn demo-splash-btn-secondary" data-action="activity">${t("demo.splash_cta_activity")}</button>
+      </div>
+    </div>
+  `;
+
+  splash.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-action]");
+    if (!btn) return;
+    localStorage.setItem("aw-demo-splash-seen", "1");
+    splash.remove();
+    const existing = document.getElementById("authBanner");
+    if (existing) existing.remove();
+    if (btn.dataset.action === "activity") {
+      window.location.hash = "#activity";
+    }
+  });
+
+  document.body.prepend(splash);
 }
 
 setStartDashboard(startDashboard);

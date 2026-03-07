@@ -182,6 +182,32 @@ export function createChatRenderer(ctx) {
     _sharedBindToolCallHandlers(container);
   }
 
+  // ── Demo Suggested Prompt Cards ──
+
+  function renderDemoSuggestedCards(animaName) {
+    const name = animaName.toLowerCase();
+    const prompts = [];
+    for (let i = 1; i <= 4; i++) {
+      const key = `demo.prompts.${name}.${i}`;
+      const val = t(key);
+      if (val && val !== key) prompts.push(val);
+    }
+    if (prompts.length === 0) return `<div class="chat-empty">${t("chat.messages_empty")}</div>`;
+
+    const cards = prompts.map(p =>
+      `<div class="demo-suggest-card" data-demo-prompt="${p.replace(/"/g, '&quot;')}">${p}</div>`
+    ).join("");
+
+    return `
+      <div class="demo-suggest-container">
+        <div class="demo-suggest-header">
+          <h3>${t("demo.suggest_card_title")}</h3>
+          <p>${t("demo.suggest_card_subtitle")}</p>
+        </div>
+        <div class="demo-suggest-grid">${cards}</div>
+      </div>`;
+  }
+
   // ── Main Chat Rendering ──
 
   function renderChat(scrollToBottom = true) {
@@ -206,9 +232,15 @@ export function createChatRenderer(ctx) {
     _clearBootstrapInterval();
 
     if (hs.sessions.length === 0 && history.length === 0) {
-      messagesEl.innerHTML = hs.loading
-        ? `<div class="chat-empty"><span class="tool-spinner"></span> ${t("common.loading")}</div>`
-        : `<div class="chat-empty">${t("chat.messages_empty")}</div>`;
+      if (hs.loading) {
+        messagesEl.innerHTML = `<div class="chat-empty"><span class="tool-spinner"></span> ${t("common.loading")}</div>`;
+        return;
+      }
+      if (state.demoMode && state.selectedAnima) {
+        messagesEl.innerHTML = renderDemoSuggestedCards(state.selectedAnima);
+        return;
+      }
+      messagesEl.innerHTML = `<div class="chat-empty">${t("chat.messages_empty")}</div>`;
       return;
     }
 

@@ -1,0 +1,27 @@
+{
+  "anima_name": "alex",
+  "turns": [
+    {
+      "role": "human",
+      "content": "What's the status of the v0.4 release?",
+      "timestamp": "2026-03-03T14:00:00+09:00",
+      "token_estimate": 12,
+      "attachments": [],
+      "tool_records": []
+    },
+    {
+      "role": "assistant",
+      "content": "The v0.4 release preparation is progressing smoothly.\n\n**Security**: Kai completed all 3 fixes, all merged ✅\n**Testing**: 142/142 passed, coverage 83.2% ✅\n**Performance**: API p95 = 147ms (threshold: under 200ms) ✅\n**Competitor Analysis**: Nova created a 5-company executive summary ✅\n\nZero release blockers. I've instructed Kai to create the tag and Nova to send customer notifications for the 16:00 release.",
+      "timestamp": "2026-03-03T14:01:00+09:00",
+      "token_estimate": 150,
+      "attachments": [],
+      "tool_records": [
+        {"tool_name": "mcp__aw__org_dashboard", "tool_id": "toolu_demo_01", "input_summary": "{}", "result_summary": "Kai: idle, Nova: idle, tasks: 2 done / 1 in_progress", "is_error": false},
+        {"tool_name": "mcp__aw__list_tasks", "tool_id": "toolu_demo_02", "input_summary": "{\"status\": \"all\"}", "result_summary": "5 tasks: 3 done, 1 in_progress, 1 pending", "is_error": false}
+      ]
+    }
+  ],
+  "compressed_summary": "",
+  "compressed_turn_count": 0,
+  "last_finalized_turn_index": 0
+}

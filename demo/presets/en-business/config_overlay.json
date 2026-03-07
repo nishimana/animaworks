@@ -6,5 +6,8 @@
   },
   "image_gen": {
     "image_style": "realistic"
+  },
+  "ui": {
+    "demo_mode": true
   }
 }

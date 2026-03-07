@@ -81,6 +81,7 @@ function paneHtml() {
           </div>
           <div data-chat-id="chatPagePendingList"></div>
         </div>
+        <div class="chat-prompt-chips" data-chat-id="chatPromptChips" style="display:none"></div>
         <div class="chat-input-wrap">
           <textarea
             data-chat-id="chatPageInput"

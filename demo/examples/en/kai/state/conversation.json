@@ -1,0 +1,26 @@
+{
+  "anima_name": "kai",
+  "turns": [
+    {
+      "role": "human",
+      "content": "Tell me about the security audit results.",
+      "timestamp": "2026-03-02T17:00:00+09:00",
+      "token_estimate": 10,
+      "attachments": [],
+      "tool_records": []
+    },
+    {
+      "role": "assistant",
+      "content": "Here's a summary of the v0.3 security audit results.\n\n## Issues Found (3 items, all resolved)\n\n### 1. CSP Not Configured (CRITICAL) — PR #8 ✅\nContent-Security-Policy headers were missing. Implemented nonce-based script-src restrictions and added frame-ancestors 'none' to prevent clickjacking.\n\n### 2. Insufficient CORS Restrictions (HIGH) — PR #9 ✅\n`Access-Control-Allow-Origin: *` was in place. Switched to a whitelist approach allowing only production/staging/development origins.\n\n### 3. API Rate Limiting Not Implemented (HIGH) — PR #10 ✅\nNo rate limiting existed, so I implemented Token Bucket + Redis. Free: 100 req/min, Pro: 1000 req/min, Enterprise: unlimited.\n\n## Additional Work\n- Tenant isolation bug (PR #11) also fixed ✅\n- All 142 tests pass, coverage at 83.2%\n- 5 technical knowledge documents accumulated in knowledge/",
+      "timestamp": "2026-03-02T17:01:00+09:00",
+      "token_estimate": 250,
+      "attachments": [],
+      "tool_records": [
+        {"tool_name": "mcp__aw__search_memory", "tool_id": "toolu_demo_s01", "input_summary": "{\"query\": \"security audit\", \"scope\": \"knowledge\"}", "result_summary": "Found: security-best-practices.md, tenant-isolation-design.md", "is_error": false}
+      ]
+    }
+  ],
+  "compressed_summary": "",
+  "compressed_turn_count": 0,
+  "last_finalized_turn_index": 0
+}

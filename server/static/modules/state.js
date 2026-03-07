@@ -5,6 +5,7 @@ export const state = {
   currentUser: null,
   currentUserRole: null,
   authMode: null,
+  demoMode: false,
   animas: [],            // AnimaStatus[]
   selectedAnima: null,   // string (name)
   animaDetail: null,     // full detail object

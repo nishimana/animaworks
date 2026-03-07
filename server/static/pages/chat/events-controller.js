@@ -144,6 +144,35 @@ export function createEventsController(ctx) {
     ctx.controllers.renderer.setupChatObserver();
     ctx.controllers.renderer.initScrollTracking();
 
+    // Demo suggest card click (event delegation on messages container)
+    addListener("chatPageMessages", "click", e => {
+      const card = e.target.closest(".demo-suggest-card");
+      if (!card) return;
+      const prompt = card.dataset.demoPrompt;
+      if (!prompt) return;
+      const input = $("chatPageInput");
+      if (input) {
+        input.value = prompt;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      ctx.controllers.streaming.submitChat();
+    });
+
+    // Demo prompt chips click (event delegation)
+    addListener("chatPromptChips", "click", e => {
+      const chip = e.target.closest(".chat-prompt-chip");
+      if (!chip) return;
+      const prompt = chip.dataset.demoPrompt;
+      if (!prompt) return;
+      const input = $("chatPageInput");
+      if (input) {
+        input.value = prompt;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      const chipsEl = $("chatPromptChips");
+      if (chipsEl) chipsEl.style.display = "none";
+    });
+
     // ── Mobile unified header ──
     _bindUnifiedHeader(addListener);
   }
@@ -218,5 +247,33 @@ export function createEventsController(ctx) {
     if (initialEl) initialEl.textContent = (userName.charAt(0) || "?").toUpperCase();
   }
 
-  return { bindPaneEvents };
+  function updateDemoChips() {
+    const chipsEl = $("chatPromptChips");
+    if (!chipsEl) return;
+
+    if (!state.demoMode || !state.selectedAnima) {
+      chipsEl.style.display = "none";
+      return;
+    }
+
+    const name = state.selectedAnima.toLowerCase();
+    const prompts = [];
+    for (let i = 1; i <= 4; i++) {
+      const key = `demo.prompts.${name}.${i}`;
+      const val = t(key);
+      if (val && val !== key) prompts.push(val);
+    }
+
+    if (prompts.length === 0) {
+      chipsEl.style.display = "none";
+      return;
+    }
+
+    chipsEl.innerHTML = prompts.map(p =>
+      `<button type="button" class="chat-prompt-chip" data-demo-prompt="${p.replace(/"/g, '&quot;')}">${p.length > 40 ? p.slice(0, 37) + "..." : p}</button>`
+    ).join("");
+    chipsEl.style.display = "flex";
+  }
+
+  return { bindPaneEvents, updateDemoChips };
 }

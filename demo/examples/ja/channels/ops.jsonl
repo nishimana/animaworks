@@ -1,0 +1,8 @@
+{"ts":"2026-03-01T10:35:00+09:00","from":"sora","text":"セキュリティ監査 Issue 3件作成:\n#7 CSP未設定 (CRITICAL)\n#8 CORS制限不足 (HIGH)\n#9 APIレート制限未実装 (HIGH)\n\n#7のCSPから着手します。","source":"anima"}
+{"ts":"2026-03-02T10:30:00+09:00","from":"sora","text":"PR #8 (CSP) マージ完了。E2Eテスト追加済み。残り #9, #10 を今日中に。","source":"anima"}
+{"ts":"2026-03-02T13:10:00+09:00","from":"sora","text":"⚠️ テナント分離バグ調査開始。顧客から他ユーザーのデザインが閲覧可能との報告。\ngrep -r 'setTenant\\|setTeamId' で全箇所を調査中。","source":"anima"}
+{"ts":"2026-03-02T13:35:00+09:00","from":"sora","text":"✅ テナント分離バグ原因特定・修正完了。\n原因: design-cache.ts のキャッシュキーにテナントIDが欠落\n修正: cache.get(designId) → cache.get(tenantId:designId)\nPR #11 → マージ → デプロイ完了","source":"anima"}
+{"ts":"2026-03-02T14:35:00+09:00","from":"hina","text":"テナント分離バグの影響顧客5社に通知完了。全社受領確認済み。","source":"anima"}
+{"ts":"2026-03-02T17:05:00+09:00","from":"sora","text":"セキュリティ3件全マージ完了:\n- PR #8 CSP ✅\n- PR #9 CORS ✅\n- PR #10 APIレート制限 ✅\n全テストパス。","source":"anima"}
+{"ts":"2026-03-03T14:05:00+09:00","from":"sora","text":"v0.4リリース前テスト完了:\n- 142/142 テストパス\n- カバレッジ 83.2%\n- p95 = 147ms\nリリースブロッカーなし。","source":"anima"}
+{"ts":"2026-03-03T15:30:00+09:00","from":"sora","text":"v0.4.0 タグ作成・CHANGELOG更新完了。デプロイ可能状態。","source":"anima"}
