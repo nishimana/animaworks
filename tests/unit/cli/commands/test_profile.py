@@ -268,7 +268,7 @@ class TestCmdProfileStart:
 
 
 class TestCmdProfileStop:
-    @patch("cli.commands.server._stop_server", return_value=True)
+    @patch("cli.commands.server.cmd_stop")
     def test_stop(self, mock_stop: MagicMock, profiles_file: Path, tmp_path: Path) -> None:
         from cli.commands.profile import cmd_profile_stop
 
@@ -319,7 +319,7 @@ class TestCmdProfileStartAll:
 
 
 class TestCmdProfileStopAll:
-    @patch("cli.commands.server._stop_server", return_value=True)
+    @patch("cli.commands.server.cmd_stop")
     def test_stop_all(self, mock_stop: MagicMock, profiles_file: Path, tmp_path: Path) -> None:
         from cli.commands.profile import cmd_profile_stop_all
 

@@ -208,12 +208,11 @@ def cmd_profile_stop(args: argparse.Namespace) -> None:
     data_dir = str(Path(profile["data_dir"]).expanduser().resolve())
     pid = _read_pid_for(Path(data_dir))
     os.environ["ANIMAWORKS_DATA_DIR"] = data_dir
-    print(t("cli.profile_stopping", name=name, pid=pid))
-    from cli.commands.server import _stop_server
+    print(t("cli.profile_stopping", name=name, pid=pid or "?"))
+    from cli.commands.server import cmd_stop
 
-    force = getattr(args, "force", False)
-    if not _stop_server(force=force):
-        sys.exit(1)
+    stop_args = argparse.Namespace(force=getattr(args, "force", False))
+    cmd_stop(stop_args)
     print(t("cli.profile_stopped_ok", name=name))
 
 
@@ -258,11 +257,14 @@ def cmd_profile_stop_all(args: argparse.Namespace) -> None:
         data_dir = str(Path(profile["data_dir"]).expanduser().resolve())
         pid = _read_pid_for(Path(data_dir))
         os.environ["ANIMAWORKS_DATA_DIR"] = data_dir
-        print(t("cli.profile_stopping", name=name, pid=pid))
-        from cli.commands.server import _stop_server
+        print(t("cli.profile_stopping", name=name, pid=pid or "?"))
+        from cli.commands.server import cmd_stop
 
-        force = getattr(args, "force", False)
-        _stop_server(force=force)
+        stop_args = argparse.Namespace(force=getattr(args, "force", False))
+        try:
+            cmd_stop(stop_args)
+        except SystemExit:
+            pass
         print(t("cli.profile_stopped_ok", name=name))
 
 
