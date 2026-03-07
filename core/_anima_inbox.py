@@ -95,6 +95,7 @@ class InboxMixin:
                 logger.info("[%s] inbox waiting for cron to finish", self.name)
                 await self._cron_idle.wait()
             async with self._inbox_lock:
+                self._mark_busy_start()
                 self._status_slots["inbox"] = "processing"
 
                 self._activity.log("inbox_processing_start", summary=t("anima.inbox_start"))
