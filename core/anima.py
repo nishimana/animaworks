@@ -125,6 +125,7 @@ class DigitalAnima(
         self._last_heartbeat: datetime | None = None
         self._last_activity: datetime | None = None
         self._last_progress_at: datetime | None = None
+        self._busy_since: datetime | None = None
         self._on_lock_released: Callable[[], None] | None = None
         self._pending_executor: Any | None = None  # set by runner after PendingTaskExecutor init
 
@@ -146,6 +147,18 @@ class DigitalAnima(
             self.agent.background_manager.on_complete = self._on_background_task_complete
 
         logger.info("DigitalAnima '%s' initialized from %s", self.name, anima_dir)
+
+    # ── Progress tracking ────────────────────────────────────────
+
+    def _mark_busy_start(self) -> None:
+        """Reset progress timestamp at the start of a new busy period.
+
+        Prevents the health monitor from seeing a stale ``_last_progress_at``
+        from the previous task and falsely killing a process that just started.
+        """
+        now = now_jst()
+        self._last_progress_at = now
+        self._busy_since = now
 
     # ── Thread lock management ──────────────────────────────────
 

@@ -564,16 +564,21 @@ class AnimaRunner:
             except Exception:
                 logger.debug("Failed to compute ping busy status", exc_info=True)
         last_progress_at = None
+        busy_since = None
         if self.anima is not None:
             lp = getattr(self.anima, "_last_progress_at", None)
             if lp is not None:
                 last_progress_at = lp.isoformat()
+            bs = getattr(self.anima, "_busy_since", None)
+            if bs is not None:
+                busy_since = bs.isoformat()
         return {
             "status": status,
             "anima": self.anima_name,
             "uptime_sec": round(uptime, 1),
             "is_busy": is_busy,
             "last_progress_at": last_progress_at,
+            "busy_since": busy_since,
         }
 
     async def _handle_reload_config(self, params: dict[str, Any]) -> dict[str, Any]:

@@ -36,6 +36,7 @@ class LifecycleMixin:
         logger.info("[%s] run_heartbeat START", self.name)
         try:
             async with self._background_lock:
+                self._mark_busy_start()
                 self._status_slots["background"] = "checking"
                 self._last_heartbeat = now_jst()
 
@@ -168,6 +169,7 @@ class LifecycleMixin:
 
         try:
             async with self._background_lock:
+                self._mark_busy_start()
                 self._status_slots["background"] = "consolidating"
                 self._task_slots["background"] = f"Memory consolidation ({consolidation_type})"
                 _session_token = self.agent._tool_handler.set_active_session_type("background")
@@ -276,6 +278,7 @@ class LifecycleMixin:
 
         try:
             async with self._background_lock:
+                self._mark_busy_start()
                 self._cron_idle.clear()
                 self._status_slots["background"] = "working"
                 self._task_slots["background"] = task_name
@@ -378,6 +381,7 @@ class LifecycleMixin:
 
         try:
             async with self._background_lock:
+                self._mark_busy_start()
                 self._cron_idle.clear()
                 self._status_slots["background"] = "working"
                 self._task_slots["background"] = task_name

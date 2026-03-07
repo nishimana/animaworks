@@ -96,6 +96,7 @@ class MessagingMixin:
 
         try:
             async with self._get_thread_lock("default"):
+                self._mark_busy_start()
                 self._status_slots["conversation:default"] = "bootstrapping"
                 self._task_slots["conversation:default"] = "Initial bootstrap"
                 _session_token = self.agent._tool_handler.set_active_session_type("chat")
@@ -164,6 +165,7 @@ class MessagingMixin:
 
         try:
             async with lock:
+                self._mark_busy_start()
                 # Clear interrupt event for OUR session (after lock acquired)
                 self._get_interrupt_event(thread_id).clear()
                 self.agent.set_interrupt_event(self._get_interrupt_event(thread_id))
@@ -373,6 +375,7 @@ class MessagingMixin:
 
         try:
             async with lock:
+                self._mark_busy_start()
                 # Clear interrupt event for OUR session (after lock acquired)
                 self._get_interrupt_event(thread_id).clear()
                 self.agent.set_interrupt_event(self._get_interrupt_event(thread_id))
@@ -627,6 +630,7 @@ class MessagingMixin:
         from core.tooling.handler import active_session_type
 
         async with self._get_thread_lock("default"):
+            self._mark_busy_start()
             prev_status = self._status_slots.get("conversation:default", "idle")
             prev_task = self._task_slots.get("conversation:default", "")
             _session_token = self.agent._tool_handler.set_active_session_type("chat")

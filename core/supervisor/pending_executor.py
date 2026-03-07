@@ -774,6 +774,7 @@ class PendingTaskExecutor:
 
         try:
             async with self._anima._background_lock:
+                self._anima._mark_busy_start()
                 self._anima._status_slots["background"] = "task_exec"
                 self._anima._task_slots["background"] = task_id
                 try:
