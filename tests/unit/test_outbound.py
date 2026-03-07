@@ -86,7 +86,7 @@ class TestResolveRecipient:
         result = resolve_recipient("Slack:u06mjklv0tg", known_animas, empty_config)
         assert result.is_internal is False
         assert result.channel == "slack"
-        assert result.slack_user_id == "U0TEST000001"
+        assert result.slack_user_id == "U06MJKLV0TG"
 
     def test_chatwork_prefix(self, known_animas, empty_config):
         result = resolve_recipient("chatwork:12345", known_animas, empty_config)
