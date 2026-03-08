@@ -75,6 +75,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         "ja": "ツール作成が許可されていません。permissions.md に「ツール作成」セクションを追加してください。",
         "en": "Tool creation is not permitted. Add a tool creation section to permissions.md.",
     },
+    "tooling.gated_action_denied": {
+        "ja": "アクション '{action}' (ツール '{tool}') は明示的な許可が必要です。permissions.md に '{tool}_{action}: yes' を追加してください。",
+        "en": "Action '{action}' on tool '{tool}' requires explicit permission. Add '{tool}_{action}: yes' to permissions.md.",
+    },
     "handler.skill_format_validation": {
         "ja": "⚠️ スキルフォーマット検証:\n{msg}",
         "en": "⚠️ Skill format validation:\n{msg}",
