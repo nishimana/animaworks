@@ -64,18 +64,86 @@ class SectionInfo:
     tokens_est: int
 
 
-# ── Section identification heuristics ───────────────────────
+# ── Section identification ──────────────────────────────────
 
-# Each rule: (pattern_or_callable, name, category, source)
-# pattern is matched against the first 500 chars of the section.
-# Rules are tried in order; first match wins.
+# Mapping from builder section id → (category, source hint)
+_SECTION_META: dict[str, tuple[str, str]] = {
+    "environment":              ("framework",    "templates/prompts/environment.md"),
+    "identity":                 ("identity",     "animas/{name}/identity.md"),
+    "injection":                ("injection",    "animas/{name}/injection.md"),
+    "current_time":             ("time",         "(computed)"),
+    "behavior_rules":           ("framework",    "templates/prompts/behavior_rules.md"),
+    "tool_data_interpretation":  ("framework",    "templates/prompts/tool_data_interpretation.md"),
+    "company_vision":           ("company",      "company/vision.md"),
+    "specialty_prompt":         ("company",      "animas/{name}/specialty_prompt.md"),
+    "permissions":              ("permissions",  "animas/{name}/permissions.md"),
+    "bootstrap":                ("framework",    "animas/{name}/bootstrap.md"),
+    "task_in_progress":         ("state",        "state/current_task.md"),
+    "task_queue":               ("state",        "(computed: TaskQueueManager)"),
+    "resolution_registry":      ("state",        "(computed: ResolutionTracker)"),
+    "priming":                  ("priming",      "(computed: PrimingEngine)"),
+    "recent_tool_results":      ("tools",        "(computed: ConversationMemory)"),
+    "pending_tasks":            ("state",        "state/pending/"),
+    "memory_guide":             ("memory",       "templates/prompts/memory_guide.md"),
+    "dk_procedures":            ("memory",       "procedures/ (distilled)"),
+    "dk_knowledge":             ("memory",       "knowledge/ (distilled)"),
+    "common_knowledge_hint":    ("memory",       "builder/common_knowledge_hint.md"),
+    "org_context":              ("organization", "(computed: _build_org_context)"),
+    "messaging":                ("organization", "templates/prompts/messaging_s.md"),
+    "human_notification":       ("organization", "builder/human_notification.md"),
+    "tool_guides":              ("tools",        "(computed: prompt_db)"),
+    "external_tools":           ("tools",        "(computed: build_tools_guide)"),
+    "hiring_rules":             ("organization", "builder/hiring_rules_s.md"),
+    "hiring_context":           ("organization", "templates/prompts/hiring_context.md"),
+    "emotion_instruction":      ("meta",         "builder/emotion_instruction.md"),
+    "a_reflection":             ("meta",         "builder/a_reflection.md"),
+    "c_response_requirement":   ("meta",         "(computed: codex guidance)"),
+    "light_tier_org":           ("organization", "builder/light_tier_org.md"),
+}
 
-def _identify_section(text: str, idx: int, anima_name: str) -> SectionInfo:
-    """Identify a single section by matching heuristics on its content.
+_RE_GROUP_OPEN = re.compile(r'<group_(\d+)\s+title="([^"]*)">')
+_RE_GROUP_CLOSE = re.compile(r"</group_(\d+)>")
+_RE_SECTION = re.compile(
+    r'<section\s+name="([^"]*)">\n(.*?)\n</section>', re.DOTALL
+)
 
-    Rules are ordered so that more specific patterns (unique keywords) are
-    checked before generic ones to avoid false matches.
-    """
+
+def _parse_xml_sections(prompt_text: str, anima_name: str) -> list[SectionInfo]:
+    """Parse XML-tagged prompt into SectionInfo list (groups + sections)."""
+    items: list[tuple[int, SectionInfo]] = []
+
+    for m in _RE_GROUP_OPEN.finditer(prompt_text):
+        gnum, title = m.group(1), m.group(2)
+        items.append((m.start(), SectionInfo(
+            name=f"Group {gnum}: {title}",
+            category="header",
+            source="builder/sections.md",
+            content=title,
+            chars=len(title),
+            tokens_est=len(title) // 3,
+        )))
+
+    for m in _RE_SECTION.finditer(prompt_text):
+        sid, body = m.group(1), m.group(2)
+        cat, src = _SECTION_META.get(sid, ("meta", "(unknown)"))
+        src = src.replace("{name}", anima_name)
+        items.append((m.start(), SectionInfo(
+            name=sid,
+            category=cat,
+            source=src,
+            content=body,
+            chars=len(body),
+            tokens_est=len(body) // 3,
+        )))
+
+    items.sort(key=lambda t: t[0])
+    return [info for _, info in items]
+
+
+# ── Legacy heuristic fallback (pre-XML prompts) ─────────────
+
+def _identify_section_legacy(text: str, idx: int, anima_name: str) -> SectionInfo:
+    """Identify a section by content heuristics (legacy --- split)."""
     head = text[:600]
     chars = len(text)
     tokens_est = chars // 3
@@ -84,7 +152,6 @@ def _identify_section(text: str, idx: int, anima_name: str) -> SectionInfo:
         return SectionInfo(name=name, category=category, source=source,
                            content=text, chars=chars, tokens_est=tokens_est)
 
-    # ── Group headers ──────────────────────────────────────
     for gnum, glabel in [
         ("1", "動作環境と行動ルール"),
         ("2", "あなた自身"),
@@ -96,170 +163,27 @@ def _identify_section(text: str, idx: int, anima_name: str) -> SectionInfo:
         if head.startswith(f"# {gnum}.") or head.startswith(f"# {gnum} "):
             return _make(f"Group {gnum}: {glabel}", "header", "builder/sections.md")
 
-    # ── Highly specific patterns first ─────────────────────
-
-    # Current time (very short, unique pattern)
     if re.match(r"\*\*現在時刻\*\*:|現在時刻:|Current time:", head):
         return _make("current_time", "time", "(computed)")
-
-    # Hiring rules (must be before identity — content contains "identity.md")
-    if "雇用ルール" in head or ("キャラクターシート" in head[:300] and "create" in head[:300]):
-        return _make("hiring_rules", "organization", "builder/hiring_rules_s.md")
-
-    # Emotion
-    if "表情メタデータ" in head or ("emotion" in head[:200] and "<!-- emotion:" in text):
-        return _make("emotion", "meta", "builder/emotion_instruction.md")
-
-    # Environment (big framework section — unique lead-in)
-    if "Tone and style" in head or "# Tone and style" in head:
+    if "Tone and style" in head:
         return _make("environment", "framework", "templates/prompts/environment.md")
-
-    # Behavior rules
-    if "## 行動ルール" in head or "Default: do not narrate" in head:
+    if "## 行動ルール" in head:
         return _make("behavior_rules", "framework", "templates/prompts/behavior_rules.md")
-
-    # Tool data interpretation
-    if "ツール結果・外部データの解釈" in head or "`tool_result`" in head:
-        return _make("tool_data_interpretation", "framework",
-                      "templates/prompts/tool_data_interpretation.md")
-
-    # Company vision
-    if "基本理念" in head or ("ミッション" in head[:100] and "人を幸せにする" in text):
-        return _make("company_vision", "company", "company/vision.md")
-
-    # Identity (check specific header patterns — may not start with heading)
-    if head.startswith("# Identity:") or "### 基本情報" in head[:200] or (
-        ("| 名前 |" in head or "| 項目 |" in head) and "| 設定 |" in head
-        and "専門" not in head[:80]
-    ):
+    if "表情メタデータ" in head:
+        return _make("emotion", "meta", "builder/emotion_instruction.md")
+    if head.startswith("# Identity:") or "### 基本情報" in head[:200]:
         return _make("identity.md", "identity", f"animas/{anima_name}/identity.md")
-
-    # Injection (check specific header patterns)
-    if head.startswith("# Injection:") or head.startswith("### 役割") or (
-        head.startswith("### 行動方針")
-    ):
+    if head.startswith("# Injection:") or head.startswith("### 役割"):
         return _make("injection.md", "injection", f"animas/{anima_name}/injection.md")
-
-    # Specialty prompt (any 専門ガイドライン variant)
-    if "専門ガイドライン" in head:
-        return _make("specialty_prompt.md", "company",
-                      f"animas/{anima_name}/specialty_prompt.md")
-
-    # Permissions
-    if "# Permissions:" in head[:40] or (
-        "使えるツール" in head[:200] and "ファイル操作" in text[:500]
-    ):
-        return _make("permissions.md", "permissions",
-                      f"animas/{anima_name}/permissions.md")
-
-    # Bootstrap
-    if "bootstrap" in head[:100].lower() or "初回起動" in head[:100]:
-        return _make("bootstrap", "framework", f"animas/{anima_name}/bootstrap.md")
-
-    # ── State / Priming / Tools ────────────────────────────
-
-    # Task in progress (current_task)
-    if "進行中タスク" in head or "MUST: 最優先で確認" in head:
-        return _make("task_in_progress", "state",
-                      "state/current_task.md (via builder/task_in_progress.md)")
-
-    # Task queue (the heading, not a mention of "タスクキュー" in tool docs)
-    if "## タスクキュー" in head[:40] or "## Task Queue" in head[:40] or (
-        "## Active Task Queue" in head[:40]
-    ):
-        return _make("task_queue", "state", "(computed: TaskQueueManager)")
-
-    # Resolution registry
-    if "解決済み案件" in head or "Resolution Registry" in head[:60]:
+    if "## MCPツール" in head[:30]:
+        return _make("mcp_tools", "tools", "(computed: prompt_db)")
+    if "メッセージ送信" in head[:100]:
+        return _make("messaging", "organization", "templates/prompts/messaging_s.md")
+    if "解決済み案件" in head:
         return _make("resolution_registry", "state", "(computed: ResolutionTracker)")
-
-    # Priming
-    if "あなたが思い出していること" in head or "<priming" in head:
+    if "<priming" in head:
         return _make("priming", "priming", "(computed: PrimingEngine)")
 
-    # Recent tool results
-    if "Recent Tool Results" in head or "直近のツール結果" in head:
-        return _make("recent_tool_results", "tools", "(computed: ConversationMemory)")
-
-    # Pending tasks
-    if "## Pending" in head[:30] or "保留中のタスク" in head[:60]:
-        return _make("pending_tasks", "state", "state/pending/")
-
-    # ── Memory ─────────────────────────────────────────────
-
-    # Memory guide
-    if "あなたの記憶（書庫）" in head or "記憶（書庫）" in head or (
-        "エピソード記憶" in head[:300] and "ディレクトリ" in head[:400]
-    ):
-        return _make("memory_guide", "memory", "templates/prompts/memory_guide.md")
-
-    # Procedures
-    if "## Procedures" in head[:30] or "## 手順書" in head[:30]:
-        return _make("procedures", "memory", "procedures/ (distilled)")
-
-    # Distilled Knowledge
-    if "## Distilled Knowledge" in head[:40] or "## 蒸留された知識" in head[:40]:
-        return _make("distilled_knowledge", "memory", "knowledge/ (distilled)")
-
-    # Common knowledge hint
-    if "共有リファレンス" in head or ("common_knowledge" in head[:100] and "共有ナレッジ" in text):
-        return _make("common_knowledge_hint", "memory", "builder/common_knowledge_hint.md")
-
-    # ── Organization (before Tools — messaging contains mcp__aw__ refs) ──
-
-    # Org context
-    if "組織上の位置" in head or "あなたの専門" in head[:100]:
-        return _make("org_context", "organization", "(computed: _build_org_context)")
-
-    # Messaging (must be checked before mcp_tools — content includes mcp__aw__*)
-    if "メッセージ送信（社員間通信）" in head or "社員間通信" in head[:100] or (
-        "送信可能な相手" in text[:600] and "## Board" in text
-    ) or "## メッセージ送信" in head[:100]:
-        return _make("messaging", "organization", "templates/prompts/messaging_s.md")
-
-    # Human notification
-    if "人間への連絡" in head or ("call_human" in head[:300] and "トップレベル" in head[:200]):
-        return _make("human_notification", "organization", "builder/human_notification.md")
-
-    # ── Tools ──────────────────────────────────────────────
-
-    # MCP tools (heading specifically, not just any mention of mcp__aw__)
-    if "## MCPツール" in head[:30] or ("MCPツール" in head[:100] and "mcp__aw__" in head):
-        return _make("mcp_tools", "tools", "(computed: tool guides — s_mcp / prompt_db)")
-
-    # Heartbeat tool instruction
-    if "Heartbeatでは" in head or "heartbeat_tool" in head[:100].lower():
-        return _make("heartbeat_tool_instruction", "tools",
-                      "builder/heartbeat_tool_instruction.md")
-
-    # S builtin tools
-    if "ネイティブツール" in head[:200] or "Agent SDK" in head[:200]:
-        return _make("s_builtin_tools", "tools", "(computed: tool guides — s_builtin)")
-
-    # External tools
-    if "外部ツール" in head[:60] or "External Tools" in head[:60]:
-        return _make("external_tools", "tools", "(computed: build_tools_guide)")
-
-    # Hiring context (solo anima)
-    if "人材採用" in head[:100]:
-        return _make("hiring_context", "organization", "templates/prompts/hiring_context.md")
-
-    # Light tier org
-    if "他のアニマとはsend_message" in head:
-        return _make("light_tier_org", "organization", "builder/light_tier_org.md")
-
-    # ── Meta ───────────────────────────────────────────────
-
-    # A-mode reflection
-    if "振り返り" in head[:100] and "## 振り返り" in head[:30]:
-        return _make("a_reflection", "meta", "builder/a_reflection.md")
-
-    # Codex response requirement
-    if "応答要件" in head[:30]:
-        return _make("response_requirement", "meta", "(computed: codex guidance)")
-
-    # Fallback: unknown
-    # Try to extract a heading for the name
     heading_match = re.match(r"^#{1,3}\s+(.+)$", head, re.MULTILINE)
     fallback_name = heading_match.group(1).strip()[:60] if heading_match else f"section_{idx}"
     return SectionInfo(
@@ -339,12 +263,22 @@ def render_html(
         )
     table_body = "\n".join(rows)
 
-    # Section content blocks
+    # Section content blocks — group headers render as banner, sections as collapsible
     content_blocks: list[str] = []
     for i, sec in enumerate(sections):
         s = CATEGORIES.get(sec.category, CategoryStyle("#f3f4f6", "#374151"))
-        content_blocks.append(f"""\
-<div id="section-{i}" style="margin-bottom:16px;">
+        if sec.category == "header":
+            content_blocks.append(f"""\
+<div id="section-{i}" style="margin:24px 0 8px 0;">
+  <div style="background:{s.bg};color:{s.fg};padding:10px 16px;border-radius:8px;
+              font-size:16px;font-weight:bold;
+              border-left:4px solid #60a5fa">
+    {html.escape(sec.name)}
+  </div>
+</div>""")
+        else:
+            content_blocks.append(f"""\
+<div id="section-{i}" style="margin-bottom:12px;margin-left:12px;">
   <div style="background:{s.bg};color:{s.fg};padding:6px 12px;border-radius:8px 8px 0 0;
               display:flex;justify-content:space-between;align-items:center;
               position:sticky;top:0;z-index:10">
@@ -538,50 +472,37 @@ def main() -> None:
     prompt_text = result.system_prompt
 
     # ── Split into sections ────────────────────────────────
-    # Split by --- separators, then merge sub-sections (### headings)
-    # back into their parent section.  Individual procedure/knowledge
-    # entries use --- internally and start with ### , so they must be
-    # re-attached to the preceding ## Procedures / ## Distilled Knowledge.
-    raw_sections = prompt_text.split("\n\n---\n\n")
-
-    # Pass 1: identify each raw piece
-    raw_identified = [_identify_section(r, i, anima_name) for i, r in enumerate(raw_sections)]
-
-    # Pass 2: merge sub-sections into their parent.
-    # Merge conditions:
-    #   a) Starts with ### and is not a known anima-specific section
-    #   b) Is an (unknown) section shorter than 120 chars (likely an internal
-    #      fragment, e.g. company_vision split by its internal ---)
-    _ANIMA_SPECIFIC_CATEGORIES = {"identity", "injection", "permissions", "company", "time"}
-    sections: list[SectionInfo] = []
-    for sec in raw_identified:
-        is_subsection = sec.content.lstrip().startswith("### ")
-        is_anima_specific = sec.category in _ANIMA_SPECIFIC_CATEGORIES
-        is_group_header = sec.category == "header"
-        is_short_unknown = sec.source == "(unknown)" and sec.chars < 120
-
-        should_merge = (
-            sections
-            and not is_group_header
-            and (
-                (is_subsection and not is_anima_specific)
-                or is_short_unknown
+    if "<group_" in prompt_text and "<section " in prompt_text:
+        sections = _parse_xml_sections(prompt_text, anima_name)
+        print(f"Parsing mode    : XML tags ({len(sections)} entries)")
+    else:
+        print("Parsing mode    : Legacy (--- separators)")
+        raw_sections = prompt_text.split("\n\n---\n\n")
+        raw_identified = [
+            _identify_section_legacy(r, i, anima_name)
+            for i, r in enumerate(raw_sections)
+        ]
+        _ANIMA_SPECIFIC = {"identity", "injection", "permissions", "company", "time"}
+        sections = []
+        for sec in raw_identified:
+            is_sub = sec.content.lstrip().startswith("### ")
+            is_specific = sec.category in _ANIMA_SPECIFIC
+            is_header = sec.category == "header"
+            is_short_unk = sec.source == "(unknown)" and sec.chars < 120
+            should_merge = (
+                sections and not is_header
+                and ((is_sub and not is_specific) or is_short_unk)
             )
-        )
-
-        if should_merge:
-            prev = sections[-1]
-            merged_content = prev.content + "\n\n---\n\n" + sec.content
-            sections[-1] = SectionInfo(
-                name=prev.name,
-                category=prev.category,
-                source=prev.source,
-                content=merged_content,
-                chars=len(merged_content),
-                tokens_est=len(merged_content) // 3,
-            )
-        else:
-            sections.append(sec)
+            if should_merge:
+                prev = sections[-1]
+                merged = prev.content + "\n\n---\n\n" + sec.content
+                sections[-1] = SectionInfo(
+                    name=prev.name, category=prev.category,
+                    source=prev.source, content=merged,
+                    chars=len(merged), tokens_est=len(merged) // 3,
+                )
+            else:
+                sections.append(sec)
 
     total_chars = len(prompt_text)
     unknown_count = sum(1 for s in sections if s.source == "(unknown)")
