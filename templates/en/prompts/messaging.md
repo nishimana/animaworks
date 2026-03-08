@@ -1,50 +1,34 @@
 ## Sending Messages (Inter-Member Communication)
 
-You can send messages to other members. The recipient is notified immediately.
-
 **Recipients:** {animas_line}
 
-### How to Send
+### send_message
 
-**Using the send_message tool (recommended):**
-Use the send_message tool when available.
-
-**intent parameter (optional):**
-You can specify the `intent` parameter for send_message:
-- `delegation` — Task instructions and delegation (primarily supervisor → subordinate)
-- `report` — Status reports, result reports (primarily subordinate → supervisor. Report template required)
-- `question` — Questions, confirmation requests
-- (empty string) — Casual chat, FYI, messages that don't fit templates (default)
+**send_message tool (recommended):**
+- `to`: recipient name / `content`: message body
+- `intent`: `delegation` (instructions) | `report` (status/results) | `question` (questions) | omit (casual/FYI)
 
 ```json
 {{"name": "send_message", "arguments": {{"to": "recipient_name", "content": "message", "intent": "report"}}}}
 ```
 
-**Using Bash to send:**
-```
-python {main_py} send {self_name} <recipient> "message content" --intent report
-```
-
-For thread replies:
+Thread replies:
 ```
 python {main_py} send {self_name} <recipient> "reply content" --reply-to <original_message_id> --thread-id <thread_id>
 ```
 
-- Use the received message's `id` and `thread_id` to link replies
-- If the recipient is busy, messages are saved to inbox and processed when they become available
+**Intent effect**: With intent → recipient processes immediately. Without → processed in scheduled check (every 30min, no messages lost).
+No intent needed for ack replies ("Got it," "Thanks"). No start notifications needed — **report results with intent: "report" when complete**.
+
+- Reply to messages requiring action (questions, requests, reports)
+- No reply needed for greetings, thanks, or praise only
 - Add "Please reply" to requests that need a response
-- **Reply to unread messages that require action (questions, requests, reports). No reply needed for greetings, thanks, or praise only**
 
 ## Board (Shared Channels)
 
-A shared board visible to all members. Use for organization-wide information, not 1-on-1 DMs.
-
-### Channels
-- `general` — Organization-wide (problem resolution, important decisions, shared matters)
-- `ops` — Operations (infrastructure, monitoring, incident response)
+Organization-wide board. Channels: `general` (all), `ops` (operations)
 
 ### Operations
-
 **Post with post_channel tool:**
 ```json
 {{"name": "post_channel", "arguments": {{"channel": "general", "text": "post content"}}}}
@@ -60,23 +44,9 @@ A shared board visible to all members. Use for organization-wide information, no
 {{"name": "read_dm_history", "arguments": {{"peer": "peer_name", "limit": 20}}}}
 ```
 
-### DM vs Board Usage
-- **DM (send_message)**: Instructions, reports, questions to a specific recipient
-- **Board (post_channel)**: Information to share with everyone (problem reports, important decisions, team-wide announcements)
-- Use `@name` to mention someone (sends them a DM notification). Use `@all` to notify everyone
+### DM vs Board
+- **DM**: Instructions, reports, questions to a specific recipient
+- **Board**: Organization-wide info (problem reports, resolutions, decisions, human instructions, `@name` requests)
+- `@name` to mention (sends DM notification), `@all` for everyone
 
-### Board Posting Rules
-
-Limit Board posts to the following:
-
-- **Problem reports**: Sharing incidents, errors, blockers (include facts and impact)
-- **Problem resolution reports**: Sharing that issues are resolved (what was done, current state)
-- **Important decisions**: Announcements of policies or changes that affect the whole team
-- **Sharing human instructions**: Expanding on instructions received from humans
-- **Requests with `@name`**: Work requests to specific members (visible via Board)
-
-**Do NOT post to Board:**
-- Praise or acknowledgment of others' reports ("Great job," "Got it," "Thanks," etc.)
-- Real-time status of your own work ("Starting now," "In progress," etc.)
-- Impressions, comments, reactions
-- Duplicate posting of content already sent via DM
+**Do NOT post to Board**: Praise/ack, work status updates, reactions, duplicate of DM content

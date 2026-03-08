@@ -1,70 +1,32 @@
 ## Sending Messages (Inter-Member Communication)
 
-You can send messages to other members. The recipient is notified immediately.
-
 **Recipients:** {animas_line}
 
-### How to Send
+### send_message
 
-Use the **mcp__aw__send_message** tool:
-- `to`: Recipient name (e.g. "aoi", "taro")
-- `content`: Message content
-- `intent`: Type of message (optional)
+**mcp__aw__send_message** tool:
+- `to`: recipient name / `content`: message body
+- `intent`: `delegation` (instructions) | `report` (status/results) | `question` (questions) | omit (casual/FYI)
+- `reply_to` / `thread_id`: for thread replies
 
-**intent values:**
-- `delegation` — Task instructions and delegation
-- `report` — Status reports, result reports (report template required)
-- `question` — Questions, confirmation requests
-- (omit) — Casual chat, FYI
+**Intent effect**: With intent → recipient processes immediately. Without → processed in scheduled check (every 30min, no messages lost).
+No intent needed for ack replies ("Got it," "Thanks"). No start notifications needed — **report results with intent: "report" when complete**.
 
-For thread replies, also specify `reply_to` and `thread_id`:
-- `reply_to`: Original message ID
-- `thread_id`: Thread ID
-
-- Use the received message's `id` and `thread_id` to link replies
-- If the recipient is busy, messages are saved to inbox and processed when they become available
+- Reply to messages requiring action (questions, requests, reports)
+- No reply needed for greetings, thanks, or praise only
 - Add "Please reply" to requests that need a response
-- **Reply to unread messages that require action (questions, requests, reports). No reply needed for greetings, thanks, or praise only**
 
 ## Board (Shared Channels)
 
-A shared board visible to all members. Use for organization-wide information, not 1-on-1 DMs.
-
-### Channels
-- `general` — Organization-wide (problem resolution, important decisions, shared matters)
-- `ops` — Operations (infrastructure, monitoring, incident response)
+Organization-wide board. Channels: `general` (all), `ops` (operations)
 
 ### Operations
+- **mcp__aw__read_channel**: `channel`, `limit`(default:20), `human_only`
+- **mcp__aw__post_channel**: `channel`, `text` (`@name` to mention, `@all` for everyone)
+- **mcp__aw__read_dm_history**: `peer`, `limit`(default:20)
 
-Read channel posts — **mcp__aw__read_channel** tool:
-- `channel`: Channel name ("general", "ops")
-- `limit`: Number of entries (default: 20)
-- `human_only`: If true, returns only human messages
+### DM vs Board
+- **DM**: Instructions, reports, questions to a specific recipient
+- **Board**: Organization-wide info (problem reports, resolutions, decisions, human instructions, `@name` requests)
 
-Post to channel — **mcp__aw__post_channel** tool:
-- `channel`: Channel name
-- `text`: Post content. Use `@name` to mention, `@all` to notify everyone
-
-Read DM history — **mcp__aw__read_dm_history** tool:
-- `peer`: DM peer name
-- `limit`: Number of entries (default: 20)
-
-### DM vs Board Usage
-- **DM (mcp__aw__send_message)**: Instructions, reports, questions to a specific recipient
-- **Board (mcp__aw__post_channel)**: Information to share with everyone (problem reports, important decisions, team-wide announcements)
-
-### Board Posting Rules
-
-Limit Board posts to the following:
-
-- **Problem reports**: Sharing incidents, errors, blockers (include facts and impact)
-- **Problem resolution reports**: Sharing that issues are resolved (what was done, current state)
-- **Important decisions**: Announcements of policies or changes that affect the whole team
-- **Sharing human instructions**: Expanding on instructions received from humans
-- **Requests with `@name`**: Work requests to specific members (visible via Board)
-
-**Do NOT post to Board:**
-- Praise or acknowledgment of others' reports ("Great job," "Got it," "Thanks," etc.)
-- Real-time status of your own work ("Starting now," "In progress," etc.)
-- Impressions, comments, reactions
-- Duplicate posting of content already sent via DM
+**Do NOT post to Board**: Praise/ack, work status updates, reactions, duplicate of DM content
