@@ -229,7 +229,7 @@ class TestInboxProcessing:
 
             await dp.process_inbox_message()
 
-                episode_file = alice_dir / "episodes" / f"{today_local().isoformat()}.md"
+        episode_file = alice_dir / "episodes" / f"{today_local().isoformat()}.md"
         assert episode_file.exists()
         content = episode_file.read_text(encoding="utf-8")
         assert "episode_senderからのメッセージ受信" in content
