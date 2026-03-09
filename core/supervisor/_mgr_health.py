@@ -22,6 +22,10 @@ logger = logging.getLogger(__name__)
 class HealthMixin:
     """Health-check loop, failure handling, and hang detection."""
 
+    def is_bootstrapping(self, anima_name: str) -> bool:
+        """Return True if the anima is currently in bootstrap mode."""
+        return anima_name in getattr(self, "_bootstrapping", set())
+
     async def _health_check_loop(self) -> None:
         """Periodically pings all processes and handles failures."""
         logger.info("Health check loop started")
@@ -166,6 +170,13 @@ class HealthMixin:
         if success:
             if is_busy:
                 handle.stats.missed_pings = 0
+                # Skip hang detection during bootstrap (LLM may take a long time)
+                if self.is_bootstrapping(anima_name):
+                    logger.debug(
+                        "Skipping hang detection for %s (bootstrapping)",
+                        anima_name,
+                    )
+                    return
                 last_progress_iso = ping_result.get("last_progress_at")
                 if last_progress_iso:
                     from datetime import datetime as _dt
