@@ -56,13 +56,13 @@ class StreamingIPCHandler:
         self._anima_name = anima_name
         self._anima_dir = anima_dir
 
-    def _clear_stream_abort_state(self, reason: str) -> None:
-        """Clear session IDs and checkpoint after abnormal stream termination."""
+    def _clear_stream_abort_state(self, reason: str, thread_id: str = "default") -> None:
+        """Clear chat session ID and checkpoint after abnormal stream termination."""
         try:
-            from core.execution.agent_sdk import clear_session_ids
+            from core.execution._sdk_session import SESSION_TYPE_CHAT, _clear_session_id
 
-            clear_session_ids(self._anima_dir)
-            logger.info("Session IDs cleared: %s", reason)
+            _clear_session_id(self._anima_dir, SESSION_TYPE_CHAT, thread_id)
+            logger.info("Chat session ID cleared: %s (thread=%s)", reason, thread_id)
         except Exception as e:
             logger.warning("Failed to clear session IDs: %s", e)
         try:
@@ -224,7 +224,7 @@ class StreamingIPCHandler:
                         )
 
                 # Stream ended without cycle_done — done=False切断パス
-                self._clear_stream_abort_state("stream ended without cycle_done (done=False)")
+                self._clear_stream_abort_state("stream ended without cycle_done (done=False)", thread_id)
                 await _enqueue(
                     IPCResponse(
                         id=request.id,
@@ -239,7 +239,7 @@ class StreamingIPCHandler:
 
             except TimeoutError as e:
                 logger.error("Timeout in streaming process_message: %s", e)
-                self._clear_stream_abort_state("timeout")
+                self._clear_stream_abort_state("timeout", thread_id)
                 await queue.put(
                     IPCResponse(
                         id=request.id,
@@ -254,7 +254,7 @@ class StreamingIPCHandler:
                     "Error in streaming process_message: %s",
                     e,
                 )
-                self._clear_stream_abort_state("exception")
+                self._clear_stream_abort_state("exception", thread_id)
                 await queue.put(
                     IPCResponse(
                         id=request.id,

@@ -47,19 +47,18 @@ def _make_request(message: str = "test") -> IPCRequest:
 
 
 class TestSessionClearOnDoneFalse:
-    """_stream_producer ends without cycle_done: session IDs + checkpoint cleared."""
+    """_stream_producer ends without cycle_done: chat session ID + checkpoint cleared."""
 
     @pytest.mark.asyncio
-    async def test_clear_session_id_called_both_types_on_stream_abort(
+    async def test_clear_session_id_called_chat_only_on_stream_abort(
         self, tmp_path: Path
     ) -> None:
-        """_clear_session_id called for 'chat' and 'heartbeat' when stream ends
-        without cycle_done."""
+        """_clear_session_id called for 'chat' only when stream ends
+        without cycle_done (background session types are never persisted)."""
         handler = _make_handler(tmp_path)
 
         async def mock_stream_no_cycle_done(*args, **kwargs):
             yield {"type": "text_delta", "text": "partial"}
-            # No cycle_done → done=False path
 
         handler._anima.process_message_stream = mock_stream_no_cycle_done
 
@@ -84,14 +83,13 @@ class TestSessionClearOnDoneFalse:
             async for resp in handler.handle_stream(_make_request()):
                 responses.append(resp)
 
-        # Both session types should be cleared
-        assert ("chat" in [st for _, st in clear_calls]), (
+        cleared_types = [st for _, st in clear_calls]
+        assert "chat" in cleared_types, (
             "Expected 'chat' to be cleared, got: %s" % clear_calls
         )
-        assert ("heartbeat" in [st for _, st in clear_calls]), (
-            "Expected 'heartbeat' to be cleared, got: %s" % clear_calls
+        assert "heartbeat" not in cleared_types, (
+            "heartbeat should NOT be cleared (background sessions are never persisted)"
         )
-        # Both should use the same anima_dir
         for anima_dir_arg, _ in clear_calls:
             assert anima_dir_arg == tmp_path
 
@@ -173,7 +171,7 @@ class TestSessionClearOnTimeoutError:
     async def test_clear_session_id_called_on_timeout(
         self, tmp_path: Path
     ) -> None:
-        """_clear_session_id called for 'chat' and 'heartbeat' on TimeoutError."""
+        """_clear_session_id called for 'chat' only on TimeoutError."""
         handler = _make_handler(tmp_path)
 
         async def mock_stream_timeout(*args, **kwargs):
@@ -200,8 +198,9 @@ class TestSessionClearOnTimeoutError:
             async for resp in handler.handle_stream(_make_request()):
                 responses.append(resp)
 
-        assert "chat" in [st for _, st in clear_calls]
-        assert "heartbeat" in [st for _, st in clear_calls]
+        cleared_types = [st for _, st in clear_calls]
+        assert "chat" in cleared_types
+        assert "heartbeat" not in cleared_types
 
     @pytest.mark.asyncio
     async def test_ipc_timeout_error_returned_on_timeout(
@@ -241,7 +240,7 @@ class TestSessionClearOnException:
     async def test_clear_session_id_called_on_general_exception(
         self, tmp_path: Path
     ) -> None:
-        """_clear_session_id called for 'chat' and 'heartbeat' on Exception."""
+        """_clear_session_id called for 'chat' only on Exception."""
         handler = _make_handler(tmp_path)
 
         async def mock_stream_raises(*args, **kwargs):
@@ -268,8 +267,9 @@ class TestSessionClearOnException:
             async for resp in handler.handle_stream(_make_request()):
                 responses.append(resp)
 
-        assert "chat" in [st for _, st in clear_calls]
-        assert "heartbeat" in [st for _, st in clear_calls]
+        cleared_types = [st for _, st in clear_calls]
+        assert "chat" in cleared_types
+        assert "heartbeat" not in cleared_types
 
     @pytest.mark.asyncio
     async def test_stream_error_returned_on_general_exception(

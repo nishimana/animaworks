@@ -111,13 +111,20 @@ class SessionCompactor:
 
 
 async def _compact_mode_s(anima: DigitalAnima, thread_id: str) -> bool:
-    """Mode S: SDK compact_session (resume + /compact)."""
+    """Mode S: SDK compact_session (resume + /compact).
+
+    Only chat sessions support idle compaction — background triggers
+    (heartbeat, cron, task, inbox) always start fresh and have no
+    session to compact.
+    """
+    from core.execution._sdk_session import SESSION_TYPE_CHAT
+
     executor = anima.agent._executor
     if not hasattr(executor, "compact_session"):
         return False
     result = await executor.compact_session(
         anima_dir=anima.anima_dir,
-        session_type="chat",
+        session_type=SESSION_TYPE_CHAT,
         thread_id=thread_id,
     )
     return result

@@ -1,10 +1,11 @@
-"""Tests for agent_sdk.py resume timeout guard and clear_session_ids public wrapper.
+"""Tests for agent_sdk.py resume timeout guard and session type constants.
 
 Covers:
   - RESUME_TIMEOUT_SEC constant is defined
   - asyncio.wait_for is used when resuming (session_id_to_resume is set)
   - TimeoutError causes _clear_session_id to be called and fallback to fresh session
-  - clear_session_ids() public wrapper clears both 'chat' and 'heartbeat' types
+  - _RESUMABLE_SESSION_TYPES only contains chat
+  - _resolve_session_type() maps triggers correctly
   - _clear_session_id() file deletion logic
   - _load_session_id() / _save_session_id() persistence
 """
@@ -169,46 +170,54 @@ class TestClearSessionId:
         assert not path.exists()
 
 
-class TestClearSessionIds:
-    """clear_session_ids() public wrapper clears both chat and heartbeat."""
+class TestSessionTypeConstants:
+    """_RESUMABLE_SESSION_TYPES and _resolve_session_type() correctness."""
 
-    def test_clears_both_types(self, anima_dir: Path) -> None:
-        from core.execution.agent_sdk import (
-            clear_session_ids,
+    def test_only_chat_is_resumable(self) -> None:
+        from core.execution._sdk_session import (
+            _RESUMABLE_SESSION_TYPES,
+            SESSION_TYPE_CHAT,
+            SESSION_TYPE_CRON,
+            SESSION_TYPE_HEARTBEAT,
+            SESSION_TYPE_INBOX,
+            SESSION_TYPE_TASK,
+        )
+
+        assert SESSION_TYPE_CHAT in _RESUMABLE_SESSION_TYPES
+        assert SESSION_TYPE_HEARTBEAT not in _RESUMABLE_SESSION_TYPES
+        assert SESSION_TYPE_CRON not in _RESUMABLE_SESSION_TYPES
+        assert SESSION_TYPE_TASK not in _RESUMABLE_SESSION_TYPES
+        assert SESSION_TYPE_INBOX not in _RESUMABLE_SESSION_TYPES
+
+    def test_resolve_session_type(self) -> None:
+        from core.execution._sdk_session import (
+            SESSION_TYPE_CHAT,
+            SESSION_TYPE_CRON,
+            SESSION_TYPE_HEARTBEAT,
+            SESSION_TYPE_INBOX,
+            SESSION_TYPE_TASK,
+            _resolve_session_type,
+        )
+
+        assert _resolve_session_type("heartbeat") == SESSION_TYPE_HEARTBEAT
+        assert _resolve_session_type("cron:daily") == SESSION_TYPE_CRON
+        assert _resolve_session_type("task:abc123") == SESSION_TYPE_TASK
+        assert _resolve_session_type("inbox:alice") == SESSION_TYPE_INBOX
+        assert _resolve_session_type("chat") == SESSION_TYPE_CHAT
+        assert _resolve_session_type("") == SESSION_TYPE_CHAT
+        assert _resolve_session_type("unknown") == SESSION_TYPE_CHAT
+
+    def test_clear_session_id_for_chat(self, anima_dir: Path) -> None:
+        from core.execution._sdk_session import (
+            _clear_session_id,
             _save_session_id,
         )
 
         _save_session_id(anima_dir, "sess-chat", "chat")
-        _save_session_id(anima_dir, "sess-hb", "heartbeat")
-
-        chat_path = anima_dir / "state" / "current_session_chat.json"
-        hb_path = anima_dir / "state" / "current_session_heartbeat.json"
-        assert chat_path.exists()
-        assert hb_path.exists()
-
-        clear_session_ids(anima_dir)
-
-        assert not chat_path.exists(), "chat session file should be removed"
-        assert not hb_path.exists(), "heartbeat session file should be removed"
-
-    def test_noop_when_no_files(self, anima_dir: Path) -> None:
-        from core.execution.agent_sdk import clear_session_ids
-
-        # Should not raise even when no files exist
-        clear_session_ids(anima_dir)
-
-    def test_clears_only_chat_if_only_chat_exists(self, anima_dir: Path) -> None:
-        from core.execution.agent_sdk import (
-            clear_session_ids,
-            _save_session_id,
-        )
-
-        _save_session_id(anima_dir, "sess-chat", "chat")
         chat_path = anima_dir / "state" / "current_session_chat.json"
         assert chat_path.exists()
 
-        # Should not raise when heartbeat file is missing
-        clear_session_ids(anima_dir)
+        _clear_session_id(anima_dir, "chat")
         assert not chat_path.exists()
 
 

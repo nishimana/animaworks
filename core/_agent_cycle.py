@@ -439,11 +439,17 @@ class CycleMixin:
             # Clear SDK session ID so the next session starts fresh
             if mode == "s":
                 try:
-                    from core.execution.agent_sdk import clear_session_ids
+                    from core.execution._sdk_session import (
+                        _RESUMABLE_SESSION_TYPES,
+                        _clear_session_id,
+                        _resolve_session_type,
+                    )
 
-                    clear_session_ids(self.anima_dir, thread_id)
+                    _st = _resolve_session_type(trigger)
+                    if _st in _RESUMABLE_SESSION_TYPES:
+                        _clear_session_id(self.anima_dir, _st, thread_id)
                 except Exception:
-                    logger.debug("Failed to clear session IDs for deferred chain", exc_info=True)
+                    logger.debug("Failed to clear session ID for deferred chain", exc_info=True)
         else:
             shortterm.clear()
 
@@ -782,9 +788,15 @@ class CycleMixin:
 
                             clear_codex_thread_ids(self.anima_dir, thread_id)
                         else:
-                            from core.execution.agent_sdk import clear_session_ids
+                            from core.execution._sdk_session import (
+                                _RESUMABLE_SESSION_TYPES,
+                                _clear_session_id,
+                                _resolve_session_type,
+                            )
 
-                            clear_session_ids(self.anima_dir, thread_id)
+                            _st_retry = _resolve_session_type(trigger)
+                            if _st_retry in _RESUMABLE_SESSION_TYPES:
+                                _clear_session_id(self.anima_dir, _st_retry, thread_id)
                         logger.info("Session IDs cleared for retry 1 (fresh session forced)")
                     except Exception as e:
                         logger.warning("Failed to clear session IDs for retry: %s", e)
@@ -867,11 +879,17 @@ class CycleMixin:
             # Clear SDK session ID so the next session starts fresh
             if mode == "s":
                 try:
-                    from core.execution.agent_sdk import clear_session_ids
+                    from core.execution._sdk_session import (
+                        _RESUMABLE_SESSION_TYPES,
+                        _clear_session_id,
+                        _resolve_session_type,
+                    )
 
-                    clear_session_ids(self.anima_dir, thread_id)
+                    _st = _resolve_session_type(trigger)
+                    if _st in _RESUMABLE_SESSION_TYPES:
+                        _clear_session_id(self.anima_dir, _st, thread_id)
                 except Exception:
-                    logger.debug("Failed to clear session IDs for deferred chain", exc_info=True)
+                    logger.debug("Failed to clear session ID for deferred chain", exc_info=True)
         else:
             shortterm.clear()
 

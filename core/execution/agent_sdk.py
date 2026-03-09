@@ -77,8 +77,14 @@ from core.execution._sdk_security import (  # noqa: F401
 from core.execution._sdk_session import (  # noqa: F401
     _CONTEXT_AUTOCOMPACT_SAFETY,
     _PROMPT_FILE_THRESHOLD,
+    _RESUMABLE_SESSION_TYPES,
     _SDK_MAX_BUFFER_SIZE,
     RESUME_TIMEOUT_SEC,
+    SESSION_TYPE_CHAT,
+    SESSION_TYPE_CRON,
+    SESSION_TYPE_HEARTBEAT,
+    SESSION_TYPE_INBOX,
+    SESSION_TYPE_TASK,
     _build_sdk_query_input,
     _cleanup_prompt_files,
     _cleanup_tool_outputs,
@@ -86,9 +92,9 @@ from core.execution._sdk_session import (  # noqa: F401
     _image_prompt_messages,
     _is_debug_superuser,
     _load_session_id,
+    _resolve_session_type,
     _save_session_id,
     _session_file,
-    clear_session_ids,
 )
 from core.execution._sdk_stream import (  # noqa: F401
     _finalize_pending_records,
@@ -108,7 +114,7 @@ from core.schemas import ImageData, ModelConfig
 
 logger = logging.getLogger("animaworks.execution.agent_sdk")
 
-__all__ = ["AgentSDKExecutor", "StreamDisconnectedError", "clear_session_ids"]
+__all__ = ["AgentSDKExecutor", "StreamDisconnectedError"]
 
 
 # ── AgentSDKExecutor ─────────────────────────────────────────
@@ -441,7 +447,7 @@ class AgentSDKExecutor(BaseExecutor):
 
             if isinstance(message, ResultMessage):
                 result_message = message
-                if message.session_id:
+                if message.session_id and session_type in _RESUMABLE_SESSION_TYPES:
                     _save_session_id(self._anima_dir, message.session_id, session_type, thread_id=thread_id)
                 if tracker:
                     tracker.update_from_result_message(message.usage)
@@ -535,8 +541,12 @@ class AgentSDKExecutor(BaseExecutor):
             "force_chain": False,
         }
 
-        session_type = "heartbeat" if trigger in ("heartbeat",) or (trigger and trigger.startswith("cron:")) else "chat"
-        session_id_to_resume = _load_session_id(self._anima_dir, session_type, thread_id=thread_id)
+        session_type = _resolve_session_type(trigger)
+        session_id_to_resume = (
+            _load_session_id(self._anima_dir, session_type, thread_id=thread_id)
+            if session_type in _RESUMABLE_SESSION_TYPES
+            else None
+        )
 
         options, prompt_file = self._build_sdk_options(
             system_prompt,
@@ -701,11 +711,12 @@ class AgentSDKExecutor(BaseExecutor):
             "force_chain": False,
         }
 
-        # Derive session_type from trigger so heartbeat/cron resume their own
-        # SDK session (current_session_heartbeat.json) rather than the chat
-        # session (current_session_chat.json).  Mirrors the logic in execute().
-        session_type = "heartbeat" if trigger in ("heartbeat",) or (trigger and trigger.startswith("cron:")) else "chat"
-        session_id_to_resume = _load_session_id(self._anima_dir, session_type, thread_id=thread_id)
+        session_type = _resolve_session_type(trigger)
+        session_id_to_resume = (
+            _load_session_id(self._anima_dir, session_type, thread_id=thread_id)
+            if session_type in _RESUMABLE_SESSION_TYPES
+            else None
+        )
 
         options, prompt_file = self._build_sdk_options(
             system_prompt,
@@ -836,7 +847,7 @@ class AgentSDKExecutor(BaseExecutor):
 
                 elif isinstance(message, ResultMessage):
                     result_message = message
-                    if message.session_id:
+                    if message.session_id and session_type in _RESUMABLE_SESSION_TYPES:
                         _save_session_id(self._anima_dir, message.session_id, session_type, thread_id=thread_id)
                     # Do NOT call tracker.update_from_result_message() here.
                     # ResultMessage.usage.input_tokens is a cumulative sum across

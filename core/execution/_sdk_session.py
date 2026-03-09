@@ -85,6 +85,35 @@ def _cleanup_prompt_files(files: list[Path]) -> None:
 # when the restored transcript + new system prompt exceed context limits).
 SESSION_RESUME_TIMEOUT_MIN = 10
 
+# ── Session type constants ────────────────────────────────────
+
+SESSION_TYPE_CHAT = "chat"
+SESSION_TYPE_HEARTBEAT = "heartbeat"
+SESSION_TYPE_CRON = "cron"
+SESSION_TYPE_TASK = "task"
+SESSION_TYPE_INBOX = "inbox"
+
+_RESUMABLE_SESSION_TYPES: frozenset[str] = frozenset({SESSION_TYPE_CHAT})
+"""Only these session types persist and resume SDK sessions.
+All other types start fresh each time (no resume, no save)."""
+
+
+def _resolve_session_type(trigger: str) -> str:
+    """Resolve SDK session type from execution trigger.
+
+    Each trigger category gets its own session namespace to prevent
+    cross-contamination of Claude CLI conversation histories.
+    """
+    if trigger == "heartbeat":
+        return SESSION_TYPE_HEARTBEAT
+    if trigger.startswith("cron:"):
+        return SESSION_TYPE_CRON
+    if trigger.startswith("task:"):
+        return SESSION_TYPE_TASK
+    if trigger.startswith("inbox:"):
+        return SESSION_TYPE_INBOX
+    return SESSION_TYPE_CHAT
+
 
 def _session_file(session_type: str, thread_id: str = "default") -> str:
     """Return the session file name for the given session type."""
@@ -158,15 +187,6 @@ def _clear_session_id(anima_dir: Path, session_type: str = "chat", thread_id: st
     path = anima_dir / "state" / _session_file(session_type, thread_id)
     if path.exists():
         path.unlink(missing_ok=True)
-
-
-def clear_session_ids(anima_dir: Path, thread_id: str = "default") -> None:
-    """Clear all session IDs for an anima (chat and heartbeat).
-
-    Public wrapper for use by streaming_handler.py on done=False disconnection.
-    """
-    for session_type in ("chat", "heartbeat"):
-        _clear_session_id(anima_dir, session_type, thread_id)
 
 
 # ── SDK query input construction ─────────────────────────────
