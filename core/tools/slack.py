@@ -1445,7 +1445,7 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
             username=username,
             icon_url=icon_url,
         )
-        ts = resp.get("ts", "") if isinstance(resp, dict) else ""
+        ts = resp.get("ts", "") if resp is not None else ""
         return {"status": "ok", "channel": args["channel_id"], "ts": ts}
     if name == "slack_channel_update":
         client = SlackClient(token=_resolve_slack_token(args))
