@@ -99,6 +99,7 @@ class TestInboxMessageEpisodeE2E:
             dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
 
             async def mock_stream(prompt, trigger="manual", **kwargs):
+                yield {"type": "text_delta", "text": "Processing message"}
                 yield {
                     "type": "cycle_done",
                     "cycle_result": {
