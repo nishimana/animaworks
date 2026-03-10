@@ -80,7 +80,12 @@ class StreamingMixin:
         # LiteLLM drops the thinking param for the entire session because
         # the Anthropic API requires thinking_blocks on every assistant
         # turn with tool_use when extended thinking is enabled.
-        _thinking_enabled = llm_kwargs.get("thinking") or llm_kwargs.get("reasoning_effort") or llm_kwargs.get("think") or llm_kwargs.get("enable_thinking")
+        _thinking_enabled = (
+            llm_kwargs.get("thinking")
+            or llm_kwargs.get("reasoning_effort")
+            or llm_kwargs.get("think")
+            or llm_kwargs.get("enable_thinking")
+        )
         if _thinking_enabled:
             _patched = 0
             for msg in messages:
