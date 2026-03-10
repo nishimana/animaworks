@@ -48,7 +48,7 @@ class ContextMixin:
     def _build_llm_kwargs(self) -> dict[str, Any]:
         """Credential + model kwargs for ``litellm.acompletion``."""
         from core.config.models import resolve_max_tokens
-        from core.execution.base import is_adaptive_model, is_anthropic_claude, is_bedrock_qwen, resolve_thinking_effort
+        from core.execution.base import is_adaptive_model, is_anthropic_claude, is_bedrock_kimi, is_bedrock_qwen, resolve_thinking_effort
 
         _eff_max = resolve_max_tokens(
             self._model_config.model,
@@ -70,7 +70,16 @@ class ContextMixin:
         # Extended thinking / reasoning control
         if self._model_config.thinking is not None:
             model = self._model_config.model
-            if is_bedrock_qwen(model):
+            if is_bedrock_kimi(model):
+                # Kimi K2.5 on Bedrock: pass reasoning_config which LiteLLM
+                # forwards to additionalModelRequestFields in Converse API.
+                # Supported values: "high" (enables thinking mode).
+                if self._model_config.thinking:
+                    kwargs["reasoning_config"] = resolve_thinking_effort(
+                        model,
+                        self._model_config.thinking_effort,
+                    )
+            elif is_bedrock_qwen(model):
                 # Qwen on Bedrock: pass enable_thinking which LiteLLM forwards
                 # to additionalModelRequestFields in the Converse API
                 kwargs["enable_thinking"] = self._model_config.thinking

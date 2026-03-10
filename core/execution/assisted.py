@@ -324,7 +324,7 @@ class AssistedExecutor(BaseExecutor):
         import litellm
 
         from core.config.models import resolve_max_tokens
-        from core.execution.base import is_adaptive_model, is_anthropic_claude, is_bedrock_qwen, resolve_thinking_effort
+        from core.execution.base import is_adaptive_model, is_anthropic_claude, is_bedrock_kimi, is_bedrock_qwen, resolve_thinking_effort
 
         _eff_max = (
             max_tokens_override
@@ -353,7 +353,13 @@ class AssistedExecutor(BaseExecutor):
         # Extended thinking / reasoning control
         if self._model_config.thinking is not None:
             model = self._model_config.model
-            if is_bedrock_qwen(model):
+            if is_bedrock_kimi(model):
+                if self._model_config.thinking:
+                    kwargs["reasoning_config"] = resolve_thinking_effort(
+                        model,
+                        self._model_config.thinking_effort,
+                    )
+            elif is_bedrock_qwen(model):
                 kwargs["enable_thinking"] = self._model_config.thinking
             elif model.startswith("bedrock/"):
                 if self._model_config.thinking:

@@ -77,6 +77,11 @@ def is_bedrock_qwen(model: str) -> bool:
     return model.startswith("bedrock/") and "qwen" in model.lower()
 
 
+def is_bedrock_kimi(model: str) -> bool:
+    """Return True if *model* is a Moonshot Kimi model on AWS Bedrock."""
+    return model.startswith("bedrock/") and ("kimi" in model.lower() or "moonshot" in model.lower())
+
+
 def resolve_thinking_effort(model: str, effort: str | None) -> str:
     """Resolve thinking effort, clamping ``"max"`` to ``"high"`` for non-Opus-4.6."""
     resolved = effort or "high"

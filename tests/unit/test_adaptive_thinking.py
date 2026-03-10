@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.execution.base import is_adaptive_model, is_anthropic_claude, is_bedrock_qwen, resolve_thinking_effort
+from core.execution.base import is_adaptive_model, is_anthropic_claude, is_bedrock_kimi, is_bedrock_qwen, resolve_thinking_effort
 from core.config.models import (
     DEFAULT_MAX_TOKENS,
     AnimaDefaults,
@@ -98,6 +98,29 @@ class TestIsBedrockQwen:
 
     def test_openai_not_bedrock(self):
         assert is_bedrock_qwen("openai/gpt-4o") is False
+
+
+# ── is_bedrock_kimi ───────────────────────────────────────────
+
+
+class TestIsBedrockKimi:
+    def test_bedrock_kimi_k25(self):
+        assert is_bedrock_kimi("bedrock/moonshotai.kimi-k2.5") is True
+
+    def test_bedrock_kimi_k2_thinking(self):
+        assert is_bedrock_kimi("bedrock/moonshot.kimi-k2-thinking") is True
+
+    def test_bedrock_moonshot_prefix(self):
+        assert is_bedrock_kimi("bedrock/moonshotai.Kimi-K2-Instruct") is True
+
+    def test_bedrock_claude_not_kimi(self):
+        assert is_bedrock_kimi("bedrock/claude-opus-4-6") is False
+
+    def test_bedrock_qwen_not_kimi(self):
+        assert is_bedrock_kimi("bedrock/qwen.qwen3-next-80b-a3b") is False
+
+    def test_non_bedrock_kimi(self):
+        assert is_bedrock_kimi("ollama/kimi-k2:latest") is False
 
 
 # ── resolve_thinking_effort ───────────────────────────────────
@@ -318,6 +341,34 @@ class TestLiteLLMAdaptiveThinking:
         kwargs = ex._build_llm_kwargs()
         assert kwargs["reasoning_effort"] == "medium"
         assert "thinking" not in kwargs
+
+    def test_bedrock_kimi_gets_reasoning_config(self, anima_dir, tool_handler, memory):
+        from core.execution.litellm_loop import LiteLLMExecutor
+        cfg = ModelConfig(
+            model="bedrock/moonshotai.kimi-k2.5", thinking=True, api_key="k",
+        )
+        ex = LiteLLMExecutor(
+            model_config=cfg, anima_dir=anima_dir,
+            tool_handler=tool_handler, tool_registry=[], memory=memory,
+        )
+        kwargs = ex._build_llm_kwargs()
+        assert kwargs["reasoning_config"] == "high"
+        assert "reasoning_effort" not in kwargs
+        assert "thinking" not in kwargs
+        assert "enable_thinking" not in kwargs
+
+    def test_bedrock_kimi_thinking_false_no_reasoning_config(self, anima_dir, tool_handler, memory):
+        from core.execution.litellm_loop import LiteLLMExecutor
+        cfg = ModelConfig(
+            model="bedrock/moonshotai.kimi-k2.5", thinking=False, api_key="k",
+        )
+        ex = LiteLLMExecutor(
+            model_config=cfg, anima_dir=anima_dir,
+            tool_handler=tool_handler, tool_registry=[], memory=memory,
+        )
+        kwargs = ex._build_llm_kwargs()
+        assert "reasoning_config" not in kwargs
+        assert "reasoning_effort" not in kwargs
 
     def test_bedrock_qwen_gets_enable_thinking_true(self, anima_dir, tool_handler, memory):
         from core.execution.litellm_loop import LiteLLMExecutor
