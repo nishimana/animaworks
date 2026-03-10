@@ -16,7 +16,6 @@ import pytest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from collections.abc import AsyncIterator
-from typing import Union
 
 from core.supervisor.ipc import (
     IPCClient,

@@ -16,7 +16,6 @@ from datetime import datetime
 from core.time_utils import now_jst
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Union
 
 import pytest
 

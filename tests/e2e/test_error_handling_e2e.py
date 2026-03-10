@@ -9,7 +9,6 @@ ProcessSupervisor, verifying that errors surface correctly in HTTP/SSE responses
 
 from __future__ import annotations
 
-import asyncio
 import json
 import stat
 from pathlib import Path

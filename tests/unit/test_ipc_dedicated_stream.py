@@ -16,7 +16,6 @@ import pytest
 from collections.abc import AsyncIterator
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Union
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from core.supervisor.ipc import (
