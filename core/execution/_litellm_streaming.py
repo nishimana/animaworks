@@ -80,11 +80,12 @@ class StreamingMixin:
         # LiteLLM drops the thinking param for the entire session because
         # the Anthropic API requires thinking_blocks on every assistant
         # turn with tool_use when extended thinking is enabled.
+        # NOTE: This is an Anthropic-specific requirement.  Other providers
+        # (Qwen, OpenAI, etc.) do not need this and may leak the dummy
+        # content into model-visible context.
         _thinking_enabled = (
             llm_kwargs.get("thinking")
             or llm_kwargs.get("reasoning_effort")
-            or llm_kwargs.get("think")
-            or llm_kwargs.get("enable_thinking")
         )
         if _thinking_enabled:
             _patched = 0
@@ -176,6 +177,14 @@ class StreamingMixin:
 
                 async for chunk in response:
                     _chunk_count += 1
+                    # DEBUG: raw chunk inspection (first 5 chunks)
+                    if _chunk_count <= 5:
+                        logger.info(
+                            "A stream raw chunk #%d: type=%s choices=%s",
+                            _chunk_count,
+                            type(chunk).__name__,
+                            repr(chunk.choices[:1]) if chunk.choices else "[]",
+                        )
                     choice = chunk.choices[0] if chunk.choices else None
                     if choice is None:
                         if hasattr(chunk, "usage") and chunk.usage:
@@ -310,6 +319,25 @@ class StreamingMixin:
                         yield {"type": "text_delta", "text": flushed}
 
                 iter_text = "".join(iter_text_parts)
+                # DEBUG: log thinking vs content for diagnosis
+                if _reasoning_seen or _reasoning_parts:
+                    logger.info(
+                        "A stream thinking debug: reasoning_chars=%d, content_chars=%d, "
+                        "chunks=%d, content_preview=%.100r",
+                        sum(len(p) for p in _reasoning_parts),
+                        len(iter_text),
+                        _chunk_count,
+                        iter_text[:100],
+                    )
+                elif iter_text and len(iter_text) < 30:
+                    logger.info(
+                        "A stream short response: chars=%d, chunks=%d, "
+                        "content=%.100r, think_filter_state=%s",
+                        len(iter_text),
+                        _chunk_count,
+                        iter_text,
+                        _think_filter._state if hasattr(_think_filter, '_state') else 'N/A',
+                    )
                 if iter_text:
                     all_response_text.append(iter_text)
 
