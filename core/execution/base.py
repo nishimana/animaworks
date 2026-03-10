@@ -72,6 +72,11 @@ def is_anthropic_claude(model: str) -> bool:
     return _bare_model_name(model).startswith("claude-")
 
 
+def is_bedrock_qwen(model: str) -> bool:
+    """Return True if *model* is a Qwen model on AWS Bedrock."""
+    return model.startswith("bedrock/") and "qwen" in model.lower()
+
+
 def resolve_thinking_effort(model: str, effort: str | None) -> str:
     """Resolve thinking effort, clamping ``"max"`` to ``"high"`` for non-Opus-4.6."""
     resolved = effort or "high"
