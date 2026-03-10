@@ -396,7 +396,7 @@ export function renderCollapsibleSession(sessions, type, opts) {
   }
 
   let bodyHtml = "";
-  if (type === "heartbeat") {
+  if (type === "heartbeat" || type === "task") {
     for (const msg of allMessages) {
       const content = msg.content || "";
       if (content) {

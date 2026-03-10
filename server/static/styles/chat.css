@@ -2416,9 +2416,6 @@
 
 .bg-session-group {
   margin: 8px 0;
-  width: fit-content;
-  max-width: 70%;
-  min-width: 200px;
 }
 
 .bg-session-header {
@@ -2431,6 +2428,9 @@
   font-size: 0.78rem;
   user-select: none;
   transition: filter 0.1s ease;
+  width: fit-content;
+  max-width: 70%;
+  min-width: 200px;
 }
 
 .bg-session-header:hover,
@@ -2467,10 +2467,13 @@
   margin-top: 2px;
   font-size: 0.82rem;
   line-height: 1.5;
+  font-style: italic;
+  color: var(--aw-color-text-muted);
 }
 
-/* Heartbeat body - markdown content */
-.bg-session-group--heartbeat .bg-session-body {
+/* Heartbeat / Task body - markdown content */
+.bg-session-group--heartbeat .bg-session-body,
+.bg-session-group--task .bg-session-body {
   max-height: 400px;
   overflow-y: auto;
 }
