@@ -22,7 +22,7 @@
 2. サーバーが停止している
 3. 相手がハートビート間隔の合間にいる（次の起動まで未読のまま）
 4. 送信処理自体がエラーで失敗していた
-5. `intent` が未指定または不正（report / delegation / question のみ許可）
+5. `intent` が未指定または不正（report / question のみ許可。タスク委譲は `delegate_task` を使用。`delegation` は廃止済み）
 6. セッション内DM制限超過（同一宛先へは1回のみ、1セッションあたりの宛先数上限。ロールにより異なり、general は2人まで）
 
 ### 対処手順
@@ -58,12 +58,12 @@
 send_message(to="Aoi", content="...", intent="report")   # OK
 send_message(to="aoi", content="...", intent="report")  # 名前が異なればエラーになる可能性あり
 
-# DM は intent 必須（report / delegation / question のみ）
+# DM は intent 必須（report / question のみ）
 # 1セッションあたりの宛先数はロールにより異なる（general は2人まで）。同一宛先へは1回のみ
 send_message(
     to="aoi",
     content="了解しました。作業を開始します。",
-    intent="report",           # 必須: report / delegation / question
+    intent="report",           # 必須: report / question
     reply_to="msg-abc123",     # 任意: 元メッセージのID
     thread_id="thread-xyz789"  # 任意: スレッドID
 )

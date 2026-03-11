@@ -14,7 +14,7 @@
 | `call_human` | 人間への緊急通知 | サービス停止・セキュリティインシデント等 |
 
 **send_message の制約**:
-- `intent` は必須。報告には `report` を指定する（`delegation`=委譲、`question`=質問）
+- `intent` は必須。報告には `report` を指定する（タスク委譲は `delegate_task`、`question`=質問）
 - 1 run あたり最大2宛先まで、同一宛先へは1通のみ。3人以上への伝達は Board を使用
 - 追加の連絡は Board（post_channel）を使用する
 - **宛先**: Anima名（上司・同僚）または人間エイリアス（`config.external_messaging.user_aliases` 設定時は Slack/Chatwork 等へ外部配信）

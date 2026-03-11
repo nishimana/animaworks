@@ -73,7 +73,7 @@ refresh_tools, share_tool, create_anima は利用不可（A/S-mode のみ）。
 | 記憶 | `read_memory_file` | 記憶ファイルの読み取り |
 | 記憶 | `write_memory_file` | 記憶ファイルへの書き込み |
 | 記憶 | `archive_memory_file` | 不要な記憶ファイルを archive/ へ退避 |
-| 通信 | `send_message` | DM 送信（intent 必須: report / delegation / question） |
+| 通信 | `send_message` | DM 送信（intent 必須: report / question。タスク委譲は `delegate_task`） |
 | 通信 | `post_channel` | Board チャネルへの投稿（channel, text） |
 | 通信 | `read_channel` | Board チャネルの読み取り |
 | 通信 | `manage_channel` | チャネル作成・メンバー追加/削除・情報取得 |

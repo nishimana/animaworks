@@ -82,7 +82,7 @@
 4. **依頼**: 上司に何をしてほしいか（判断、権限付与、仲介 等）
 
 **send_message の制約（実装準拠）**:
-- `intent` は MUST: `report`（報告）, `delegation`（委譲）, `question`（質問）のいずれかを指定する。省略不可
+- `intent` は MUST: `report`（報告）, `question`（質問）のいずれかを指定する。省略不可。タスク委譲には `delegate_task` を使用（`delegation` は廃止済み）
 - acknowledgment（確認応答）・感謝・FYI は DM 不可。Board（post_channel）を使用する
 - 1 run あたりの DM 宛先数はロール/status.json で設定された上限（general/ops は2人、engineer は5人、manager は10人など）。同一宛先へは1通のみ。上限を超える伝達は Board を使用する
 - DM と Board は**同一のアウトバウンド予算**を共有する（時間あたり・24時間あたりの制限あり）。詳細は `communication/sending-limits.md` 参照
@@ -234,7 +234,7 @@ send_message(
 **やってはいけない対応**:
 - 確認せずに独自解釈で作業を進める
 - 「指示が不明確です」とだけ返す（具体的な質問がない）
-- `send_message` で `intent` を省略する（`report` / `delegation` / `question` のいずれかが必須。省略するとエラーになる）
+- `send_message` で `intent` を省略する（`report` / `question` のいずれかが必須。省略するとエラーになる）
 
 ### シナリオ2: 複数の上司から矛盾する指示
 
