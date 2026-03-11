@@ -141,15 +141,45 @@ def clean_output_dir() -> None:
     output_dir.mkdir(parents=True)
 
 
-def clean_shortterm(anima: str) -> None:
-    """Animaの短期記憶をクリア."""
+def clean_conversation_state(anima: str) -> None:
+    """Animaの全会話状態を完全リセット."""
     from core.paths import get_data_dir
 
-    chat_dir = get_data_dir() / "animas" / anima / "shortterm" / "chat"
-    if chat_dir.exists():
-        shutil.rmtree(chat_dir)
-        chat_dir.mkdir(parents=True)
-        logger.info("短期記憶クリア: %s", chat_dir)
+    anima_dir = get_data_dir() / "animas" / anima
+    cleared: list[str] = []
+
+    conv = anima_dir / "state" / "conversation.json"
+    if conv.exists():
+        conv.write_text(
+            json.dumps(
+                {
+                    "anima_name": anima,
+                    "turns": [],
+                    "compressed_summary": "",
+                    "compressed_turn_count": 0,
+                    "last_finalized_turn_index": -1,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        cleared.append("conversation.json")
+
+    for subdir in ("chat", "heartbeat"):
+        st = anima_dir / "shortterm" / subdir
+        if st.exists():
+            shutil.rmtree(st)
+            st.mkdir(parents=True)
+            cleared.append(f"shortterm/{subdir}")
+
+    for pattern in ("streaming_journal_*.jsonl", "current_session_*.json"):
+        for f in anima_dir.glob(pattern):
+            f.unlink()
+            cleared.append(f.name)
+
+    if cleared:
+        logger.info("会話状態リセット: %s", ", ".join(cleared))
 
 
 def send_chat(anima: str, message: str, server_url: str = "http://localhost:8765") -> dict:
@@ -286,7 +316,7 @@ def run_benchmark(
     """全タスクを指定回数実行."""
     if credential:
         switch_model(anima, model_label, credential, extra, server_url=server_url)
-        clean_shortterm(anima)
+        clean_conversation_state(anima)
         time.sleep(3)
 
     tasks = load_tasks()
@@ -301,9 +331,8 @@ def run_benchmark(
         logger.info("=== Run %d/%d (model=%s) ===", run_idx, runs, model_label)
         run_results = []
 
-        clean_shortterm(anima)
-
         for task in tasks:
+            clean_conversation_state(anima)
             clean_output_dir()
 
             result = run_single_task(anima, task, server_url)

@@ -117,3 +117,4 @@ server/static/finance/
 # Private-only test data
 tests/evaluation/results/
 tests/unit/experiments/
+scripts/benchmark/results/

@@ -67,13 +67,82 @@ Run `animaworks models list` for the latest catalog. Key models:
 | `vertex_ai/gemini-2.5-flash` | Vertex AI Flash |
 | `vertex_ai/gemini-2.5-pro` | Vertex AI Pro |
 
-### Local Models / Ollama
+### Local Models / vLLM / Ollama
 
 | Model | Mode | Description |
 |-------|------|-------------|
+| `openai/qwen3.5-35b-a3b` | A | **Recommended** — Sonnet-equivalent performance (benchmark verified) |
 | `ollama/qwen3:14b` | A | Medium, tool_use capable |
 | `ollama/glm-4.7` | A | tool_use capable |
 | `ollama/gemma3:4b` | B | Lightweight |
+
+### AWS Bedrock
+
+| Model | Mode | Description |
+|-------|------|-------------|
+| `openai/zai.glm-4.7` | A | Via Bedrock Mantle. Single-step tasks only |
+| `bedrock/qwen.qwen3-next-80b-a3b` | A | Insufficient tool calling ability (not recommended) |
+
+---
+
+## Recommended OSS Model (Benchmark Verified)
+
+### Qwen3.5-35B — Recommended Local GPU Model
+
+`openai/qwen3.5-35b-a3b` (via vLLM) is a **benchmark-verified recommended local model** for AnimaWorks Mode A agents.
+It achieved the same overall score as Claude Sonnet 4.6 and is **optimal as a background_model**.
+
+#### Benchmark Data (2026-03-11)
+
+Conditions: Mode A (LiteLLM tool_use loop) unified, 15 tasks × 3 runs per model
+
+| Model | T1 Basic | T2 Multi-step | T3 Judgment | Overall | Avg Time | Cost |
+|-------|:--------:|:-------------:|:-----------:|:-------:|:--------:|:----:|
+| **Qwen3.5-35B (local)** | **100%** | **100%** | 60% | **88%** | 9.6s | **$0** |
+| Claude Sonnet 4.6 | 100% | 100% | 60% | 88% | 8.5s | ~$0.015/task |
+| GLM-4.7 (Bedrock) | 87% | 33% | 53% | 55% | 5.9s | ~$0.003/task |
+| Qwen3-Next 80B (Bedrock) | 40% | 27% | 40% | 35% | 5.2s | ~$0.005/task |
+
+#### Key Findings
+
+- **T1 (Basic: file I/O, tool calls)**: Tied with Sonnet at 100%
+- **T2 (Multi-step: CSV aggregation, JSON parse→write, etc.)**: Tied with Sonnet at 100%
+- **Calculation accuracy (T3-3)**: Qwen3.5 outperformed Sonnet (3/3 vs 1/3)
+- **Prompt injection resistance (T3-4)**: All models scored 0/3 (framework-level mitigation required)
+- Parameter count does not determine performance (35B Qwen3.5 significantly outperformed 80B Qwen3-Next)
+
+#### Recommended Configuration
+
+```bash
+# vLLM credential setup
+# Add to config.json > credentials:
+# "vllm-local": { "api_key": "dummy", "base_url": "http://<vllm-host>:8000/v1" }
+
+# Add to models.json
+# "openai/qwen3.5*": { "mode": "A", "context_window": 64000 }
+
+# Set as background_model (Chat=Sonnet, HB/Inbox/Cron=Qwen3.5)
+animaworks anima set-background-model {name} openai/qwen3.5-35b-a3b --credential vllm-local
+```
+
+#### vLLM Launch Example
+
+```bash
+vllm serve Qwen/Qwen3.5-35B-A3B \
+  --max-model-len 65536 \
+  --gpu-memory-utilization 0.95 \
+  --enable-auto-tool-choice \
+  --tool-call-parser hermes
+```
+
+#### Model Selection by Use Case
+
+| Use Case | Recommended Model | Reason |
+|----------|-------------------|--------|
+| background_model (HB/Inbox/Cron) | **Qwen3.5-35B** | $0 cost with Sonnet-equivalent stability |
+| foreground (human Chat) | Sonnet 4.6 | Error handling stability and language quality |
+| TaskExec (delegated tasks) | Qwen3.5-35B | $0 cost with stable tool chaining |
+| Lightweight responses (classification/summary) | GLM-4.7 | Fastest, but multi-step incapable |
 
 ---
 
@@ -322,9 +391,12 @@ Edit `context_window` in `models.json`, or override via `config.json` `model_con
 - **High quality, autonomous execution** → `claude-opus-4-6` (Mode S)
 - **Balanced, cost-conscious** → `claude-sonnet-4-6` (Mode S)
 - **Low cost, high volume** → `openai/gpt-4.1-mini` (Mode A)
-- **Local, private** → `ollama/qwen3:14b` (Mode A)
+- **Local GPU, $0 cost** → `openai/qwen3.5-35b-a3b` (Mode A, vLLM) **Recommended**
+- **Local, lightweight** → `ollama/qwen3:14b` (Mode A)
 
 ### How to reduce Heartbeat / Cron costs
 
 Set `background_model`. See the "Background Model (Cost Optimization)" section above.
 For Opus-based Anima, setting Sonnet as `background_model` reduces Heartbeat + Inbox costs by ~73%.
+
+With `openai/qwen3.5-35b-a3b` via vLLM as `background_model`, **background processing costs drop to $0**. Verified at 88% overall score, equivalent to Sonnet.
