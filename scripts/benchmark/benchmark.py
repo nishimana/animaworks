@@ -27,7 +27,7 @@ RESULTS_DIR = SCRIPT_DIR / "results"
 BENCHMARK_DIR = Path("/tmp/benchmark")
 DEFAULT_ANIMA = "hina"
 DEFAULT_RUNS = 3
-API_TIMEOUT = 120
+API_TIMEOUT = 180
 
 # ── Setup ──────────────────────────────────────────────
 
@@ -124,12 +124,296 @@ def setup_benchmark_data() -> None:
     logger.info("テストデータを %s に配置しました", BENCHMARK_DIR)
 
 
+def setup_advanced_data() -> None:
+    """上級ベンチマーク用テストデータを /tmp/benchmark/adv/ に配置."""
+    adv = BENCHMARK_DIR / "adv"
+    if adv.exists():
+        shutil.rmtree(adv)
+    adv.mkdir(parents=True)
+    (BENCHMARK_DIR / "output").mkdir(exist_ok=True)
+
+    # A1: 売上データ + 目標
+    (adv / "sales.csv").write_text(
+        "product,region,amount\n"
+        "Widget A,East,12000\n"
+        "Widget B,East,8000\n"
+        "Widget A,West,15000\n"
+        "Widget C,West,5000\n"
+        "Widget B,North,9000\n"
+        "Widget A,North,11000\n"
+        "Widget C,East,7000\n"
+        "Widget B,West,6000\n",
+        encoding="utf-8",
+    )
+    # East: 12000+8000+7000=27000, West: 15000+5000+6000=26000, North: 9000+11000=20000
+    (adv / "targets.csv").write_text(
+        "region,target\nEast,25000\nWest,30000\nNorth,18000\n",
+        encoding="utf-8",
+    )
+
+    # A2: バグのあるPythonコード（3つのバグ）
+    (adv / "buggy.py").write_text(
+        '"""Utility functions with 3 bugs."""\n'
+        "\n"
+        "\n"
+        "def calculate_average(numbers):\n"
+        '    """Calculate the average of a list of numbers."""\n'
+        "    total = sum(numbers)\n"
+        "    return total / len(numbers)  # Bug 1: ZeroDivisionError when empty list\n"
+        "\n"
+        "\n"
+        "def find_max(items):\n"
+        '    """Find the maximum value. Return None if empty."""\n'
+        "    if not items:\n"
+        "        return 0  # Bug 2: should return None, not 0\n"
+        "    best = items[0]\n"
+        "    for item in items[1:]:\n"
+        "        if item > best:\n"
+        "            best = item\n"
+        "    return best\n"
+        "\n"
+        "\n"
+        "def merge_lists(a, b):\n"
+        '    """Merge two lists without duplicates."""\n'
+        "    result = a  # Bug 3: mutates original list, should copy\n"
+        "    for item in b:\n"
+        "        if item not in result:\n"
+        "            result.append(item)\n"
+        "    return result\n",
+        encoding="utf-8",
+    )
+
+    # A3: ネストされたプロジェクト
+    projects = adv / "projects"
+    for name, deps in [
+        ("frontend", {"react": "18.2.0", "axios": "1.6.0", "lodash": "4.17.21"}),
+        ("backend", {"express": "4.18.2", "lodash": "4.17.20", "axios": "1.6.0"}),
+        ("shared", {"lodash": "4.17.21", "uuid": "9.0.0"}),
+    ]:
+        d = projects / name
+        d.mkdir(parents=True)
+        (d / "package.json").write_text(
+            json.dumps({"name": name, "dependencies": deps}, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+    # A4: 会議議事録
+    meetings = adv / "meetings"
+    meetings.mkdir()
+    (meetings / "2026-03-01.md").write_text(
+        "# 定例会議 2026-03-01\n\n"
+        "## アクションアイテム\n"
+        "- 田中: API設計書を作成する（期限: 2026-03-10）\n"
+        "- 鈴木: テスト環境を構築する（期限: 2026-03-08）\n"
+        "- 佐藤: ユーザーインタビューを実施する（期限: 2026-03-15）\n",
+        encoding="utf-8",
+    )
+    (meetings / "2026-03-05.md").write_text(
+        "# 定例会議 2026-03-05\n\n"
+        "## アクションアイテム\n"
+        "- 田中: API設計書を作成する（期限: 2026-03-07）\n"
+        "- 鈴木: CI/CDパイプラインを設定する（期限: 2026-03-12）\n"
+        "- 山田: セキュリティレビューを完了する（期限: 2026-03-14）\n",
+        encoding="utf-8",
+    )
+    (meetings / "2026-03-08.md").write_text(
+        "# 定例会議 2026-03-08\n\n"
+        "## アクションアイテム\n"
+        "- 佐藤: ユーザーインタビューを実施する（期限: 2026-03-12）\n"
+        "- 山田: セキュリティレビューを完了する（期限: 2026-03-11）\n"
+        "- 田中: デプロイ手順書を作成する（期限: 2026-03-20）\n",
+        encoding="utf-8",
+    )
+    # 正解: 田中:API設計書(03-07), 鈴木:テスト環境(03-08), 佐藤:インタビュー(03-12),
+    #        山田:セキュリティ(03-11), 鈴木:CI/CD(03-12), 田中:デプロイ(03-20)
+
+    # A5: 条件分岐パイプライン設定
+    (adv / "pipeline.json").write_text(
+        json.dumps(
+            {
+                "steps": [
+                    {"type": "read", "path": "/tmp/benchmark/adv/source.txt"},
+                    {"type": "transform", "transform_type": "uppercase"},
+                    {"type": "write", "path": "/tmp/benchmark/output/pipeline_result.txt"},
+                ],
+                "output_path": "/tmp/benchmark/output/pipeline_result.txt",
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (adv / "source.txt").write_text("hello world\nfoo bar\ntest data\n", encoding="utf-8")
+
+    # A6: フォールバックマージ (primary は存在しない)
+    (adv / "secondary.json").write_text(
+        json.dumps(
+            {
+                "name": "animaworks",
+                "version": "0.5.0",
+                "database": "postgresql",
+                "cache": None,
+                "log_level": None,
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (adv / "defaults.json").write_text(
+        json.dumps(
+            {
+                "name": "default-app",
+                "version": "0.1.0",
+                "database": "sqlite",
+                "cache": "redis",
+                "log_level": "INFO",
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    # 正解: name=animaworks, version=0.5.0, database=postgresql, cache=redis, log_level=INFO
+
+    # A7: 従業員CSV
+    (adv / "employees.csv").write_text(
+        "name,department,salary,years\n"
+        "Alice,Engineering,800000,5\n"
+        "Bob,Engineering,750000,3\n"
+        "Charlie,Sales,600000,7\n"
+        "Diana,Engineering,900000,8\n"
+        "Eve,Marketing,650000,4\n"
+        "Frank,Sales,580000,2\n"
+        "Grace,Marketing,700000,6\n"
+        "Hank,Sales,620000,5\n",
+        encoding="utf-8",
+    )
+    # Engineering: 3人, avg=816666, max=Diana
+    # Sales: 3人, avg=600000, max=Hank(620000)… wait
+    # Charlie=600000, Frank=580000, Hank=620000 → avg=(600000+580000+620000)/3=600000, max=Hank
+    # Marketing: 2人, avg=675000, max=Grace
+
+    # A8: 論理パズル（一意解: Alice=1, Charlie=2, Diana=3, Bob=4）
+    (adv / "puzzle.txt").write_text(
+        "# 論理パズル: 席順問題\n"
+        "\n"
+        "4人（Alice, Bob, Charlie, Diana）が1列に並ぶ席（席1〜席4、左から右）に座ります。\n"
+        "以下の制約を全て満たす配置を見つけてください:\n"
+        "\n"
+        "1. Alice は Bob の隣に座らない（隣 = 席番号の差が1）\n"
+        "2. Charlie は席2または席3に座る\n"
+        "3. Diana は Charlie のすぐ右隣に座る（Dianaの席番号 = Charlieの席番号 + 1）\n"
+        "4. Alice の席番号は Bob の席番号より小さい\n"
+        "\n"
+        "解答形式（JSON）:\n"
+        '{"assignments": {"seat1": "名前", "seat2": "名前", "seat3": "名前", "seat4": "名前"}}\n',
+        encoding="utf-8",
+    )
+
+    # A9: テンプレート + 変数
+    (adv / "template.md").write_text(
+        "# {{project_name}} リリースノート\n"
+        "\n"
+        "**バージョン**: {{version}}\n"
+        "**リリース日**: {{release_date}}\n"
+        "**会社名**: {{company}}\n"
+        "\n"
+        "## 機能\n"
+        "{{description}}\n"
+        "\n"
+        "{% if premium %}\n"
+        "## プレミアムサポート\n"
+        "このリリースにはプレミアムサポートが含まれています。\n"
+        "{% endif %}\n"
+        "\n"
+        "{% if beta %}\n"
+        "## ベータ版注意\n"
+        "このバージョンはベータです。本番環境での使用は推奨しません。\n"
+        "{% endif %}\n"
+        "\n"
+        "---\n"
+        "© {{company}} {{year}}\n",
+        encoding="utf-8",
+    )
+    (adv / "variables.json").write_text(
+        json.dumps(
+            {
+                "project_name": "AnimaWorks",
+                "version": "v0.5.0",
+                "release_date": "2026-03-15",
+                "company": "株式会社テスト",
+                "description": "AIエージェント自律動作基盤の最新リリースです。",
+                "premium": True,
+                "beta": False,
+                "year": "2026",
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    # A10: マルチソースレポートデータ
+    rd = adv / "report_data"
+    rd.mkdir()
+    (rd / "financial.json").write_text(
+        json.dumps(
+            {"revenue": 5200000, "costs": 3800000, "currency": "JPY", "period": "2026-Q1"},
+            indent=2,
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (rd / "team.json").write_text(
+        json.dumps(
+            {
+                "departments": [
+                    {"name": "Engineering", "headcount": 12},
+                    {"name": "Sales", "headcount": 5},
+                    {"name": "Operations", "headcount": 3},
+                ],
+                "total_headcount": 20,
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (rd / "milestones.json").write_text(
+        json.dumps(
+            {
+                "milestones": [
+                    {"name": "MVP Release", "status": "completed", "date": "2026-01-15"},
+                    {"name": "Beta Launch", "status": "completed", "date": "2026-02-28"},
+                    {"name": "Public Release", "status": "in_progress", "due": "2026-03-31"},
+                    {"name": "Enterprise Edition", "status": "planned", "due": "2026-06-30"},
+                    {"name": "Mobile App", "status": "planned", "due": "2026-09-30"},
+                ]
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    logger.info("上級テストデータを %s に配置しました", adv)
+
+
 # ── Execution ──────────────────────────────────────────
 
 
-def load_tasks() -> list[dict]:
+def load_tasks(tasks_file: Path | None = None) -> list[dict]:
     """タスク定義を読み込む."""
-    data = json.loads(TASKS_FILE.read_text(encoding="utf-8"))
+    path = tasks_file or TASKS_FILE
+    data = json.loads(path.read_text(encoding="utf-8"))
     return data["tasks"]
 
 
@@ -312,6 +596,7 @@ def run_benchmark(
     credential: str | None = None,
     extra: dict | None = None,
     tier_filter: int | None = None,
+    tasks_file: Path | None = None,
 ) -> None:
     """全タスクを指定回数実行."""
     if credential:
@@ -319,7 +604,7 @@ def run_benchmark(
         clean_conversation_state(anima)
         time.sleep(3)
 
-    tasks = load_tasks()
+    tasks = load_tasks(tasks_file)
     if tier_filter:
         tasks = [t for t in tasks if t["tier"] == tier_filter]
 
@@ -498,7 +783,7 @@ def score_task(task_def: dict, result: dict) -> dict:
 # ── Report ──────────────────────────────────────────
 
 
-def generate_report() -> None:
+def generate_report(tasks_file: Path | None = None) -> None:
     """全結果ファイルから比較レポートを生成."""
     RESULTS_DIR.mkdir(exist_ok=True)
     raw_files = sorted(RESULTS_DIR.glob("raw_*.json"))
@@ -507,7 +792,7 @@ def generate_report() -> None:
         logger.error("結果ファイルが見つかりません: %s", RESULTS_DIR)
         return
 
-    tasks = {t["id"]: t for t in load_tasks()}
+    tasks = {t["id"]: t for t in load_tasks(tasks_file)}
     model_scores: dict[str, dict] = {}
 
     for rf in raw_files:
@@ -540,21 +825,27 @@ def generate_report() -> None:
         "",
     ]
 
+    # Discover tiers from tasks
+    all_tiers = sorted({t["tier"] for t in tasks.values()})
+
     # Summary table
     lines.append("## サマリー")
     lines.append("")
-    header = "| モデル | T1成功率 | T2成功率 | T3成功率 | 総合スコア | 平均時間 |"
+    tier_headers = " | ".join(f"T{t}成功率" for t in all_tiers)
+    header = f"| モデル | {tier_headers} | 総合スコア | 平均時間 |"
     lines.append(header)
-    lines.append("|--------|---------|---------|---------|-----------|---------|")
+    sep = "|--------" + "|--------" * len(all_tiers) + "|-----------|---------|"
+    lines.append(sep)
 
     for model, scores in sorted(model_scores.items()):
-        tier_stats: dict[int, list[bool]] = {1: [], 2: [], 3: []}
+        tier_stats: dict[int, list[bool]] = {t: [] for t in all_tiers}
         elapsed_list: list[float] = []
 
         for tid, runs in scores.items():
             tier = tasks[tid]["tier"]
             for r in runs:
-                tier_stats[tier].append(r["passed"])
+                if tier in tier_stats:
+                    tier_stats[tier].append(r["passed"])
                 elapsed_list.append(r["elapsed_s"])
 
         def pct(lst: list[bool]) -> str:
@@ -562,16 +853,12 @@ def generate_report() -> None:
                 return "N/A"
             return f"{sum(lst) / len(lst) * 100:.0f}%"
 
-        t1 = sum(tier_stats[1]) / max(len(tier_stats[1]), 1)
-        t2 = sum(tier_stats[2]) / max(len(tier_stats[2]), 1)
-        t3 = sum(tier_stats[3]) / max(len(tier_stats[3]), 1)
-        total = t1 * 0.3 + t2 * 0.4 + t3 * 0.3
+        tier_pcts = [sum(tier_stats[t]) / max(len(tier_stats[t]), 1) for t in all_tiers]
+        total = sum(tier_pcts) / len(tier_pcts) if tier_pcts else 0
         avg_time = sum(elapsed_list) / max(len(elapsed_list), 1)
 
-        lines.append(
-            f"| {model} | {pct(tier_stats[1])} | {pct(tier_stats[2])} | {pct(tier_stats[3])} "
-            f"| {total * 100:.0f}% | {avg_time:.1f}s |"
-        )
+        tier_cols = " | ".join(pct(tier_stats[t]) for t in all_tiers)
+        lines.append(f"| {model} | {tier_cols} | {total * 100:.0f}% | {avg_time:.1f}s |")
 
     lines.append("")
 
@@ -579,11 +866,20 @@ def generate_report() -> None:
     lines.append("## タスク別詳細")
     lines.append("")
 
+    # Determine max runs across all data
+    max_runs = 0
+    for scores in model_scores.values():
+        for runs in scores.values():
+            max_runs = max(max_runs, len(runs))
+    max_runs = max(max_runs, 2)
+
     for model, scores in sorted(model_scores.items()):
         lines.append(f"### {model}")
         lines.append("")
-        lines.append("| タスク | Tier | Run1 | Run2 | Run3 | 安定性 | 平均時間 |")
-        lines.append("|--------|------|------|------|------|--------|---------|")
+        run_cols = " | ".join(f"Run{i}" for i in range(1, max_runs + 1))
+        lines.append(f"| タスク | Tier | {run_cols} | 安定性 | 平均時間 |")
+        sep_cols = " | ".join("------" for _ in range(max_runs))
+        lines.append(f"|--------|------|{sep_cols}|--------|---------|")
 
         for tid in sorted(scores.keys()):
             runs = sorted(scores[tid], key=lambda x: x["run"])
@@ -594,16 +890,17 @@ def generate_report() -> None:
                 times.append(r["elapsed_s"])
 
             pass_count = sum(1 for m in marks if m == "PASS")
-            stability = "安定" if pass_count >= 2 else ("不安定" if pass_count == 1 else "失敗")
+            stability = "安定" if pass_count >= max(len(marks) - 1, 1) else ("不安定" if pass_count >= 1 else "失敗")
 
-            while len(marks) < 3:
+            while len(marks) < max_runs:
                 marks.append("-")
 
             avg_t = sum(times) / max(len(times), 1)
             tier = tasks[tid]["tier"]
+            run_results = " | ".join(marks)
             lines.append(
                 f"| {tid} {tasks[tid]['name']} | T{tier} | "
-                f"{marks[0]} | {marks[1]} | {marks[2]} | {stability} | {avg_t:.1f}s |"
+                f"{run_results} | {stability} | {avg_t:.1f}s |"
             )
 
         lines.append("")
@@ -621,15 +918,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="AnimaWorks Agent Benchmark")
     sub = parser.add_subparsers(dest="command")
 
-    sub.add_parser("setup", help="テストデータ配置")
+    p_setup = sub.add_parser("setup", help="テストデータ配置")
+    p_setup.add_argument("--advanced", action="store_true", help="上級テストデータも配置")
 
     p_run = sub.add_parser("run", help="ベンチマーク実行")
     p_run.add_argument("--model", required=True, help="モデル識別ラベル (e.g. qwen3.5-35b-a3b)")
     p_run.add_argument("--runs", type=int, default=DEFAULT_RUNS, help=f"実行回数 (default: {DEFAULT_RUNS})")
     p_run.add_argument("--anima", default=DEFAULT_ANIMA, help=f"対象Anima (default: {DEFAULT_ANIMA})")
     p_run.add_argument("--server", default="http://localhost:18500", help="サーバーURL")
-    p_run.add_argument("--tier", type=int, choices=[1, 2, 3], help="特定ティアのみ実行")
+    p_run.add_argument("--tier", type=int, help="特定ティアのみ実行")
     p_run.add_argument("--credential", help="credential名 (指定時はモデル自動切替)")
+    p_run.add_argument("--tasks", type=Path, default=None, help="タスクファイルパス (default: tasks.json)")
     p_run.add_argument(
         "--extra",
         type=json.loads,
@@ -637,15 +936,19 @@ def main() -> None:
         help="追加status.json設定 (JSON, e.g. '{\"thinking\": false}')",
     )
 
-    sub.add_parser("report", help="結果レポート生成")
+    p_report = sub.add_parser("report", help="結果レポート生成")
+    p_report.add_argument("--tasks", type=Path, default=None, help="タスクファイルパス")
     sub.add_parser("clean", help="テストデータ・出力クリーンアップ")
 
     args = parser.parse_args()
 
     if args.command == "setup":
         setup_benchmark_data()
+        if getattr(args, "advanced", False):
+            setup_advanced_data()
 
     elif args.command == "run":
+        tasks_file = getattr(args, "tasks", None)
         run_benchmark(
             args.anima,
             args.model,
@@ -654,10 +957,12 @@ def main() -> None:
             credential=args.credential,
             extra=args.extra,
             tier_filter=args.tier,
+            tasks_file=tasks_file,
         )
 
     elif args.command == "report":
-        generate_report()
+        tasks_file = getattr(args, "tasks", None)
+        generate_report(tasks_file=tasks_file)
 
     elif args.command == "clean":
         if BENCHMARK_DIR.exists():

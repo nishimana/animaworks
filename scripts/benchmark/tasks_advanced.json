@@ -1,0 +1,126 @@
+{
+  "version": "2.0",
+  "description": "AnimaWorks Advanced Agent Benchmark — Multi-step reasoning tasks (Opus-level)",
+  "tasks": [
+    {
+      "id": "A1",
+      "tier": 4,
+      "name": "売上データ分析パイプライン",
+      "prompt": "/tmp/benchmark/adv/sales.csv を読んで、リージョン別の売上合計を計算してください。次に /tmp/benchmark/adv/targets.csv を読んで、各リージョンの目標値と比較し、達成率（売上合計/目標×100、小数点以下切り捨ての整数%）を算出してください。結果を /tmp/benchmark/output/sales_analysis.json に以下の形式で保存してください: {\"regions\": [{\"name\": \"...\", \"total\": 数値, \"target\": 数値, \"achievement_pct\": 整数}]}。achievementが100%以上のリージョンには \"status\": \"達成\" を、未満には \"status\": \"未達\" を付けてください。",
+      "expected_tools": ["read_file", "write_file"],
+      "scoring": {
+        "type": "valid_json_file",
+        "path": "/tmp/benchmark/output/sales_analysis.json",
+        "expected_keys": ["regions"]
+      }
+    },
+    {
+      "id": "A2",
+      "tier": 4,
+      "name": "バグ修正＋テスト生成",
+      "prompt": "/tmp/benchmark/adv/buggy.py を読んでください。このPythonコードにはバグが3つあります。バグを全て特定し、修正したコードを /tmp/benchmark/output/fixed.py に書いてください。さらに、修正が正しいことを確認するテストケースを /tmp/benchmark/output/test_fixed.py に書いてください。テストはpytestで実行可能な形式にしてください。",
+      "expected_tools": ["read_file", "write_file"],
+      "scoring": {
+        "type": "file_content_contains_all",
+        "path": "/tmp/benchmark/output/fixed.py",
+        "expected": ["def calculate_average", "def find_max", "def merge_lists", "return None"]
+      }
+    },
+    {
+      "id": "A3",
+      "tier": 4,
+      "name": "ネストされたプロジェクト依存関係解析",
+      "prompt": "/tmp/benchmark/adv/projects/ ディレクトリ以下にある全ての package.json ファイルを探して読んでください。各プロジェクトの dependencies を収集し、全プロジェクト横断で使われているライブラリの一覧を作成してください。各ライブラリについて「どのプロジェクトで使われているか」と「バージョンの不一致があるか」を調べ、結果を /tmp/benchmark/output/deps_report.json に保存してください。形式: {\"libraries\": [{\"name\": \"...\", \"used_by\": [...], \"versions\": [...], \"conflict\": true/false}]}",
+      "expected_tools": ["read_file", "write_file", "list_directory"],
+      "scoring": {
+        "type": "valid_json_file",
+        "path": "/tmp/benchmark/output/deps_report.json",
+        "expected_keys": ["libraries"]
+      }
+    },
+    {
+      "id": "A4",
+      "tier": 4,
+      "name": "会議議事録アクションアイテム統合",
+      "prompt": "/tmp/benchmark/adv/meetings/ ディレクトリ内の全議事録ファイルを読んでください。各議事録からアクションアイテム（担当者・タスク・期限）を抽出してください。同一担当者の重複タスクは1つにまとめ、最も早い期限を採用してください。結果を担当者別にソートして /tmp/benchmark/output/actions.json に保存してください。形式: [{\"assignee\": \"...\", \"task\": \"...\", \"deadline\": \"YYYY-MM-DD\"}]",
+      "expected_tools": ["read_file", "write_file", "list_directory"],
+      "scoring": {
+        "type": "valid_json_file",
+        "path": "/tmp/benchmark/output/actions.json",
+        "expected_keys": []
+      }
+    },
+    {
+      "id": "A5",
+      "tier": 4,
+      "name": "設定駆動の条件分岐パイプライン",
+      "prompt": "/tmp/benchmark/adv/pipeline.json を読んでください。この設定に基づいて、指定されたステップを順に実行してください。各ステップは 'read'（ファイル読み込み）、'transform'（テキスト変換ルール適用）、'write'（結果書き込み）のいずれかです。transform の type が 'uppercase' なら大文字化、'line_count' なら行数カウント、'reverse_lines' なら行を逆順にします。最終結果を pipeline.json の output_path に書き込んでください。",
+      "expected_tools": ["read_file", "write_file"],
+      "scoring": {
+        "type": "file_content_contains",
+        "path": "/tmp/benchmark/output/pipeline_result.txt",
+        "expected": "HELLO WORLD\nFOO BAR\nTEST DATA"
+      }
+    },
+    {
+      "id": "A6",
+      "tier": 4,
+      "name": "フォールバック付きデータマージ",
+      "prompt": "/tmp/benchmark/adv/primary.json を読んでみてください（存在しない場合はエラーになります）。次に /tmp/benchmark/adv/secondary.json を読んでください（一部のフィールドがnullです）。最後に /tmp/benchmark/adv/defaults.json を読んでください。3つのファイルの内容を優先度順（primary > secondary > defaults）でマージしてください。nullのフィールドは下位の優先度で埋めてください。結果を /tmp/benchmark/output/merged.json に保存してください。primaryが存在しない場合はsecondary > defaultsの2段階マージとしてください。",
+      "expected_tools": ["read_file", "write_file"],
+      "scoring": {
+        "type": "valid_json_file",
+        "path": "/tmp/benchmark/output/merged.json",
+        "expected_keys": ["name", "version", "database", "cache", "log_level"]
+      }
+    },
+    {
+      "id": "A7",
+      "tier": 4,
+      "name": "CSV→フィルタ→集計→Markdownレポート",
+      "prompt": "/tmp/benchmark/adv/employees.csv を読んでください（ヘッダー: name,department,salary,years）。部署別に以下を計算してください: (1)人数 (2)平均給与（小数点以下切り捨て） (3)最高給与者の名前。結果をMarkdownテーブル形式で /tmp/benchmark/output/dept_report.md に書いてください。テーブルのヘッダーは「部署|人数|平均給与|最高給与者」としてください。部署名の昇順でソートしてください。",
+      "expected_tools": ["read_file", "write_file"],
+      "scoring": {
+        "type": "file_content_contains_all",
+        "path": "/tmp/benchmark/output/dept_report.md",
+        "expected": ["Engineering", "Sales", "Marketing", "部署", "人数", "平均給与"]
+      }
+    },
+    {
+      "id": "A8",
+      "tier": 4,
+      "name": "論理パズル解法",
+      "prompt": "/tmp/benchmark/adv/puzzle.txt を読んでください。論理パズルの制約条件に基づいて、正しい解を導いてください。解を /tmp/benchmark/output/solution.json に保存してください。形式は puzzle.txt 内で指定されています。必ず全ての制約を満たすことを確認してから保存してください。",
+      "expected_tools": ["read_file", "write_file"],
+      "scoring": {
+        "type": "valid_json_file",
+        "path": "/tmp/benchmark/output/solution.json",
+        "expected_keys": ["assignments"]
+      }
+    },
+    {
+      "id": "A9",
+      "tier": 4,
+      "name": "テンプレートエンジン（変数展開＋条件分岐）",
+      "prompt": "/tmp/benchmark/adv/template.md と /tmp/benchmark/adv/variables.json を読んでください。テンプレート内の {{変数名}} を variables.json の値で置換してください。また、{% if 条件 %} ... {% endif %} ブロックは、変数の値が truthy なら内容を残し、falsy なら削除してください。展開結果を /tmp/benchmark/output/rendered.md に保存してください。",
+      "expected_tools": ["read_file", "write_file"],
+      "scoring": {
+        "type": "file_content_contains_all",
+        "path": "/tmp/benchmark/output/rendered.md",
+        "expected": ["AnimaWorks", "v0.5.0", "プレミアムサポート", "株式会社テスト"]
+      }
+    },
+    {
+      "id": "A10",
+      "tier": 4,
+      "name": "マルチソース統合エグゼクティブレポート",
+      "prompt": "/tmp/benchmark/adv/report_data/ ディレクトリ内の全ファイルを読んでください（financial.json, team.json, milestones.json）。これらのデータを統合し、以下のセクションを含むエグゼクティブサマリーを /tmp/benchmark/output/executive_summary.md に作成してください: (1)財務概要 — 売上・コスト・利益を記載 (2)チーム状況 — 総人数と部署別内訳 (3)マイルストーン進捗 — 完了/未完了の数と完了率（整数%） (4)リスク要因 — データから読み取れるリスクを1つ以上指摘。利益は売上-コストで計算してください。",
+      "expected_tools": ["read_file", "write_file", "list_directory"],
+      "scoring": {
+        "type": "file_content_contains_all",
+        "path": "/tmp/benchmark/output/executive_summary.md",
+        "expected": ["財務", "チーム", "マイルストーン", "リスク"]
+      }
+    }
+  ]
+}
