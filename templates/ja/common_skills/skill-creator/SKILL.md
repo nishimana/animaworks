@@ -29,7 +29,7 @@ description: >-
 
 SKILL.md はYAMLフロントマターとMarkdown本文で構成される。
 フロントマターには `name` と `description` を必須フィールドとして記載する。
-任意フィールドとして `allowed_tools`（許可ツールリスト）も使用可能。
+任意フィールドとして `allowed_tools`（許可ツールリスト）、`tags`（分類タグ）も使用可能。
 
 ```yaml
 ---
@@ -179,6 +179,6 @@ description: >-
 
 - スキルはMarkdown手順書であり、Pythonコード（ツール）とは異なる
 - フロントマターの必須フィールドは `name` と `description`
-- 任意フィールド: `allowed_tools`（許可ツールリスト）
+- 任意フィールド: `allowed_tools`（許可ツールリスト）、`tags`（分類タグ）
 - bodyが長くなりすぎるとコンテキストを圧迫するため、150行以内を目安にする
 - 外部リソース参照（Level 3）は `references/` を活用して本文を簡潔に保つ

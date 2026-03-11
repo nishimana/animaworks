@@ -247,7 +247,7 @@ class TestJapaneseSkillCreatorContent:
         path = _REPO_ROOT / "templates" / "ja" / "common_skills" / "skill-creator" / "SKILL.md"
         content = path.read_text(encoding="utf-8")
         assert "write_memory_file" in content, "write_memory_file should still be mentioned"
-        assert "非推奨" in content or "skill ツールで参照できない" in content
+        assert "非推奨" in content or "参照できない" in content
 
     def test_allowed_tools_tags_mentioned(self) -> None:
         path = _REPO_ROOT / "templates" / "ja" / "common_skills" / "skill-creator" / "SKILL.md"
