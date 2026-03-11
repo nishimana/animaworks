@@ -83,9 +83,10 @@ alice宛: キャッシュ戦略について判断をお願いしたいです。
    - `deadline` は相対形式（`30m`, `2h`, `1d`）または ISO8601 形式（例: `2026-02-20`）
    - `summary` は任意（省略時は instruction の先頭100文字）
 2. dave のタスクキュー（`state/task_queue.jsonl`）にタスクが自動追加される
-3. dave に DM が自動送信される
-4. 自分のキューに追跡エントリが作成される（status="delegated"）
-5. `task_tracker(status="active")` で進行中の委譲タスクを追跡する（`status="all"` で全件、`status="completed"` で完了済みのみ）
+3. dave の `state/pending/` にタスクJSONが書き込まれ、即時実行される
+4. dave に DM が自動送信される
+5. 自分のキューに追跡エントリが作成される（status="delegated"）
+6. `task_tracker(status="active")` で進行中の委譲タスクを追跡する（`status="all"` で全件、`status="completed"` で完了済みのみ）
 
 ### 配下の状態確認（定期的に行うべき）
 
