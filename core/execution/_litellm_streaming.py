@@ -525,20 +525,24 @@ class StreamingMixin:
                     ", ".join(tc["name"] for tc in parsed_calls),
                 )
 
-                # Reconstruct assistant message for conversation history
+                # Reconstruct assistant message for conversation history.
+                # When arguments failed to parse, use "{}" instead of the
+                # raw malformed string — sending invalid JSON in the
+                # conversation history causes some backends (e.g. vLLM) to
+                # reject the entire request on the next iteration.
                 assistant_tool_calls = []
                 for tc in parsed_calls:
+                    if tc["arguments"] is not None:
+                        args_str = _json.dumps(tc["arguments"], ensure_ascii=False)
+                    else:
+                        args_str = "{}"
                     assistant_tool_calls.append(
                         {
                             "id": tc["id"],
                             "type": "function",
                             "function": {
                                 "name": tc["name"],
-                                "arguments": (
-                                    _json.dumps(tc["arguments"], ensure_ascii=False)
-                                    if tc["arguments"] is not None
-                                    else tc.get("raw_arguments", "")
-                                ),
+                                "arguments": args_str,
                             },
                         }
                     )
