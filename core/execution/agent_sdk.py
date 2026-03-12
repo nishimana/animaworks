@@ -47,6 +47,7 @@ from core.execution._sdk_patch import apply_sdk_transport_patch
 
 apply_sdk_transport_patch()
 from core.execution._sdk_hooks import (  # noqa: F401
+    _build_post_tool_hook,
     _build_pre_compact_hook,
     _build_pre_tool_hook,
     _cache_subordinate_paths,
@@ -389,6 +390,12 @@ class AgentSDKExecutor(BaseExecutor):
                     HookMatcher(
                         matcher=".*",
                         hooks=[_build_pre_compact_hook(self._anima_dir)],
+                    )
+                ],
+                "PostToolUse": [
+                    HookMatcher(
+                        matcher="Write|Edit",
+                        hooks=[_build_post_tool_hook(self._anima_dir)],
                     )
                 ],
             },

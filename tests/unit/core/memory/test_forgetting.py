@@ -508,11 +508,12 @@ class TestConsolidationForgettingHooks:
         mock_anima.count_recent_episodes.return_value = 3
 
         mock_result = MagicMock()
-        mock_result.duration_ms = 100
+        mock_result.duration_ms = 30_000
         mock_result.summary = "consolidated"
         mock_anima.run_consolidation = AsyncMock(return_value=mock_result)
 
         manager.animas["test_anima"] = mock_anima
+        manager._schedule_consolidation_retry = MagicMock()
 
         mock_config = MagicMock()
         mock_consolidation_cfg = MagicMock()

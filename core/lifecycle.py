@@ -11,6 +11,7 @@ import logging
 import time
 import zlib
 from collections.abc import Callable, Coroutine
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -635,6 +636,53 @@ class LifecycleManager:
         )
         logger.info("System cron: DM log rotation at 04:30")
 
+    # ── Consolidation Retry ──────────────────────────────────
+
+    def _schedule_consolidation_retry(self, anima_name: str, max_turns: int) -> None:
+        """Schedule a one-shot consolidation retry 3 hours later."""
+        from apscheduler.triggers.date import DateTrigger
+
+        from core.time_utils import now_local
+
+        retry_time = now_local() + timedelta(hours=3)
+        job_id = f"consolidation_retry_{anima_name}"
+
+        self.scheduler.add_job(
+            self._run_consolidation_retry,
+            DateTrigger(run_date=retry_time),
+            id=job_id,
+            name=f"Consolidation retry: {anima_name}",
+            replace_existing=True,
+            kwargs={"anima_name": anima_name, "max_turns": max_turns},
+        )
+        logger.info("Scheduled consolidation retry for %s at %s", anima_name, retry_time)
+
+    async def _run_consolidation_retry(self, anima_name: str, max_turns: int) -> None:
+        """Execute a single consolidation retry. No further retry on failure."""
+        anima = self.animas.get(anima_name)
+        if anima is None:
+            logger.warning("Consolidation retry skipped: anima %s not found", anima_name)
+            return
+        try:
+            result = await anima.run_consolidation(
+                consolidation_type="daily",
+                max_turns=max_turns,
+            )
+            logger.info(
+                "Consolidation retry for %s completed: duration_ms=%d",
+                anima_name,
+                result.duration_ms,
+            )
+            try:
+                from core.memory.consolidation import ConsolidationEngine
+
+                engine = ConsolidationEngine(anima.memory.anima_dir, anima_name)
+                engine._rebuild_rag_index()
+            except Exception:
+                logger.exception("RAG index rebuild failed after retry for anima=%s", anima_name)
+        except Exception:
+            logger.exception("Consolidation retry also failed for anima=%s", anima_name)
+
     async def _handle_daily_indexing(self) -> None:
         """Run daily RAG indexing for all animas.
 
@@ -841,6 +889,16 @@ class LifecycleManager:
                     max_turns=max_turns,
                 )
 
+                # Failure detection: extremely short execution suggests rate limit or error
+                if result.duration_ms < 10_000:
+                    logger.warning(
+                        "Daily consolidation too short for %s (%dms), scheduling retry",
+                        anima_name,
+                        result.duration_ms,
+                    )
+                    self._schedule_consolidation_retry(anima_name, max_turns)
+                    continue
+
                 logger.info(
                     "Daily consolidation for %s: duration_ms=%d",
                     anima_name,
@@ -892,6 +950,7 @@ class LifecycleManager:
 
             except Exception:
                 logger.exception("Daily consolidation failed for anima=%s", anima_name)
+                self._schedule_consolidation_retry(anima_name, max_turns)
 
     async def _handle_weekly_integration(self) -> None:
         """Run weekly integration for all animas.

@@ -771,3 +771,62 @@ def _build_pre_compact_hook(anima_dir: Path) -> Callable:
         return SyncHookJSONOutput()
 
     return _pre_compact_hook
+
+
+# ── PostToolUse: knowledge frontmatter ──────────────────
+
+
+def _build_post_tool_hook(anima_dir: Path) -> Callable:
+    """Build a PostToolUse hook that updates knowledge frontmatter after Write/Edit."""
+
+    knowledge_dir_str = str(anima_dir / "knowledge")
+
+    async def _post_tool_hook(
+        input_data: dict,
+        tool_use_id: str | None,
+        context: Any,
+    ) -> dict:
+        tool_name = input_data.get("tool_name", "")
+        if tool_name not in ("Write", "Edit"):
+            return {}
+
+        file_path = input_data.get("tool_input", {}).get("file_path", "")
+        if not file_path.startswith(knowledge_dir_str) or not file_path.endswith(".md"):
+            return {}
+
+        import asyncio
+
+        asyncio.create_task(_update_knowledge_frontmatter(Path(file_path)))
+        return {"async_": True}
+
+    return _post_tool_hook
+
+
+async def _update_knowledge_frontmatter(path: Path) -> None:
+    """Update ``updated_at`` and increment ``version`` in knowledge YAML frontmatter.
+
+    Runs as a fire-and-forget async task from the PostToolUse hook.
+    Silently ignores files without frontmatter or any errors.
+    """
+    try:
+        from core.memory.frontmatter import parse_frontmatter
+        from core.time_utils import now_iso
+
+        text = path.read_text(encoding="utf-8")
+        if not text.startswith("---"):
+            return
+
+        meta, body = parse_frontmatter(text)
+        if not meta:
+            return
+
+        meta["updated_at"] = now_iso()
+        meta["version"] = meta.get("version", 0) + 1
+
+        import yaml
+
+        fm = yaml.dump(meta, default_flow_style=False, allow_unicode=True)
+        path.write_text(f"---\n{fm}---\n\n{body.lstrip()}", encoding="utf-8")
+        logger.debug("Updated knowledge frontmatter: %s (version=%d)", path.name, meta["version"])
+    except Exception:
+        logger.debug("Failed to update frontmatter for %s", path, exc_info=True)
