@@ -382,8 +382,6 @@ class SkillsToolsMixin:
         Performs cycle detection, duplicate ID check, and dependency
         reference validation before writing task files.
         """
-        from datetime import datetime as _dt
-
         batch_id = args.get("batch_id", "")
         tasks = args.get("tasks", [])
 
@@ -426,7 +424,7 @@ class SkillsToolsMixin:
         # Write task files to state/pending/
         pending_dir = self._anima_dir / "state" / "pending"
         pending_dir.mkdir(parents=True, exist_ok=True)
-        now_iso = _dt.now(UTC).isoformat()
+        submitted_at = now_iso()
 
         written: list[str] = []
         for t in tasks:
@@ -443,7 +441,7 @@ class SkillsToolsMixin:
                 "constraints": t.get("constraints", []),
                 "file_paths": t.get("file_paths", []),
                 "submitted_by": self._anima_name,
-                "submitted_at": now_iso,
+                "submitted_at": submitted_at,
                 "reply_to": t.get("reply_to", self._anima_name),
             }
             path = pending_dir / f"{t['task_id']}.json"
