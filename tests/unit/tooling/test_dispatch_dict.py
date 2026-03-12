@@ -83,7 +83,7 @@ EXPECTED_BUILTIN_TOOLS = frozenset({
     "list_tasks",
     "skill",
     "create_skill",
-    "plan_tasks",
+    "submit_tasks",
     "manage_channel",
     "audit_subordinate",
     "check_background_task",

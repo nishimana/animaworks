@@ -1013,9 +1013,9 @@ def _background_task_tools() -> list[dict[str, Any]]:
     ]
 
 
-PLAN_TASKS_TOOLS: list[dict[str, Any]] = [
+SUBMIT_TASKS_TOOLS: list[dict[str, Any]] = [
     {
-        "name": "plan_tasks",
+        "name": "submit_tasks",
         "description": (
             "Submit multiple tasks as a DAG for parallel/serial execution. "
             "Independent tasks with parallel=true run concurrently. "
@@ -1074,36 +1074,36 @@ PLAN_TASKS_TOOLS: list[dict[str, Any]] = [
 def _task_tools() -> list[dict[str, Any]]:
     return [
         {
-            "name": "add_task",
-            "description": _t("schema.add_task.desc"),
+            "name": "backlog_task",
+            "description": _t("schema.backlog_task.desc"),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "source": {
                         "type": "string",
                         "enum": ["human", "anima"],
-                        "description": _t("schema.add_task.source"),
+                        "description": _t("schema.backlog_task.source"),
                     },
                     "original_instruction": {
                         "type": "string",
-                        "description": _t("schema.add_task.original_instruction"),
+                        "description": _t("schema.backlog_task.original_instruction"),
                     },
                     "assignee": {
                         "type": "string",
-                        "description": _t("schema.add_task.assignee"),
+                        "description": _t("schema.backlog_task.assignee"),
                     },
                     "summary": {
                         "type": "string",
-                        "description": _t("schema.add_task.summary"),
+                        "description": _t("schema.backlog_task.summary"),
                     },
                     "deadline": {
                         "type": "string",
-                        "description": _t("schema.add_task.deadline"),
+                        "description": _t("schema.backlog_task.deadline"),
                     },
                     "relay_chain": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": _t("schema.add_task.relay_chain"),
+                        "description": _t("schema.backlog_task.relay_chain"),
                     },
                 },
                 "required": ["source", "original_instruction", "assignee", "summary", "deadline"],
@@ -1280,7 +1280,7 @@ def build_tool_list(
     include_supervisor_tools: bool = False,
     include_tool_management: bool = False,
     include_task_tools: bool = False,
-    include_plan_tasks: bool = False,
+    include_submit_tasks: bool = False,
     include_background_task_tools: bool = False,
     include_vault_tools: bool = False,
     include_skill_tools: bool = False,
@@ -1300,8 +1300,8 @@ def build_tool_list(
         include_admin_tools: Include admin tools (create_anima etc.).
         include_supervisor_tools: Include supervisor tools (disable/enable subordinate).
         include_tool_management: Include refresh_tools/share_tool tools.
-        include_task_tools: Include task queue tools (add_task, update_task, list_tasks).
-        include_plan_tasks: Include plan_tasks DAG batch submission tool.
+        include_task_tools: Include task queue tools (backlog_task, update_task, list_tasks).
+        include_submit_tasks: Include submit_tasks DAG batch submission tool.
         include_background_task_tools: Include background task check/list tools.
         include_vault_tools: Include credential vault tools (get/store/list).
         include_skill_tools: Include skill on-demand loading tool.
@@ -1336,8 +1336,8 @@ def build_tool_list(
         tools.extend(TOOL_MANAGEMENT_TOOLS)
     if include_task_tools:
         tools.extend(_task_tools())
-    if include_plan_tasks:
-        tools.extend(PLAN_TASKS_TOOLS)
+    if include_submit_tasks:
+        tools.extend(SUBMIT_TASKS_TOOLS)
     if include_background_task_tools:
         tools.extend(_background_task_tools())
     if include_vault_tools:

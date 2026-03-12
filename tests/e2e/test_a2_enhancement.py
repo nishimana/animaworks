@@ -249,5 +249,5 @@ class TestBaseToolCount:
         assert "report_procedure_outcome" in names
         assert "skill" in names
         assert "create_skill" in names
-        assert "plan_tasks" in names
+        assert "submit_tasks" in names
         assert "manage_channel" in names

@@ -191,7 +191,7 @@ class AnthropicFallbackExecutor(BaseExecutor):
             include_supervisor_tools=self._has_subordinates(),
             include_tool_management=True,
             include_task_tools=True,
-            include_plan_tasks=True,
+            include_submit_tasks=True,
             include_background_task_tools=getattr(self._tool_handler, "_background_manager", None) is not None,
             include_vault_tools=True,
             include_skill_tools=True,

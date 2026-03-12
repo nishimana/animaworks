@@ -283,7 +283,7 @@ class SkillsToolsMixin:
 
     # ── Task queue handlers ───────────────────────────────────
 
-    def _handle_add_task(self, args: dict[str, Any]) -> str:
+    def _handle_backlog_task(self, args: dict[str, Any]) -> str:
         from core.memory.task_queue import TaskQueueManager
 
         manager = TaskQueueManager(self._anima_dir)
@@ -316,7 +316,7 @@ class SkillsToolsMixin:
         except ValueError as e:
             return _error_result("InvalidArguments", str(e))
         except Exception as e:
-            logger.error("Task persistence failed in add_task: %s", e)
+            logger.error("Task persistence failed in backlog_task: %s", e)
             return _error_result("PersistenceFailed", f"Failed to persist task: {e}")
 
         self._activity.log(
@@ -422,9 +422,9 @@ class SkillsToolsMixin:
                     item["original_instruction"] = instr[:_INSTRUCTION_TRUNCATE_LEN] + "..."
         return _json.dumps(result, ensure_ascii=False)
 
-    # ── plan_tasks handler (DAG batch submission) ────────────
+    # ── submit_tasks handler (DAG batch submission) ────────────
 
-    def _handle_plan_tasks(self, args: dict[str, Any]) -> str:
+    def _handle_submit_tasks(self, args: dict[str, Any]) -> str:
         """Validate and write a DAG batch of tasks to state/pending/.
 
         Performs cycle detection, duplicate ID check, and dependency
@@ -531,7 +531,7 @@ class SkillsToolsMixin:
                 )
             except Exception:
                 logger.warning(
-                    "Failed to register plan_task in task_queue: %s",
+                    "Failed to register submit_task in task_queue: %s",
                     t["task_id"],
                     exc_info=True,
                 )
