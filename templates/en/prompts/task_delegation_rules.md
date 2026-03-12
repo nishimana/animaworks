@@ -17,63 +17,62 @@ When you use the Task tool, the framework automatically routes based on your org
 - A task_id is returned. You will receive a DM notification when it completes
 - You can check task results in Heartbeat (state/task_results/)
 
-### Task Tool vs delegate_task
+### Choosing the Right Task Tool
 
-| Method | Use case | Subordinate selection |
-|--------|----------|----------------------|
-| Task tool | Quick delegation (auto-routed) | Include name in description |
-| delegate_task | Explicit delegation (with deadline and detailed instructions) | Specify via name parameter |
+| Tool | Purpose | Execution Queue (Layer 1) | Tracking (Layer 2) | When to use |
+|------|---------|--------------------------|--------------------|----|
+| `plan_tasks` | Submit tasks for execution | Creates in `state/pending/` | Registers in `task_queue.jsonl` | When you find tasks that need execution |
+| `delegate_task` | Delegate to subordinates | Creates in subordinate's `state/pending/` | Registers in both `task_queue.jsonl` | When assigning to subordinates |
+| `add_task` | Tracking registration only | **Not created (not executed)** | Registers in `task_queue.jsonl` | Recording human instructions, tasks for manual pickup |
+| Task tool (S-mode) | Auto-routed delegation | Creates at auto-selected target | Registered | Quick delegation from Chat path |
 
-Use delegate_task for delegation from paths that don't have the Task tool (Heartbeat, Inbox, etc.).
+**Important**: `add_task` is tracking-only — TaskExec will NOT automatically execute it. Recording human instructions via `add_task` is MUST, but if execution is also needed, use `plan_tasks` as well.
 
-### Writing to state/pending/ (for later self-execution)
+From paths without the Task tool (Heartbeat, Inbox, etc.), use `plan_tasks` / `delegate_task` / `add_task`.
 
-When writing tasks to state/pending/, follow these principles.
-The executor (TaskExec) runs as a sub-agent. It shares your identity, behavior guidelines, memory directories, and organization info, but **cannot access your conversation history, short-term memory, or Priming results**.
+**[MUST] Do NOT manually create JSON files in `state/pending/`.** Always submit via the `plan_tasks` tool. `plan_tasks` registers in both the execution queue and task registry simultaneously, preventing tracking gaps.
 
-### Context Injection Principles
+## Task Submission via plan_tasks
+
+`plan_tasks` is the sole means of submitting tasks for execution (except subordinate delegation).
+Use `plan_tasks` even for a single task (tasks array with one item).
+
+### About the Executor (TaskExec)
+
+TaskExec runs as a sub-agent. It shares your identity, behavior guidelines, memory directories, and organization info, but **cannot access your conversation history, short-term memory, or Priming results**.
+
+Therefore, including sufficient information in the task's `description` and `context` is critical.
+
+### Description Writing Principles
+
 - **Always include file paths and line numbers**: The executor can search memory, but specifying exact locations ensures it reaches the right files
 - **Include current work state**: Copy relevant parts of current_task.md into the `context` field (auto-injected but explicit additions improve accuracy)
 - **State the "why"**: Without background and purpose, the executor may make incorrect decisions
 
-### Required Fields
+### What to Include in description
+
 - **What to do**: Concrete work (e.g., "Convert verify_token() in core/auth/manager.py to async" instead of "do refactoring")
 - **Why**: Background and purpose (1–2 sentences)
-- **Where to look**: Related file paths and line numbers
-- **Completion criteria**: What counts as "done"
-- **Constraints**: Prohibitions, compatibility requirements
+- **Where to look**: Related file paths and line numbers (also set in `file_paths` field)
+- **Completion criteria**: What counts as "done" (also set in `acceptance_criteria` field)
+- **Constraints**: Prohibitions, compatibility requirements (also set in `constraints` field)
 
-### Task File Format
-Create a JSON file in the state/pending/ directory in the following format:
+### Examples
 
-```json
-{{
-    "task_type": "llm",
-    "task_id": "YYYYMMDD-short-description",
-    "title": "Task title",
-    "submitted_by": "Your Anima name",
-    "submitted_at": "ISO8601 current time",
-    "description": "Concrete work content",
-    "context": "Background information (include relevant parts of current_task.md)",
-    "acceptance_criteria": ["Criterion 1", "Criterion 2"],
-    "constraints": ["Constraint 1"],
-    "file_paths": ["path/to/file.py:line_number"],
-    "reply_to": "Sender name or null",
-    "priority": 1
-}}
+Single task:
+
+```
+plan_tasks(batch_id="hb-20260301-api-fix", tasks=[
+  {{"task_id": "api-fix", "title": "Convert API auth to async",
+   "description": "Convert verify_token() in core/auth/manager.py (L45-60) to async. Blocking synchronous I/O is causing latency in FastAPI async handlers.",
+   "context": "current_task.md: Investigating API response delays. verify_token blocks with synchronous I/O",
+   "file_paths": ["core/auth/manager.py:45"],
+   "acceptance_criteria": ["verify_token is async def", "existing tests pass"],
+   "constraints": ["Do not change public API arguments or return values"]}}
+])
 ```
 
-### Forbidden Patterns
-- ❌ "Refactor appropriately" (vague)
-- ❌ "Continue from last time" (executor has no conversation history)
-- ❌ Instructions without file paths (executor would have to start by exploring)
-- ❌ Empty context field (executor makes poor decisions without background info)
-
-## Parallel Task Execution (plan_tasks)
-
-Submit multiple tasks with dependencies as a batch; independent tasks run in parallel.
-
-### plan_tasks Tool
+Parallel tasks:
 
 ```
 plan_tasks(batch_id="deploy-20260301", tasks=[
@@ -84,21 +83,16 @@ plan_tasks(batch_id="deploy-20260301", tasks=[
 ])
 ```
 
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `batch_id` | MUST | Unique batch identifier |
-| `tasks` | MUST | Array of task objects (see below) |
-
-#### Task Object
+### Task Object
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `task_id` | MUST | Unique task ID within the batch |
 | `title` | MUST | Task title |
-| `description` | MUST | Concrete work content |
+| `description` | MUST | Concrete work content (follow the writing principles above) |
 | `parallel` | MAY | `true` for parallel execution (default: `false`) |
 | `depends_on` | MAY | Array of predecessor task IDs |
-| `context` | MAY | Background information |
+| `context` | MAY | Background information (include relevant parts of current_task.md) |
 | `file_paths` | MAY | Related file paths |
 | `acceptance_criteria` | MAY | Completion criteria |
 | `constraints` | MAY | Constraints |
@@ -112,11 +106,13 @@ plan_tasks(batch_id="deploy-20260301", tasks=[
 - If a predecessor fails, dependent tasks are skipped
 - Cyclic dependencies are rejected at validation
 
-### When to Use
+### Forbidden Patterns
 
-- Single task → use `plan_tasks` (tasks array with one item)
-- Multiple independent tasks → use `plan_tasks` with `parallel: true`
-- Tasks with dependencies → use `plan_tasks` with `depends_on`
+- ❌ "Refactor appropriately" (too vague)
+- ❌ "Continue from last time" (executor has no conversation history)
+- ❌ Instructions without file paths (executor would have to start by exploring)
+- ❌ Empty context (executor makes poor decisions without background info)
+- ❌ Manually creating JSON in `state/pending/` (always use `plan_tasks`)
 
 ### Task Results
 
