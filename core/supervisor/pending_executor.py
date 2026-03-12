@@ -6,7 +6,7 @@
 Monitors state/background_tasks/pending/ for tasks submitted via
 ``animaworks-tool submit`` and dispatches them through
 BackgroundTaskManager.  Supports DAG-based parallel execution
-for batched tasks submitted via ``plan_tasks`` tool.
+for batched tasks submitted via ``submit_tasks`` tool.
 """
 
 from __future__ import annotations

@@ -356,7 +356,7 @@ DEFAULT_DESCRIPTIONS: dict[str, dict[str, str]] = {
         ),
     },
     # -- Task tools --
-    "add_task": {
+    "backlog_task": {
         "ja": (
             "タスクキューに新しいタスクを追加する。"
             "人間からの指示は必ずsource='human'で記録すること。"
@@ -442,7 +442,7 @@ DEFAULT_GUIDES: dict[str, dict[str, str]] = {
 以下のMCPツールが利用可能です。ファイル操作（Read/Write/Edit）とは別に、AnimaWorks固有の機能を提供します。
 
 ### タスク管理
-- **mcp__aw__add_task**: タスクキューにタスクを追加。人間からの指示はsource='human'で必ず記録。deadline必須
+- **mcp__aw__backlog_task**: タスクキューにタスクを追加。人間からの指示はsource='human'で必ず記録。deadline必須
 - **mcp__aw__update_task**: タスクのステータスを更新。完了時はstatus='done'
 - **mcp__aw__list_tasks**: タスク一覧取得。heartbeat時の進捗確認に使う
 
@@ -501,7 +501,7 @@ animaworks-tool submit <ツール名> <サブコマンド> [引数...]
 The following MCP tools are available. They provide AnimaWorks-specific functionality separate from file operations (Read/Write/Edit).
 
 ### Task management
-- **mcp__aw__add_task**: Add a task to the queue. Always record human instructions with source='human'. deadline required
+- **mcp__aw__backlog_task**: Add a task to the queue. Always record human instructions with source='human'. deadline required
 - **mcp__aw__update_task**: Update task status. Use status='done' when complete
 - **mcp__aw__list_tasks**: List tasks. Use during heartbeat for progress tracking
 

@@ -241,7 +241,7 @@ class TestBaseToolCount:
         assert "refresh_tools" in names
         assert "share_tool" in names
         assert "post_channel" in names
-        assert "add_task" in names
+        assert "backlog_task" in names
         assert "update_task" in names
         assert "list_tasks" in names
         assert "read_channel" in names
@@ -249,5 +249,5 @@ class TestBaseToolCount:
         assert "report_procedure_outcome" in names
         assert "skill" in names
         assert "create_skill" in names
-        assert "plan_tasks" in names
+        assert "submit_tasks" in names
         assert "manage_channel" in names

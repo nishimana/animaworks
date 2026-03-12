@@ -85,7 +85,7 @@ TOOL_TRUST_LEVELS: dict[str, str] = {
     # discover_tools: deprecated (DISCOVERY_TOOLS is empty)
     "refresh_tools": "trusted",
     "share_tool": "trusted",
-    "add_task": "trusted",
+    "backlog_task": "trusted",
     "update_task": "trusted",
     "list_tasks": "trusted",
     "post_channel": "trusted",

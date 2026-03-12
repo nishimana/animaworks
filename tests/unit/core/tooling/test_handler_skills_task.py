@@ -3,7 +3,7 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Unit tests for plan_tasks handler — reply_to and task descriptor validation."""
+"""Unit tests for submit_tasks handler — reply_to and task descriptor validation."""
 
 import json
 from pathlib import Path
@@ -13,11 +13,11 @@ from unittest.mock import MagicMock
 from core.tooling.handler import ToolHandler
 
 
-# ── Test 5: plan_tasks sets reply_to ────────────────────────────────────
+# ── Test 5: submit_tasks sets reply_to ────────────────────────────────────
 
 
-def test_plan_tasks_sets_reply_to(tmp_path: Path) -> None:
-    """Test that plan_tasks handler sets reply_to = self._anima_name in task descriptors.
+def test_submit_tasks_sets_reply_to(tmp_path: Path) -> None:
+    """Test that submit_tasks handler sets reply_to = self._anima_name in task descriptors.
 
     This requires mocking the file system for pending task files.
     """
@@ -35,7 +35,7 @@ def test_plan_tasks_sets_reply_to(tmp_path: Path) -> None:
         tool_registry=[],
     )
 
-    result = handler.handle("plan_tasks", {
+    result = handler.handle("submit_tasks", {
         "batch_id": "test-batch-1",
         "tasks": [
             {

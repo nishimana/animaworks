@@ -911,7 +911,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "en": "## Completed Background Tasks",
     },
     # ── prompt_db.* (i18n) ──────────────────────────────
-    "prompt_db.add_task": {
+    "prompt_db.backlog_task": {
         "ja": "タスクキューに新しいタスクを追加する。人間からの指示は必ずsource='human'で記録すること。Anima間の委任はsource='anima'で記録する。deadlineは必須。相対形式（'30m','2h','1d'）またはISO8601で指定。",
         "en": "Add a new task to the task queue. Always record human instructions with source='human'. Use source='anima' for Anima delegation. deadline required: relative ('30m','2h','1d') or ISO8601.",
     },
@@ -1131,7 +1131,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "以下のMCPツールが利用可能です。ファイル操作（Read/Write/Edit）とは別に、AnimaWorks固有の機能を提供します。\n"
             "\n"
             "### タスク管理\n"
-            "- **mcp__aw__add_task**: タスクキューにタスクを追加。人間からの指示はsource='human'で必ず記録。deadline必須\n"
+            "- **mcp__aw__backlog_task**: タスクキューにタスクを追加。人間からの指示はsource='human'で必ず記録。deadline必須\n"
             "- **mcp__aw__update_task**: タスクのステータスを更新。完了時はstatus='done'\n"
             "- **mcp__aw__list_tasks**: タスク一覧取得。heartbeat時の進捗確認に使う\n"
             "\n"
@@ -1191,7 +1191,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "The following MCP tools are available. They provide AnimaWorks-specific functionality separate from file operations (Read/Write/Edit).\n"
             "\n"
             "### Task management\n"
-            "- **mcp__aw__add_task**: Add a task to the queue. Always record human instructions with source='human'. deadline required\n"
+            "- **mcp__aw__backlog_task**: Add a task to the queue. Always record human instructions with source='human'. deadline required\n"
             "- **mcp__aw__update_task**: Update task status. Use status='done' when complete\n"
             "- **mcp__aw__list_tasks**: List tasks. Use during heartbeat for progress tracking\n"
             "\n"
@@ -1400,13 +1400,13 @@ _STRINGS: dict[str, dict[str, str]] = {
     "reminder.hb_time_limit": {
         "ja": (
             "⏰ Heartbeatの制限時間が近づいています。今すぐ以下を実行して終了してください:\n"
-            "1. 未完了の作業があれば add_task ツールでタスクキューに登録する\n"
+            "1. 未完了の作業があれば backlog_task ツールでタスクキューに登録する\n"
             "2. 観察結果・計画を current_task.md に update_task または write_memory_file で記録する\n"
             "3. [REFLECTION] ブロックを出力してHeartbeatを終了する"
         ),
         "en": (
             "⏰ Heartbeat time limit approaching. Execute the following immediately and finish:\n"
-            "1. Use add_task tool to register any remaining work in the task queue\n"
+            "1. Use backlog_task tool to register any remaining work in the task queue\n"
             "2. Record observations/plans in current_task.md via update_task or write_memory_file\n"
             "3. Output a [REFLECTION] block and end the heartbeat"
         ),
@@ -1414,11 +1414,11 @@ _STRINGS: dict[str, dict[str, str]] = {
     "reminder.hb_hard_timeout_recovery": {
         "ja": (
             "前回のHeartbeatが制限時間（{timeout}秒）を超過したため強制終了されました。"
-            "中断時点の作業内容を確認し、必要であれば add_task でタスク登録してください。"
+            "中断時点の作業内容を確認し、必要であれば backlog_task でタスク登録してください。"
         ),
         "en": (
             "Previous heartbeat was terminated due to exceeding the time limit ({timeout}s). "
-            "Review the work in progress and use add_task to register tasks if needed."
+            "Review the work in progress and use backlog_task to register tasks if needed."
         ),
     },
     # ── runner.* (i18n) ──────────────────────────────
@@ -1427,31 +1427,31 @@ _STRINGS: dict[str, dict[str, str]] = {
         "en": "Response was interrupted (recovered incomplete stream from previous session, {session_type})",
     },
     # ── schema.* (i18n) ──────────────────────────────
-    "schema.add_task.assignee": {
+    "schema.backlog_task.assignee": {
         "ja": "担当者名（自分自身または委任先のAnima名）",
         "en": "Assignee name (yourself or the delegated Anima name)",
     },
-    "schema.add_task.deadline": {
+    "schema.backlog_task.deadline": {
         "ja": "期限（必須）。相対形式 '30m','2h','1d' またはISO8601。例: '1h' = 1時間後",
         "en": "Deadline (required). Relative format '30m','2h','1d' or ISO8601. Example: '1h' = 1 hour from now",
     },
-    "schema.add_task.desc": {
+    "schema.backlog_task.desc": {
         "ja": "タスクキューに新しいタスクを追加する。人間からの指示は必ず source='human' で記録すること。Anima間の委任は source='anima' で記録する。",
         "en": "Add a new task to the task queue. Instructions from humans must be recorded with source='human'. Inter-Anima delegation uses source='anima'.",
     },
-    "schema.add_task.original_instruction": {
+    "schema.backlog_task.original_instruction": {
         "ja": "元の指示文（委任時は原文引用を含める）",
         "en": "Original instruction text (include original quote when delegating)",
     },
-    "schema.add_task.relay_chain": {
+    "schema.backlog_task.relay_chain": {
         "ja": "委任経路（例: ['taka', 'sakura', 'rin']）",
         "en": "Delegation chain (e.g. ['taka', 'sakura', 'rin'])",
     },
-    "schema.add_task.source": {
+    "schema.backlog_task.source": {
         "ja": "タスクの発生源 (human=人間からの指示, anima=Anima間委任)",
         "en": "Task source (human=instruction from human, anima=inter-Anima delegation)",
     },
-    "schema.add_task.summary": {"ja": "タスクの1行要約", "en": "One-line task summary"},
+    "schema.backlog_task.summary": {"ja": "タスクの1行要約", "en": "One-line task summary"},
     "schema.audit_subordinate.desc": {
         "ja": (
             "配下のAnimaの行動を監査する。ActivityLogから「何を考えて何をやったか」を"
@@ -1834,8 +1834,8 @@ _STRINGS: dict[str, dict[str, str]] = {
     "schema.update_task.status": {"ja": "新しいステータス", "en": "New status"},
     "schema.update_task.summary": {"ja": "更新後の要約（任意）", "en": "Updated summary (optional)"},
     "schema.update_task.task_id": {
-        "ja": "タスクID（add_task時に返されたID）",
-        "en": "Task ID (the ID returned by add_task)",
+        "ja": "タスクID（backlog_task時に返されたID）",
+        "en": "Task ID (the ID returned by backlog_task)",
     },
     "schema.vault_get.desc": {
         "ja": "暗号化されたクレデンシャルvaultから値を取得する。APIキー、パスワード、トークンなどの秘密情報を安全に保管・取得できる。sectionとkeyを指定して値を取得する。",

@@ -225,10 +225,10 @@ class ToolHandler(
             "report_knowledge_outcome": self._handle_report_knowledge_outcome,
             "skill": self._handle_skill,
             "create_skill": self._handle_create_skill,
-            "add_task": self._handle_add_task,
+            "backlog_task": self._handle_backlog_task,
             "update_task": self._handle_update_task,
             "list_tasks": self._handle_list_tasks,
-            "plan_tasks": self._handle_plan_tasks,
+            "submit_tasks": self._handle_submit_tasks,
             "use_tool": self._handle_use_tool,
             "check_background_task": self._handle_check_background_task,
             "list_background_tasks": self._handle_list_background_tasks,
@@ -278,7 +278,7 @@ class ToolHandler(
         self._state_file_lock = lock
 
     def set_pending_executor_wake(self, wake_fn: Callable[[], Any]) -> None:
-        """Attach the PendingTaskExecutor's wake callback for plan_tasks."""
+        """Attach the PendingTaskExecutor's wake callback for submit_tasks."""
         self._pending_executor_wake = wake_fn
 
     def _is_state_file(self, path: Path) -> bool:
