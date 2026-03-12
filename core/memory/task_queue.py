@@ -30,6 +30,7 @@ logger = logging.getLogger("animaworks.task_queue")
 # Valid task statuses
 _VALID_STATUSES = frozenset({"pending", "in_progress", "done", "cancelled", "blocked", "delegated", "failed"})
 _TERMINAL_STATUSES = frozenset({"done", "cancelled", "failed"})
+_ACTIVE_STATUSES = frozenset({"pending", "in_progress", "blocked", "delegated"})
 
 # Valid task sources
 _VALID_SOURCES = frozenset({"human", "anima"})
@@ -124,6 +125,10 @@ class TaskQueueManager:
     @property
     def queue_path(self) -> Path:
         return self._queue_path
+
+    @property
+    def archive_path(self) -> Path:
+        return self._queue_path.parent / "task_queue_archive.jsonl"
 
     # ── Write operations ─────────────────────────────────────
 
@@ -321,11 +326,15 @@ class TaskQueueManager:
         return [t for t in tasks.values() if t.status in ("pending", "in_progress", "blocked")]
 
     def list_tasks(self, status: str | None = None) -> list[TaskEntry]:
-        """List tasks, optionally filtered by status."""
+        """List tasks, optionally filtered by status.
+
+        When status is omitted, returns only active tasks
+        (pending, in_progress, blocked, delegated).
+        """
         tasks = self._load_all()
         if status:
             return [t for t in tasks.values() if t.status == status]
-        return list(tasks.values())
+        return [t for t in tasks.values() if t.status in _ACTIVE_STATUSES]
 
     def get_delegated_tasks(self) -> list[TaskEntry]:
         """Return tasks with status 'delegated'."""
@@ -399,19 +408,34 @@ class TaskQueueManager:
 
     # ── Maintenance ────────────────────────────────────────────
 
+    def _archive(self, tasks: dict[str, TaskEntry]) -> None:
+        """Append terminal tasks to archive file before removal."""
+        with self.archive_path.open("a", encoding="utf-8") as f:
+            for entry in tasks.values():
+                f.write(json.dumps(entry.model_dump(), ensure_ascii=False) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+
     def compact(self) -> int:
         """Rewrite JSONL file with only active (non-terminal) tasks.
 
-        Terminal statuses (done, cancelled) are removed.
+        Terminal statuses (done, cancelled, failed) are archived first,
+        then removed from the queue.
         Returns the number of tasks removed.
         """
         tasks = self._load_all()
-        active = {tid: t for tid, t in tasks.items() if t.status not in _TERMINAL_STATUSES}
-        removed = len(tasks) - len(active)
+        active: dict[str, TaskEntry] = {}
+        terminal: dict[str, TaskEntry] = {}
+        for tid, entry in tasks.items():
+            if entry.status in _TERMINAL_STATUSES:
+                terminal[tid] = entry
+            else:
+                active[tid] = entry
+        removed = len(terminal)
         if removed == 0:
             return 0
-
-        # Rewrite atomically via temp file
+        # Archive first, then rewrite
+        self._archive(terminal)
         tmp_path = self._queue_path.with_suffix(".tmp")
         try:
             with tmp_path.open("w", encoding="utf-8") as f:
@@ -420,7 +444,7 @@ class TaskQueueManager:
                 f.flush()
                 os.fsync(f.fileno())
             tmp_path.replace(self._queue_path)
-            logger.info("Task queue compacted: removed %d terminal tasks", removed)
+            logger.info("Task queue compacted: removed %d terminal tasks (archived)", removed)
         except Exception:
             logger.exception("Failed to compact task queue")
             tmp_path.unlink(missing_ok=True)

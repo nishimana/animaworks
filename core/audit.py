@@ -255,10 +255,11 @@ def _collect_single_anima(anima_dir: Path, target_date: str) -> AnimaAuditEntry 
         from core.memory.task_queue import TaskQueueManager
 
         tqm = TaskQueueManager(anima_dir)
-        all_tasks = tqm.list_tasks()
-        tasks_total = len(all_tasks)
-        tasks_pending = len([t for t in all_tasks if t.status in ("pending", "in_progress", "blocked")])
-        tasks_done = len([t for t in all_tasks if t.status == "done"])
+        active_tasks = tqm.list_tasks()
+        done_tasks = tqm.list_tasks(status="done")
+        tasks_pending = len([t for t in active_tasks if t.status in ("pending", "in_progress", "blocked")])
+        tasks_done = len(done_tasks)
+        tasks_total = len(active_tasks) + tasks_done
     except Exception:
         logger.debug("Failed to read task queue for %s", name, exc_info=True)
 

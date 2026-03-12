@@ -16,7 +16,7 @@
   <br><em>3D 办公室：Anima 们坐在桌前、四处走动、互相传递消息——全部自主完成。</em>
 </p>
 
-**[English README](README.md)** | **[日本語版 README](README_ja.md)**
+**[English README](README.md)** | **[日本語版 README](README_ja.md)** | **[한국어 README](README_ko.md)**
 
 ---
 

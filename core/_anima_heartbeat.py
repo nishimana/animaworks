@@ -459,6 +459,25 @@ class HeartbeatMixin:
             except Exception:
                 logger.debug("[%s] Failed to remove heartbeat checkpoint", self.name, exc_info=True)
 
+            # Compact task queue after heartbeat
+            try:
+                from core.memory.task_queue import TaskQueueManager
+
+                _tqm = TaskQueueManager(self.anima_dir)
+                _removed = _tqm.compact()
+                if _removed:
+                    logger.info(
+                        "[%s] Task queue compacted after heartbeat: removed %d tasks",
+                        self.name,
+                        _removed,
+                    )
+            except Exception:
+                logger.debug(
+                    "[%s] Task queue compaction failed after heartbeat",
+                    self.name,
+                    exc_info=True,
+                )
+
             return result
         finally:
             if original_config is not None:

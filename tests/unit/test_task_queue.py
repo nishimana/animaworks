@@ -7,12 +7,12 @@ from unittest.mock import patch
 import pytest
 
 from core.memory.task_queue import (
+    _STALE_TASK_THRESHOLD_SEC,
     TaskQueueManager,
     _elapsed_seconds,
     _format_deadline_display,
     _format_elapsed_from_sec,
     _parse_deadline,
-    _STALE_TASK_THRESHOLD_SEC,
 )
 from core.schemas import TaskEntry
 from core.time_utils import now_jst
@@ -62,12 +62,18 @@ class TestAddTask:
 
     def test_add_multiple_tasks(self, task_queue):
         task_queue.add_task(
-            source="human", original_instruction="t1", assignee="a",
-            summary="s1", deadline="1h",
+            source="human",
+            original_instruction="t1",
+            assignee="a",
+            summary="s1",
+            deadline="1h",
         )
         task_queue.add_task(
-            source="anima", original_instruction="t2", assignee="b",
-            summary="s2", deadline="2h",
+            source="anima",
+            original_instruction="t2",
+            assignee="b",
+            summary="s2",
+            deadline="2h",
         )
         tasks = task_queue.list_tasks()
         assert len(tasks) == 2
@@ -97,8 +103,11 @@ class TestAddTask:
 class TestUpdateStatus:
     def test_update_status(self, task_queue):
         entry = task_queue.add_task(
-            source="human", original_instruction="t", assignee="a",
-            summary="s", deadline="1h",
+            source="human",
+            original_instruction="t",
+            assignee="a",
+            summary="s",
+            deadline="1h",
         )
         updated = task_queue.update_status(entry.task_id, "in_progress")
         assert updated is not None
@@ -106,14 +115,16 @@ class TestUpdateStatus:
 
     def test_update_status_persists(self, task_queue):
         entry = task_queue.add_task(
-            source="human", original_instruction="t", assignee="a",
-            summary="s", deadline="1h",
+            source="human",
+            original_instruction="t",
+            assignee="a",
+            summary="s",
+            deadline="1h",
         )
         task_queue.update_status(entry.task_id, "done")
-        # Reload from file
-        tasks = task_queue.list_tasks()
-        done_tasks = [t for t in tasks if t.status == "done"]
-        assert len(done_tasks) == 1
+        # Reload from file — use explicit status filter since default is active only
+        tasks = task_queue.list_tasks(status="done")
+        assert len(tasks) == 1
 
     def test_update_nonexistent_task(self, task_queue):
         result = task_queue.update_status("nonexistent", "done")
@@ -121,16 +132,22 @@ class TestUpdateStatus:
 
     def test_update_invalid_status(self, task_queue):
         entry = task_queue.add_task(
-            source="human", original_instruction="t", assignee="a",
-            summary="s", deadline="1h",
+            source="human",
+            original_instruction="t",
+            assignee="a",
+            summary="s",
+            deadline="1h",
         )
         result = task_queue.update_status(entry.task_id, "invalid_status")
         assert result is None
 
     def test_update_summary(self, task_queue):
         entry = task_queue.add_task(
-            source="human", original_instruction="t", assignee="a",
-            summary="original", deadline="1h",
+            source="human",
+            original_instruction="t",
+            assignee="a",
+            summary="original",
+            deadline="1h",
         )
         updated = task_queue.update_status(entry.task_id, "in_progress", summary="updated")
         assert updated.summary == "updated"
@@ -142,12 +159,18 @@ class TestGetPending:
 
     def test_get_pending_filters_done(self, task_queue):
         e1 = task_queue.add_task(
-            source="human", original_instruction="t1", assignee="a",
-            summary="s1", deadline="1h",
+            source="human",
+            original_instruction="t1",
+            assignee="a",
+            summary="s1",
+            deadline="1h",
         )
         e2 = task_queue.add_task(
-            source="human", original_instruction="t2", assignee="b",
-            summary="s2", deadline="1h",
+            source="human",
+            original_instruction="t2",
+            assignee="b",
+            summary="s2",
+            deadline="1h",
         )
         task_queue.update_status(e1.task_id, "done")
         pending = task_queue.get_pending()
@@ -156,8 +179,11 @@ class TestGetPending:
 
     def test_get_pending_includes_in_progress(self, task_queue):
         e1 = task_queue.add_task(
-            source="human", original_instruction="t1", assignee="a",
-            summary="s1", deadline="1h",
+            source="human",
+            original_instruction="t1",
+            assignee="a",
+            summary="s1",
+            deadline="1h",
         )
         task_queue.update_status(e1.task_id, "in_progress")
         pending = task_queue.get_pending()
@@ -167,12 +193,18 @@ class TestGetPending:
 class TestGetHumanTasks:
     def test_get_human_tasks_filters_source(self, task_queue):
         task_queue.add_task(
-            source="human", original_instruction="t1", assignee="a",
-            summary="s1", deadline="1h",
+            source="human",
+            original_instruction="t1",
+            assignee="a",
+            summary="s1",
+            deadline="1h",
         )
         task_queue.add_task(
-            source="anima", original_instruction="t2", assignee="b",
-            summary="s2", deadline="1h",
+            source="anima",
+            original_instruction="t2",
+            assignee="b",
+            summary="s2",
+            deadline="1h",
         )
         human = task_queue.get_human_tasks()
         assert len(human) == 1
@@ -185,8 +217,11 @@ class TestFormatForPriming:
 
     def test_format_human_high_priority(self, task_queue):
         task_queue.add_task(
-            source="human", original_instruction="t", assignee="a",
-            summary="Important task", deadline="1h",
+            source="human",
+            original_instruction="t",
+            assignee="a",
+            summary="Important task",
+            deadline="1h",
         )
         output = task_queue.format_for_priming()
         assert "\U0001f534 HIGH" in output
@@ -194,8 +229,11 @@ class TestFormatForPriming:
 
     def test_format_anima_normal_priority(self, task_queue):
         task_queue.add_task(
-            source="anima", original_instruction="t", assignee="a",
-            summary="Normal task", deadline="1h",
+            source="anima",
+            original_instruction="t",
+            assignee="a",
+            summary="Normal task",
+            deadline="1h",
         )
         output = task_queue.format_for_priming()
         assert "\u26aa" in output
@@ -205,7 +243,9 @@ class TestFormatForPriming:
         # Add many tasks
         for i in range(50):
             task_queue.add_task(
-                source="human", original_instruction=f"task {i}", assignee="a",
+                source="human",
+                original_instruction=f"task {i}",
+                assignee="a",
                 summary=f"Very long task description number {i} with lots of detail",
                 deadline="1h",
             )
@@ -215,8 +255,11 @@ class TestFormatForPriming:
 
     def test_format_shows_relay_chain(self, task_queue):
         task_queue.add_task(
-            source="human", original_instruction="t", assignee="rin",
-            summary="Delegated task", deadline="1h",
+            source="human",
+            original_instruction="t",
+            assignee="rin",
+            summary="Delegated task",
+            deadline="1h",
             relay_chain=["taka", "sakura", "rin"],
         )
         output = task_queue.format_for_priming()
@@ -227,12 +270,18 @@ class TestFormatForPriming:
 class TestCompact:
     def test_compact_removes_done_tasks(self, task_queue):
         e1 = task_queue.add_task(
-            source="human", original_instruction="t1", assignee="a",
-            summary="s1", deadline="1h",
+            source="human",
+            original_instruction="t1",
+            assignee="a",
+            summary="s1",
+            deadline="1h",
         )
         e2 = task_queue.add_task(
-            source="human", original_instruction="t2", assignee="b",
-            summary="s2", deadline="1h",
+            source="human",
+            original_instruction="t2",
+            assignee="b",
+            summary="s2",
+            deadline="1h",
         )
         task_queue.update_status(e1.task_id, "done")
         removed = task_queue.compact()
@@ -243,8 +292,11 @@ class TestCompact:
 
     def test_compact_removes_cancelled_tasks(self, task_queue):
         e1 = task_queue.add_task(
-            source="anima", original_instruction="t1", assignee="a",
-            summary="s1", deadline="1h",
+            source="anima",
+            original_instruction="t1",
+            assignee="a",
+            summary="s1",
+            deadline="1h",
         )
         task_queue.update_status(e1.task_id, "cancelled")
         removed = task_queue.compact()
@@ -253,8 +305,11 @@ class TestCompact:
 
     def test_compact_no_terminal_tasks(self, task_queue):
         task_queue.add_task(
-            source="human", original_instruction="t1", assignee="a",
-            summary="s1", deadline="1h",
+            source="human",
+            original_instruction="t1",
+            assignee="a",
+            summary="s1",
+            deadline="1h",
         )
         removed = task_queue.compact()
         assert removed == 0
@@ -277,12 +332,18 @@ class TestSourceValidation:
 
     def test_valid_sources(self, task_queue):
         e1 = task_queue.add_task(
-            source="human", original_instruction="t1", assignee="a",
-            summary="s1", deadline="1h",
+            source="human",
+            original_instruction="t1",
+            assignee="a",
+            summary="s1",
+            deadline="1h",
         )
         e2 = task_queue.add_task(
-            source="anima", original_instruction="t2", assignee="b",
-            summary="s2", deadline="1h",
+            source="anima",
+            original_instruction="t2",
+            assignee="b",
+            summary="s2",
+            deadline="1h",
         )
         assert e1.source == "human"
         assert e2.source == "anima"
@@ -306,8 +367,11 @@ class TestCorruptedFile:
         task_queue.queue_path.parent.mkdir(parents=True, exist_ok=True)
         # Write a corrupted line + valid line
         task_queue.add_task(
-            source="human", original_instruction="valid", assignee="a",
-            summary="valid task", deadline="1h",
+            source="human",
+            original_instruction="valid",
+            assignee="a",
+            summary="valid task",
+            deadline="1h",
         )
         with task_queue.queue_path.open("a") as f:
             f.write("THIS IS NOT VALID JSON\n")
@@ -488,7 +552,8 @@ class TestFormatForPrimingWithStaleness:
         now = datetime(2026, 3, 1, 12, 0, 0, tzinfo=JST)
         updated_at = (now - timedelta(minutes=5)).isoformat()
         self._write_task_entry(
-            task_queue, updated_at=updated_at,
+            task_queue,
+            updated_at=updated_at,
             deadline="2026-03-01T14:30:00+09:00",
         )
 
@@ -502,7 +567,8 @@ class TestFormatForPrimingWithStaleness:
         now = datetime(2026, 3, 1, 15, 0, 0, tzinfo=JST)
         updated_at = (now - timedelta(minutes=10)).isoformat()
         self._write_task_entry(
-            task_queue, updated_at=updated_at,
+            task_queue,
+            updated_at=updated_at,
             deadline="2026-03-01T14:00:00+09:00",
         )
 

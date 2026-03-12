@@ -1543,12 +1543,16 @@ _STRINGS: dict[str, dict[str, str]] = {
         "en": "Status to filter by (omit for all tasks)",
     },
     "schema.list_tasks.desc": {
-        "ja": "タスクキューの一覧を取得する。ステータスでフィルタリング可能。",
-        "en": "List tasks in the task queue. Can filter by status.",
+        "ja": "タスクキューの一覧を取得する。デフォルトはアクティブタスク（pending/in_progress/blocked/delegated）のみ。statusで特定ステータスをフィルタ可能。",
+        "en": "List tasks in the task queue. Defaults to active tasks (pending/in_progress/blocked/delegated). Use status to filter by specific status.",
     },
     "schema.list_tasks.status": {
-        "ja": "フィルタするステータス（省略時は全件）",
-        "en": "Status to filter by (omit for all tasks)",
+        "ja": "フィルタするステータス（省略時はアクティブタスクのみ）",
+        "en": "Status to filter by (omit for active tasks only)",
+    },
+    "schema.list_tasks.detail": {
+        "ja": "trueで全フィールド（original_instruction全文含む）を返す。デフォルトはfalse（instruction先頭200文字）",
+        "en": "If true, return all fields including full original_instruction. Default false (first 200 chars).",
     },
     "schema.manage_channel.action": {
         "ja": "操作種別。create=チャネル作成, add_member=メンバー追加, remove_member=メンバー削除, info=チャネル情報表示",

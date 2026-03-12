@@ -1140,8 +1140,12 @@ def _task_tools() -> list[dict[str, Any]]:
                 "properties": {
                     "status": {
                         "type": "string",
-                        "enum": ["pending", "in_progress", "done", "cancelled", "blocked", "failed"],
+                        "enum": ["pending", "in_progress", "done", "cancelled", "blocked", "failed", "delegated"],
                         "description": _t("schema.list_tasks.status"),
+                    },
+                    "detail": {
+                        "type": "boolean",
+                        "description": _t("schema.list_tasks.detail"),
                     },
                 },
             },

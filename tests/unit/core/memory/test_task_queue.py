@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -11,11 +12,11 @@ from unittest.mock import patch
 import pytest
 
 from core.memory.task_queue import (
+    _ACTIVE_STATUSES,
+    _TERMINAL_STATUSES,
     TaskPersistenceError,
     TaskQueueManager,
-    _TERMINAL_STATUSES,
 )
-
 
 # ── Test 1: _append raises TaskPersistenceError on OSError ─────────────
 
@@ -286,3 +287,245 @@ def test_task_tracker_active_excludes_failed(tmp_path: Path) -> None:
     except json.JSONDecodeError:
         # May return i18n message like "no matching delegated tasks"
         assert "委譲" in result or "delegated" in result.lower() or "matching" in result.lower()
+
+
+# ── Test: compact() creates archive file ──────────────────────────────
+
+
+def _make_tasks_with_statuses(tqm: TaskQueueManager) -> dict[str, str]:
+    """Helper: create tasks and update to various statuses. Returns {task_id: status}."""
+    ids: dict[str, str] = {}
+    for status in ("pending", "in_progress", "done", "failed", "cancelled", "delegated", "blocked"):
+        e = tqm.add_task(
+            source="human",
+            original_instruction=f"instruction for {status} task " + "x" * 300,
+            assignee="anima",
+            summary=f"summary-{status}",
+            deadline="1h",
+        )
+        if status != "pending":
+            tqm.update_status(e.task_id, status)
+        ids[e.task_id] = status
+    return ids
+
+
+def test_compact_creates_archive_file(tmp_path: Path) -> None:
+    """compact() should create task_queue_archive.jsonl with terminal tasks."""
+    anima_dir = tmp_path / "anima"
+    (anima_dir / "state").mkdir(parents=True)
+    tqm = TaskQueueManager(anima_dir)
+
+    _make_tasks_with_statuses(tqm)
+    assert not tqm.archive_path.exists()
+
+    removed = tqm.compact()
+
+    assert removed == 3  # done, failed, cancelled
+    assert tqm.archive_path.exists()
+
+
+def test_compact_archive_contains_correct_tasks(tmp_path: Path) -> None:
+    """Archive should contain exactly the terminal tasks with correct fields."""
+    import json
+
+    anima_dir = tmp_path / "anima"
+    (anima_dir / "state").mkdir(parents=True)
+    tqm = TaskQueueManager(anima_dir)
+
+    ids = _make_tasks_with_statuses(tqm)
+    tqm.compact()
+
+    archived = []
+    for line in tqm.archive_path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            archived.append(json.loads(line))
+
+    archived_ids = {a["task_id"] for a in archived}
+    for tid, status in ids.items():
+        if status in _TERMINAL_STATUSES:
+            assert tid in archived_ids, f"Terminal task {tid} ({status}) not in archive"
+        else:
+            assert tid not in archived_ids, f"Active task {tid} ({status}) should not be in archive"
+
+    for a in archived:
+        assert "original_instruction" in a
+        assert "summary" in a
+        assert a["status"] in _TERMINAL_STATUSES
+
+
+def test_compact_queue_retains_only_active(tmp_path: Path) -> None:
+    """After compact, queue should contain only non-terminal tasks."""
+    anima_dir = tmp_path / "anima"
+    (anima_dir / "state").mkdir(parents=True)
+    tqm = TaskQueueManager(anima_dir)
+
+    ids = _make_tasks_with_statuses(tqm)
+    tqm.compact()
+
+    all_tasks = tqm._load_all()
+    for tid, entry in all_tasks.items():
+        assert entry.status not in _TERMINAL_STATUSES, f"Terminal task {tid} still in queue"
+    assert len(all_tasks) == sum(1 for s in ids.values() if s not in _TERMINAL_STATUSES)
+
+
+def test_compact_appends_to_existing_archive(tmp_path: Path) -> None:
+    """Multiple compact() calls should append to archive, not overwrite."""
+    import json
+
+    anima_dir = tmp_path / "anima"
+    (anima_dir / "state").mkdir(parents=True)
+    tqm = TaskQueueManager(anima_dir)
+
+    e1 = tqm.add_task(source="human", original_instruction="t1", assignee="a", summary="s1", deadline="1h")
+    tqm.update_status(e1.task_id, "done")
+    tqm.compact()
+
+    e2 = tqm.add_task(source="human", original_instruction="t2", assignee="a", summary="s2", deadline="1h")
+    tqm.update_status(e2.task_id, "cancelled")
+    tqm.compact()
+
+    lines = [ln for ln in tqm.archive_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    assert len(lines) == 2
+    archived_ids = {json.loads(ln)["task_id"] for ln in lines}
+    assert e1.task_id in archived_ids
+    assert e2.task_id in archived_ids
+
+
+def test_compact_no_terminal_returns_zero(tmp_path: Path) -> None:
+    """compact() with no terminal tasks should return 0 and not create archive."""
+    anima_dir = tmp_path / "anima"
+    (anima_dir / "state").mkdir(parents=True)
+    tqm = TaskQueueManager(anima_dir)
+
+    tqm.add_task(source="human", original_instruction="t", assignee="a", summary="s", deadline="1h")
+    assert tqm.compact() == 0
+    assert not tqm.archive_path.exists()
+
+
+# ── Test: list_tasks default returns only active ─────────────────────
+
+
+def test_list_tasks_default_active_only(tmp_path: Path) -> None:
+    """list_tasks() without filter should return only active statuses."""
+    anima_dir = tmp_path / "anima"
+    (anima_dir / "state").mkdir(parents=True)
+    tqm = TaskQueueManager(anima_dir)
+
+    ids = _make_tasks_with_statuses(tqm)
+    result = tqm.list_tasks()
+
+    result_statuses = {t.status for t in result}
+    assert result_statuses <= _ACTIVE_STATUSES
+    assert len(result) == sum(1 for s in ids.values() if s in _ACTIVE_STATUSES)
+
+
+def test_list_tasks_status_filter_done(tmp_path: Path) -> None:
+    """list_tasks(status='done') should return only done tasks."""
+    anima_dir = tmp_path / "anima"
+    (anima_dir / "state").mkdir(parents=True)
+    tqm = TaskQueueManager(anima_dir)
+
+    _make_tasks_with_statuses(tqm)
+    result = tqm.list_tasks(status="done")
+
+    assert all(t.status == "done" for t in result)
+    assert len(result) == 1
+
+
+def test_list_tasks_status_filter_delegated(tmp_path: Path) -> None:
+    """list_tasks(status='delegated') returns delegated tasks."""
+    anima_dir = tmp_path / "anima"
+    (anima_dir / "state").mkdir(parents=True)
+    tqm = TaskQueueManager(anima_dir)
+
+    _make_tasks_with_statuses(tqm)
+    result = tqm.list_tasks(status="delegated")
+
+    assert all(t.status == "delegated" for t in result)
+    assert len(result) == 1
+
+
+# ── Test: _handle_list_tasks detail and truncation ───────────────────
+
+
+def test_handle_list_tasks_truncates_instruction(tmp_path: Path) -> None:
+    """_handle_list_tasks without detail truncates original_instruction."""
+    import json as _json
+
+    from core.tooling.handler_skills import _INSTRUCTION_TRUNCATE_LEN
+
+    anima_dir = tmp_path / "anima"
+    (anima_dir / "state").mkdir(parents=True)
+    tqm = TaskQueueManager(anima_dir)
+
+    long_instruction = "A" * 500
+    tqm.add_task(
+        source="human",
+        original_instruction=long_instruction,
+        assignee="anima",
+        summary="test",
+        deadline="1h",
+    )
+
+    from core.tooling.handler_skills import SkillsToolsMixin
+
+    mixin = SkillsToolsMixin.__new__(SkillsToolsMixin)
+    mixin._anima_dir = anima_dir
+
+    result = mixin._handle_list_tasks({})
+    parsed = _json.loads(result)
+    assert len(parsed) == 1
+    instr = parsed[0]["original_instruction"]
+    assert len(instr) == _INSTRUCTION_TRUNCATE_LEN + 3  # 200 + "..."
+    assert instr.endswith("...")
+
+
+def test_handle_list_tasks_detail_returns_full(tmp_path: Path) -> None:
+    """_handle_list_tasks with detail=true returns full original_instruction."""
+    import json as _json
+
+    anima_dir = tmp_path / "anima"
+    (anima_dir / "state").mkdir(parents=True)
+    tqm = TaskQueueManager(anima_dir)
+
+    long_instruction = "B" * 500
+    tqm.add_task(
+        source="human",
+        original_instruction=long_instruction,
+        assignee="anima",
+        summary="test",
+        deadline="1h",
+    )
+
+    from core.tooling.handler_skills import SkillsToolsMixin
+
+    mixin = SkillsToolsMixin.__new__(SkillsToolsMixin)
+    mixin._anima_dir = anima_dir
+
+    result = mixin._handle_list_tasks({"detail": True})
+    parsed = _json.loads(result)
+    assert len(parsed) == 1
+    assert parsed[0]["original_instruction"] == long_instruction
+
+
+def test_handle_list_tasks_no_indent(tmp_path: Path) -> None:
+    """list_tasks output should not contain indentation (compact JSON)."""
+    anima_dir = tmp_path / "anima"
+    (anima_dir / "state").mkdir(parents=True)
+    tqm = TaskQueueManager(anima_dir)
+
+    tqm.add_task(
+        source="human",
+        original_instruction="short",
+        assignee="anima",
+        summary="test",
+        deadline="1h",
+    )
+
+    from core.tooling.handler_skills import SkillsToolsMixin
+
+    mixin = SkillsToolsMixin.__new__(SkillsToolsMixin)
+    mixin._anima_dir = anima_dir
+
+    result = mixin._handle_list_tasks({})
+    assert "\n  " not in result

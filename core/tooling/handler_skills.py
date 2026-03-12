@@ -24,6 +24,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("animaworks.tool_handler")
 
+_INSTRUCTION_TRUNCATE_LEN = 200
+
 
 class SkillsToolsMixin:
     """Tool management, procedure/knowledge outcome tracking, skills, and task queue."""
@@ -362,9 +364,15 @@ class SkillsToolsMixin:
 
         manager = TaskQueueManager(self._anima_dir)
         status_filter = args.get("status")
+        detail = args.get("detail", False)
         tasks = manager.list_tasks(status=status_filter)
         result = [t.model_dump() for t in tasks]
-        return _json.dumps(result, ensure_ascii=False, indent=2)
+        if not detail:
+            for item in result:
+                instr = item.get("original_instruction", "")
+                if len(instr) > _INSTRUCTION_TRUNCATE_LEN:
+                    item["original_instruction"] = instr[:_INSTRUCTION_TRUNCATE_LEN] + "..."
+        return _json.dumps(result, ensure_ascii=False)
 
     # ── plan_tasks handler (DAG batch submission) ────────────
 
