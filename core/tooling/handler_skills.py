@@ -512,7 +512,7 @@ class SkillsToolsMixin:
                     assignee=self._anima_name,
                     summary=t["title"],
                     task_id=t["task_id"],
-                    status="in_progress",
+                    status="pending" if t.get("depends_on") else "in_progress",
                     meta={
                         "executor": "taskexec",
                         "batch_id": batch_id,
