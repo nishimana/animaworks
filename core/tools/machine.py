@@ -229,11 +229,49 @@ def reset_call_counts(anima_dir: str | None = None) -> None:
         _session_call_counts.clear()
 
 
+# ── Credential Injection ──────────────────────────────────
+
+_ENGINE_CREDENTIAL_MAP: dict[str, list[tuple[str, str, str]]] = {
+    "claude": [("anthropic", "ANTHROPIC_API_KEY", "api_key")],
+    "codex": [("openai", "OPENAI_API_KEY", "api_key")],
+    "gemini": [
+        ("google", "GEMINI_API_KEY", "api_key"),
+        ("google", "GOOGLE_API_KEY", "api_key"),
+    ],
+    "cursor-agent": [],
+}
+
+
+def _resolve_engine_credentials(engine: str) -> dict[str, str]:
+    """Resolve API keys for the engine from AnimaWorks credential system."""
+    entries = _ENGINE_CREDENTIAL_MAP.get(engine, [])
+    if not entries:
+        return {}
+
+    result: dict[str, str] = {}
+    for cred_name, env_var, key_name in entries:
+        if env_var in result:
+            continue
+        try:
+            from core.tools._base import get_credential
+
+            val = get_credential(cred_name, f"machine/{engine}", key_name, env_var)
+            result[env_var] = val
+        except Exception:
+            pass
+    return result
+
+
 # ── Environment Sanitization ──────────────────────────────
 
 
 def _build_env(engine: str) -> dict[str, str]:
-    """Build a sanitized environment dict for the machine subprocess."""
+    """Build a sanitized environment dict for the machine subprocess.
+
+    Copies allowlisted env vars from the current process, then injects
+    API keys resolved from AnimaWorks credential system (config.json,
+    vault.json, credentials.json).
+    """
     env: dict[str, str] = {}
     for k, v in os.environ.items():
         if k in _ENV_ALLOWLIST:
@@ -241,6 +279,11 @@ def _build_env(engine: str) -> dict[str, str]:
 
     for blocked in _ANIMAWORKS_ENV_BLOCKLIST:
         env.pop(blocked, None)
+
+    creds = _resolve_engine_credentials(engine)
+    for k, v in creds.items():
+        if k not in env:
+            env[k] = v
 
     return env
 
@@ -586,12 +629,13 @@ def cli_main(argv: list[str] | None = None) -> None:
 
     run_parser = sub.add_parser("run", help="Execute a machine tool")
     run_parser.add_argument("instruction", help="Task instruction for the machine")
+    _cli_default_engine = (_get_available_engines() or ["claude"])[0]
     run_parser.add_argument(
         "-e",
         "--engine",
         choices=sorted(_VALID_ENGINES),
-        default="claude",
-        help="Engine to use (default: claude)",
+        default=_cli_default_engine,
+        help=f"Engine to use (default: {_cli_default_engine})",
     )
     run_parser.add_argument(
         "-d",
@@ -640,7 +684,11 @@ def cli_main(argv: list[str] | None = None) -> None:
         print(json.dumps(out, ensure_ascii=False, indent=2))
     else:
         if result.success:
-            print(result.text)
+            if result.text and result.text.strip():
+                print(result.text)
+            else:
+                elapsed = result.data.get("elapsed_seconds", "?") if result.data else "?"
+                print(f"[machine/{parsed.engine}] Completed in {elapsed}s (no output)")
         else:
             import sys
 
