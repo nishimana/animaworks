@@ -491,7 +491,9 @@ def _build_pre_tool_hook(
     )
 
     # Cache subordinate and peer paths once at hook build time
-    _sub_activity_dirs, _sub_mgmt_files, _peer_activity_dirs, _desc_read_files, _desc_read_dirs = _cache_subordinate_paths(anima_dir)
+    _sub_activity_dirs, _sub_mgmt_files, _peer_activity_dirs, _desc_read_files, _desc_read_dirs = (
+        _cache_subordinate_paths(anima_dir)
+    )
     intercepted_task_ids: set[str] = set()
     _trust_order = {"trusted": 2, "medium": 1, "untrusted": 0}
 
