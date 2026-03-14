@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, Request
@@ -23,6 +24,50 @@ from server.events import emit
 logger = logging.getLogger("animaworks.routes.channels")
 
 _SAFE_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,30}$")
+
+# ── Caches ────────────────────────────────────────
+# Channel metadata cache: keyed by file path, invalidated on mtime/size change
+_channel_meta_cache: dict[str, dict] = {}
+
+# DM pairs cache: TTL-based, keyed by shared_dir to avoid stale data
+_dm_cache: dict[str, object] = {"data": None, "ts": 0.0, "key": ""}
+_DM_CACHE_TTL = 60.0
+
+
+def _get_channel_meta(f: Path) -> dict:
+    """Return {count, last_ts} for a channel file, cached by mtime+size."""
+    key = str(f)
+    try:
+        stat = f.stat()
+    except OSError:
+        return {"count": 0, "last_ts": ""}
+
+    cached = _channel_meta_cache.get(key)
+    if cached and cached["_mtime"] == stat.st_mtime and cached["_size"] == stat.st_size:
+        return cached
+
+    try:
+        raw = f.read_bytes().strip()
+    except OSError:
+        raw = b""
+
+    if not raw:
+        entry = {"count": 0, "last_ts": "", "_mtime": stat.st_mtime, "_size": stat.st_size}
+        _channel_meta_cache[key] = entry
+        return entry
+
+    count = raw.count(b"\n") + 1
+
+    last_ts = ""
+    try:
+        last_line = raw.rsplit(b"\n", 1)[-1]
+        last_ts = json.loads(last_line).get("ts", "")
+    except (json.JSONDecodeError, IndexError):
+        pass
+
+    entry = {"count": count, "last_ts": last_ts, "_mtime": stat.st_mtime, "_size": stat.st_size}
+    _channel_meta_cache[key] = entry
+    return entry
 
 
 def _validate_name(name: str) -> JSONResponse | None:
@@ -63,24 +108,12 @@ def create_channels_router() -> APIRouter:
         channels: list[dict] = []
         for f in sorted(channels_dir.glob("*.jsonl")):
             name = f.stem
-            try:
-                lines = f.read_text(encoding="utf-8").strip().splitlines()
-            except OSError:
-                lines = []
-
-            count = len(lines)
-            last_ts = ""
-            if lines:
-                try:
-                    last_entry = json.loads(lines[-1])
-                    last_ts = last_entry.get("ts", "")
-                except (json.JSONDecodeError, IndexError):
-                    pass
+            meta_info = _get_channel_meta(f)
 
             channel_info: dict = {
                 "name": name,
-                "message_count": count,
-                "last_post_ts": last_ts,
+                "message_count": meta_info["count"],
+                "last_post_ts": meta_info["last_ts"],
             }
 
             meta = load_channel_meta(shared_dir, name)
@@ -98,10 +131,14 @@ def create_channels_router() -> APIRouter:
         name: str,
         limit: int = 50,
         offset: int = 0,
+        since: str = "",
     ):
         """Get messages from a specific channel.
 
         Web UI requests are treated as ``human`` source and bypass ACL.
+
+        When *since* is provided (ISO timestamp), only messages strictly
+        newer than that timestamp are returned (for incremental polling).
         """
         if err := _validate_name(name):
             return err
@@ -114,27 +151,48 @@ def create_channels_router() -> APIRouter:
                 content={"detail": f"Channel '{name}' not found"},
             )
 
-        # Read all lines for accurate total count
         try:
             all_lines = channel_file.read_text(encoding="utf-8").strip().splitlines()
         except OSError:
             all_lines = []
         all_lines = [line for line in all_lines if line.strip()]
 
-        # Parse messages in range
-        all_messages: list[dict] = []
-        for line in all_lines:
+        total = len(all_lines)
+
+        if since:
+            # Incremental mode: scan from the tail for new messages only
+            new_msgs: list[dict] = []
+            for line in reversed(all_lines):
+                try:
+                    msg = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if msg.get("ts", "") <= since:
+                    break
+                new_msgs.append(msg)
+            new_msgs.reverse()
+            return {
+                "channel": name,
+                "messages": new_msgs,
+                "total": total,
+                "offset": 0,
+                "limit": limit,
+                "has_more": False,
+                "incremental": True,
+            }
+
+        # Reverse pagination: offset=0 → newest N messages
+        start = max(0, total - offset - limit)
+        end = max(0, total - offset)
+        sliced_lines = all_lines[start:end]
+
+        paginated: list[dict] = []
+        for line in sliced_lines:
             try:
-                all_messages.append(json.loads(line))
+                paginated.append(json.loads(line))
             except json.JSONDecodeError:
                 continue
 
-        total = len(all_messages)
-
-        # Reverse pagination: offset=0 → newest N messages (chronological order)
-        start = max(0, total - offset - limit)
-        end = max(0, total - offset)
-        paginated = all_messages[start:end]
         has_more = start > 0
 
         return {
@@ -220,17 +278,17 @@ def create_channels_router() -> APIRouter:
 
         Primary source: per-Anima activity_log/ (message_sent/message_received).
         Fallback: legacy shared/dm_logs/ for historical data.
-        Filters out pairs where either participant is not a registered Anima,
-        and pairs with zero messages.
+        Uses a TTL cache to avoid scanning all activity logs on every request.
         """
         shared_dir: Path = request.app.state.shared_dir
+        cache_key = str(shared_dir)
+        now = time.monotonic()
+        if _dm_cache["data"] is not None and _dm_cache["key"] == cache_key and now - _dm_cache["ts"] < _DM_CACHE_TTL:
+            return _dm_cache["data"]
         animas_dir = shared_dir.parent / "animas"
 
-        # pair_key (sorted "alice-bob") -> {count, last_ts}
         pair_map: dict[str, dict] = {}
 
-        # Fetch valid Anima names for filtering garbage pairs.
-        # Falls back to no filtering when config is unavailable.
         valid_names: set[str] = set()
         try:
             from core.config.models import load_config
@@ -274,19 +332,9 @@ def create_channels_router() -> APIRouter:
         if dm_logs_dir.exists():
             for f in dm_logs_dir.glob("*.jsonl"):
                 pair_name = f.stem
-                try:
-                    lines = f.read_text(encoding="utf-8").strip().splitlines()
-                except OSError:
-                    lines = []
-
-                count = len(lines)
-                last_ts = ""
-                if lines:
-                    try:
-                        last_entry = json.loads(lines[-1])
-                        last_ts = last_entry.get("ts", "")
-                    except (json.JSONDecodeError, IndexError):
-                        pass
+                meta = _get_channel_meta(f)
+                count = meta["count"]
+                last_ts = meta["last_ts"]
 
                 if pair_name in pair_map:
                     pair_map[pair_name]["count"] += count
@@ -315,6 +363,7 @@ def create_channels_router() -> APIRouter:
             )
 
         pairs.sort(key=lambda p: p["last_message_ts"], reverse=True)
+        _dm_cache.update({"data": pairs, "ts": now, "key": cache_key})
         return pairs
 
     @router.get("/dm/{pair}")

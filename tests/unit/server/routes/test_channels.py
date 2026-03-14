@@ -294,6 +294,44 @@ class TestGetChannelMessages:
         data = resp.json()
         assert data["messages"] == []
 
+    async def test_since_returns_only_newer_messages(self, tmp_path: Path):
+        """The ``since`` parameter returns only messages newer than the timestamp."""
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+        entries = [
+            {"ts": f"2026-02-17T{h:02d}:00:00", "from": "sakura", "text": f"msg{h}", "source": "anima"}
+            for h in range(10)
+        ]
+        _write_channel(shared_dir, "general", entries)
+
+        app = _make_test_app(shared_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/channels/general?since=2026-02-17T07:00:00")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data.get("incremental") is True
+        assert len(data["messages"]) == 2
+        texts = [m["text"] for m in data["messages"]]
+        assert texts == ["msg8", "msg9"]
+
+    async def test_since_returns_empty_when_no_new_messages(self, tmp_path: Path):
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+        entries = [
+            {"ts": "2026-02-17T05:00:00", "from": "sakura", "text": "old", "source": "anima"},
+        ]
+        _write_channel(shared_dir, "general", entries)
+
+        app = _make_test_app(shared_dir)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/channels/general?since=2026-02-17T06:00:00")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["messages"] == []
+        assert data.get("incremental") is True
+
 
 # ── POST /api/channels/{name} ───────────────────────────
 

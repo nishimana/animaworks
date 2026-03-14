@@ -26,6 +26,8 @@ let _hasMore = false;
 let _currentOffset = 0;
 let _dmFilterAnima = "";     // "" = show all, else filter by participant name
 let _avatarCache = {};       // name -> url | null (null = no avatar)
+let _dmLoaded = false;       // DM list lazy-load flag
+let _lastMessageTs = "";     // newest message timestamp for incremental polling
 
 // ── DOM refs (local) ───────────────────────
 
@@ -46,6 +48,8 @@ export function render(container) {
   _loadingMore = false;
   _hasMore = false;
   _currentOffset = 0;
+  _dmLoaded = false;
+  _lastMessageTs = "";
 
   container.innerHTML = `
     <div class="board-layout">
@@ -104,10 +108,10 @@ export function render(container) {
   _bindEvents();
   _loadSidebarData();
 
-  // Polling fallback: refresh messages every 30s
+  // Polling fallback: incremental refresh every 30s
   _refreshInterval = setInterval(() => {
     if (_selectedType && _selectedName) {
-      _loadMessages(_selectedType, _selectedName, true);
+      _pollNewMessages();
     }
   }, 30000);
 
@@ -138,6 +142,8 @@ export function destroy() {
   _currentOffset = 0;
   _dmFilterAnima = "";
   _avatarCache = {};
+  _dmLoaded = false;
+  _lastMessageTs = "";
 }
 
 // ── Event Binding ──────────────────────────
@@ -233,22 +239,26 @@ function _miniAvatarHtml(name) {
 // ── Sidebar Data Loading ───────────────────
 
 async function _loadSidebarData() {
-  const [channels, dms] = await Promise.all([
-    api("/api/channels").catch(() => []),
-    api("/api/dm").catch(() => []),
-  ]);
-
+  // Load channels first (lightweight), render immediately
+  const channels = await api("/api/channels").catch(() => []);
   _channels = channels || [];
-  _dmPairs = dms || [];
+  _renderChannelList();
 
-  // Preload avatars for all DM participants
+  // Defer DM list loading to avoid blocking initial render
+  _loadDmList();
+}
+
+async function _loadDmList() {
+  const dms = await api("/api/dm").catch(() => []);
+  _dmPairs = dms || [];
+  _dmLoaded = true;
+
   const dmNames = new Set();
   for (const dm of _dmPairs) {
     for (const p of dm.participants || []) dmNames.add(p);
   }
   _preloadAvatars([...dmNames]);
 
-  _renderChannelList();
   _renderDmList();
 }
 
@@ -428,6 +438,7 @@ async function _loadMessages(type, name, isPolling) {
   if (!isPolling) {
     _currentOffset = 0;
     _hasMore = false;
+    _lastMessageTs = "";
     messagesEl.innerHTML = `<div class="board-messages-empty">${t("board.loading")}</div>`;
   }
 
@@ -446,6 +457,7 @@ async function _loadMessages(type, name, isPolling) {
     _messages = data.messages || [];
     _total = data.total || _messages.length;
     _hasMore = data.has_more || false;
+    _updateLastTs();
 
     // Preload avatars for senders, then render
     const senders = [...new Set(_messages.map(m => m.from || "unknown"))];
@@ -459,6 +471,50 @@ async function _loadMessages(type, name, isPolling) {
       messagesEl.innerHTML = `<div class="board-messages-empty">${t("board.load_failed")}: ${escapeHtml(err.message)}</div>`;
     }
     logger.error("Failed to load messages", { type, name, error: err.message });
+  }
+}
+
+async function _pollNewMessages() {
+  if (!_selectedType || !_selectedName) return;
+
+  // DMs don't support incremental polling yet
+  if (_selectedType !== "channel" || !_lastMessageTs) {
+    _loadMessages(_selectedType, _selectedName, true);
+    return;
+  }
+
+  try {
+    const data = await api(
+      `/api/channels/${encodeURIComponent(_selectedName)}?since=${encodeURIComponent(_lastMessageTs)}`
+    );
+    if (_selectedType !== "channel" || _selectedName !== data.channel) return;
+
+    const newMsgs = data.messages || [];
+    if (newMsgs.length === 0) return;
+
+    // Update total from server response
+    _total = data.total || _total;
+
+    const senders = [...new Set(newMsgs.map(m => m.from || "unknown"))];
+    await _preloadAvatars(senders);
+    if (_selectedType !== "channel" || _selectedName !== data.channel) return;
+
+    const wasAtBottom = _isScrolledToBottom(_$("boardMessages"));
+    _messages.push(...newMsgs);
+    _updateLastTs();
+    _renderMessages();
+    if (wasAtBottom) _scrollToBottom();
+  } catch (err) {
+    logger.error("Failed to poll new messages", { error: err.message });
+  }
+}
+
+function _updateLastTs() {
+  if (_messages.length > 0) {
+    const last = _messages[_messages.length - 1];
+    if (last.ts && last.ts > _lastMessageTs) {
+      _lastMessageTs = last.ts;
+    }
   }
 }
 
