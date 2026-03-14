@@ -13,7 +13,7 @@ import { showMessageEffect } from "./interactions.js";
 import { addTimelineEvent, localISOString } from "./timeline.js";
 import { addActivity } from "./activity.js";
 import { getSelectedBoard, appendBoardMessage } from "./board.js";
-import { updateAnimaStatus, updateCardActivity, showMessageLine, showExternalLine, updateAvatarExpression } from "./org-dashboard.js";
+import { updateAnimaStatus, updateCardActivity, showMessageLine, showExternalLine, updateAvatarExpression, VISIBLE_TOOL_NAMES } from "./org-dashboard.js";
 import { playReveal } from "./reveal.js";
 import { createLogger } from "../../shared/logger.js";
 import { bustupCandidates, resolveAvatar, invalidateAvatarCache } from "../../modules/avatar-resolver.js";
@@ -155,18 +155,21 @@ export function setupWebSocket(deps) {
     } else if (evtType) {
       addActivity("tool", data.name, `${data.summary || evtType}`);
     }
-    updateCardActivity(data.name, {
-      eventType: evtType,
-      toolName,
-      toolId: data.tool_id,
-      isError: data.is_error,
-      detail: data.detail,
-      summary: data.summary || "",
-      content: data.content || "",
-      from_person: data.from_person || "",
-      to_person: data.to_person || "",
-      channel: data.channel || "",
-    });
+    const isStreamingTool = evtType === "tool_start" || evtType === "tool_end" || evtType === "tool_detail";
+    if (!isStreamingTool || VISIBLE_TOOL_NAMES.has(toolName)) {
+      updateCardActivity(data.name, {
+        eventType: evtType,
+        toolName,
+        toolId: data.tool_id,
+        isError: data.is_error,
+        detail: data.detail,
+        summary: data.summary || "",
+        content: data.content || "",
+        from_person: data.from_person || "",
+        to_person: data.to_person || "",
+        channel: data.channel || "",
+      });
+    }
     if (evtType === "message_sent" && data.to_person) {
       if (getCurrentView() === "org") {
         const intent = data.meta?.intent || "";
