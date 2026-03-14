@@ -5,7 +5,7 @@ Read, Write, Edit, Bash, Grep, Glob
 
 ## Readable Locations
 - Your directory and all subdirectories
-- /shared/ and subdirectories
+- {animaworks_home}/shared/
 
 ## Writable Locations
 - Your directory and all subdirectories

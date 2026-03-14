@@ -5,7 +5,7 @@ Read, Write, Edit, Bash, Grep, Glob
 
 ## 読める場所
 - 自分のディレクトリ配下すべて
-<!-- shared/, common_knowledge/, common_skills/, company/ は自動許可 -->
+- {animaworks_home}/shared/
 
 ## 書ける場所
 - 自分のディレクトリ配下すべて
