@@ -377,6 +377,14 @@ def main() -> None:
     test_message = sys.argv[2] if len(sys.argv) > 2 else "mcpサーバーツールはあなたは知っていますか"
     trigger = sys.argv[3] if len(sys.argv) > 3 else ""
 
+    # Normalize shorthand triggers to match builder.py's startswith() checks
+    _TRIGGER_NORMALIZE: dict[str, str] = {
+        "inbox": "inbox:debug",
+        "task": "task:debug",
+        "cron": "cron:debug",
+    }
+    trigger = _TRIGGER_NORMALIZE.get(trigger, trigger)
+
     # ── Resolve paths ──────────────────────────────────────
     from core.paths import get_data_dir, get_shared_dir
 

@@ -1079,8 +1079,8 @@ def build_system_prompt(
     if not is_task:
         _add(_ss.get("group6_header", "# 6. Meta Settings"), "group6_header", 1)
 
-    # emotion: skip for background-auto (heartbeat/cron) and task
-    if not is_background_auto and not is_task:
+    # emotion: chat only (UI avatar expression; useless for inbox/background/task)
+    if is_chat:
         _ei = (_prompt_store.get_section("emotion_instruction") if _prompt_store else None) or EMOTION_INSTRUCTION
         if _ei:
             _add(_ei, "emotion_instruction", 4)
