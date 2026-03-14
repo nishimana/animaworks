@@ -679,6 +679,9 @@ class PendingTaskExecutor:
             file_paths=paths_text,
         )
 
+        if "machine" in description.lower():
+            prompt += "\n\n" + t("pending_executor.machine_directive")
+
         trigger = f"task:{task_id}"
         journal = StreamingJournal(self._anima_dir, session_type="task_exec")
         journal.open(trigger=trigger)

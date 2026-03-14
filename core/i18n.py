@@ -970,6 +970,18 @@ _STRINGS: dict[str, dict[str, str]] = {
         "en": "Task completed: {title} — {result}",
     },
     "pending_executor.task_exec_start": {"ja": "タスク実行開始: {title}", "en": "Task execution started: {title}"},
+    "pending_executor.machine_directive": {
+        "ja": (
+            "🔴 MUST: machineツール使用が指定されたタスクです。\n"
+            "5ステップ以上の重い処理は animaworks-tool machine run で外部エージェントに必ず委託し、\n"
+            "出力を検証の上、不十分なら再度machineで修正してください。"
+        ),
+        "en": (
+            "🔴 MUST: This task specifies the use of the machine tool.\n"
+            "Delegate heavy work (5+ steps) to an external agent via animaworks-tool machine run.\n"
+            "Verify the output and re-run machine if the result is insufficient."
+        ),
+    },
     # ── priming.* (i18n) ──────────────────────────────
     "priming.active_parallel_tasks_header": {"ja": "## 実行中の並列タスク", "en": "## Active Parallel Tasks"},
     "priming.completed_bg_tasks_header": {
