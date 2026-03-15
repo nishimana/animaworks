@@ -33,7 +33,7 @@ def _ensure_init(runtime_dir: Path) -> None:
     if (runtime_dir / "config.json").exists():
         return
     logger.info("Initializing isolated runtime at %s ...", runtime_dir)
-    env = {**__import__("os").environ, "ANIMAWORKS_HOME": str(runtime_dir)}
+    env = {**__import__("os").environ, "ANIMAWORKS_DATA_DIR": str(runtime_dir)}
     subprocess.run(
         [sys.executable, "-m", "main", "init", "--skip-anima"],
         check=True,

@@ -44,39 +44,6 @@ INSTANCE_TIMEOUT = 1800  # 30 minutes per instance
 # ── SSE Client ────────────────────────────────────────────────
 
 
-async def chat_stream(
-    base_url: str,
-    anima_name: str,
-    message: str,
-    timeout: float = CHAT_TIMEOUT,
-) -> str:
-    """Send a chat message via SSE streaming, return the full response text."""
-    url = f"{base_url}/api/animas/{anima_name}/chat/stream"
-    full_text = ""
-
-    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=30.0)) as client:
-        async with client.stream("POST", url, json={"message": message}) as resp:
-            resp.raise_for_status()
-            async for raw_line in resp.aiter_lines():
-                if not raw_line.startswith("data: "):
-                    continue
-                try:
-                    payload = json.loads(raw_line[6:])
-                except json.JSONDecodeError:
-                    continue
-
-                # Check the SSE event type from preceding 'event:' line
-                # httpx aiter_lines gives us each line separately
-                if "text" in payload:
-                    full_text += payload["text"]
-                if payload.get("type") == "error" or "error" in payload:
-                    err = payload.get("message", payload.get("error", "unknown"))
-                    logger.error("SSE error from %s: %s", anima_name, err)
-                    break
-
-    return full_text.strip()
-
-
 async def chat_sse(
     base_url: str,
     anima_name: str,
@@ -128,7 +95,7 @@ def start_server(port: int = DEFAULT_PORT, runtime_dir: Path | None = None) -> s
     logger.info("Starting AnimaWorks server on port %d ...", port)
     env = {**os.environ}
     if runtime_dir:
-        env["ANIMAWORKS_HOME"] = str(runtime_dir)
+        env["ANIMAWORKS_DATA_DIR"] = str(runtime_dir)
         logger.info("Using isolated runtime: %s", runtime_dir)
     proc = subprocess.Popen(
         [sys.executable, "-m", "main", "start", "--foreground", "--port", str(port)],

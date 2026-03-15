@@ -10,3 +10,4 @@ services:
     volumes:
       - ./results:/app/swe/results
     working_dir: /app
+    command: ["--setup-team", "--test"]

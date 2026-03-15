@@ -28,7 +28,7 @@ RUN pip install --no-cache-dir -e . && \
 
 COPY swe/ swe/
 
-ENV ANIMAWORKS_HOME=/root/.animaworks
+ENV ANIMAWORKS_DATA_DIR=/root/.animaworks
 ENV PYTHONUNBUFFERED=1
 
 ENTRYPOINT ["python3", "swe/runner.py"]
