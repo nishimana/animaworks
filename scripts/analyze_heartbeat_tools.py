@@ -151,7 +151,7 @@ def main() -> None:
             print(f"\n  [{s['anima']}] {s['date']} | {s['duration_min']}分")
             print(f"    開始: {s['start']}")
             print(f"    終了: {s['end']}")
-            print(f"    ツール呼び出し:")
+            print("    ツール呼び出し:")
             for tool, cnt in sorted(s["tool_counts"].items(), key=lambda x: -x[1])[:15]:
                 heavy = " (重い)" if tool in HEAVY_TOOLS else ""
                 print(f"      - {tool}: {cnt}回{heavy}")

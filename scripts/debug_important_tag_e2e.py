@@ -160,9 +160,9 @@ def main() -> None:
 
         full_text = (result.related_knowledge or "") + (result.episodes or "")
         if "[IMPORTANT]" in full_text or "インシデント" in full_text or "SQL" in full_text:
-            print(f"\n  ✅ Priming successfully recalled [IMPORTANT]-tagged knowledge!")
+            print("\n  ✅ Priming successfully recalled [IMPORTANT]-tagged knowledge!")
         else:
-            print(f"\n  ❌ [IMPORTANT] knowledge was NOT found in priming output")
+            print("\n  ❌ [IMPORTANT] knowledge was NOT found in priming output")
 
     asyncio.run(test_priming())
 
@@ -174,7 +174,7 @@ def main() -> None:
     print(f"  Step 2 (Metadata):    {len(important_chunks)} chunks with importance=important")
     print(f"  Step 3 (Boost):       {'✅' if boosted_found else '❌'} +{WEIGHT_IMPORTANCE} score boost")
     print(f"  Step 4 (Forgetting):  {'✅' if protected_count > 0 else '❌'} {protected_count} protected")
-    print(f"  Step 5 (Priming):     (see above)")
+    print("  Step 5 (Priming):     (see above)")
     print()
 
 
