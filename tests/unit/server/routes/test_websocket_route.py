@@ -5,13 +5,16 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI, WebSocketDisconnect
 from fastapi.testclient import TestClient
 
+from core.auth.models import AuthConfig
 from server.routes.websocket_route import create_websocket_router
 from server.websocket import WebSocketManager
+
+_LOCAL_TRUST_AUTH = AuthConfig(auth_mode="local_trust")
 
 
 class TestWebSocketRoute:
@@ -23,8 +26,9 @@ class TestWebSocketRoute:
         app.include_router(router)
 
         client = TestClient(app)
-        with client.websocket_connect("/ws") as ws:
-            assert len(ws_manager.active_connections) == 1
+        with patch("server.routes.websocket_route.load_auth", return_value=_LOCAL_TRUST_AUTH):
+            with client.websocket_connect("/ws") as ws:
+                assert len(ws_manager.active_connections) == 1
 
         # After disconnect
         assert len(ws_manager.active_connections) == 0
@@ -37,9 +41,10 @@ class TestWebSocketRoute:
         app.include_router(router)
 
         client = TestClient(app)
-        with client.websocket_connect("/ws") as ws:
-            # Send a message (the route just receives and discards)
-            ws.send_text("ping")
+        with patch("server.routes.websocket_route.load_auth", return_value=_LOCAL_TRUST_AUTH):
+            with client.websocket_connect("/ws") as ws:
+                # Send a message (the route just receives and discards)
+                ws.send_text("ping")
 
 
 class TestWebSocketRouteExceptionHandling:
@@ -67,7 +72,8 @@ class TestWebSocketRouteExceptionHandling:
         # Mock the app attribute on ws so ws.app.state.ws_manager works
         ws.app = app
 
-        await endpoint(ws)
+        with patch("server.routes.websocket_route.load_auth", return_value=_LOCAL_TRUST_AUTH):
+            await endpoint(ws)
 
         ws_manager.connect.assert_awaited_once_with(ws)
         ws_manager.disconnect.assert_called_once_with(ws)
@@ -90,7 +96,8 @@ class TestWebSocketRouteExceptionHandling:
         endpoint = router.routes[0].endpoint
         ws.app = app
 
-        await endpoint(ws)
+        with patch("server.routes.websocket_route.load_auth", return_value=_LOCAL_TRUST_AUTH):
+            await endpoint(ws)
 
         ws_manager.connect.assert_awaited_once_with(ws)
         ws_manager.disconnect.assert_called_once_with(ws)
@@ -116,7 +123,8 @@ class TestWebSocketRouteExceptionHandling:
         endpoint = router.routes[0].endpoint
         ws.app = app
 
-        await endpoint(ws)
+        with patch("server.routes.websocket_route.load_auth", return_value=_LOCAL_TRUST_AUTH):
+            await endpoint(ws)
 
         ws_manager.handle_client_message.assert_awaited_once_with(ws, '{"type": "pong"}')
         ws_manager.disconnect.assert_called_once_with(ws)

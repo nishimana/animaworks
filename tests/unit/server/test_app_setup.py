@@ -10,6 +10,10 @@ from unittest.mock import MagicMock, patch
 
 from httpx import ASGITransport, AsyncClient
 
+from core.auth.models import AuthConfig
+
+_LOCAL_TRUST_AUTH = AuthConfig(auth_mode="local_trust")
+
 
 def _make_app(setup_complete: bool, tmp_path: Path):
     """Build a test app with the setup guard middleware."""
@@ -111,8 +115,10 @@ class TestSetupGuardComplete:
     async def test_dashboard_api_accessible(self, tmp_path: Path):
         app = _make_app(True, tmp_path)
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/animas")
+        # Patch auth guard to use local_trust so test requests bypass authentication
+        with patch("server.app.load_auth", return_value=_LOCAL_TRUST_AUTH):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get("/api/animas")
 
         # Should get 200 (even if empty list)
         assert resp.status_code == 200
@@ -192,7 +198,8 @@ class TestSetupGuardTransition:
             resp = await client.get("/api/setup/detect-locale")
             assert resp.status_code == 403
 
-        # And dashboard API should work
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/animas")
-            assert resp.status_code == 200
+        # And dashboard API should work (patch auth guard to bypass authentication)
+        with patch("server.app.load_auth", return_value=_LOCAL_TRUST_AUTH):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get("/api/animas")
+                assert resp.status_code == 200
