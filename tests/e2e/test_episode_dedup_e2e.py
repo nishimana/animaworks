@@ -143,9 +143,11 @@ class TestDifferentialFinalizationE2E:
         episode_content = episode_path.read_text(encoding="utf-8")
         assert "サーバー障害修正とデプロイタスク" in episode_content
 
-        # Verify state was updated
-        state_content = (anima_dir / "state" / "current_state.md").read_text(encoding="utf-8")
-        assert "デプロイ作業" in state_content
+        # Verify new task was routed to task_queue.jsonl (Issue #114)
+        from core.memory.task_queue import TaskQueueManager
+        tqm = TaskQueueManager(anima_dir)
+        active = tqm.load_active_tasks()
+        assert any("デプロイ作業" in t.summary for t in active.values())
 
         # Verify resolution was recorded
         from core.memory.manager import MemoryManager
