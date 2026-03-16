@@ -38,6 +38,7 @@ read_memory_file(path="reference/anatomy/anima-anatomy.md")  # Example
 | `model-guide.md` | Model selection, execution modes, context window details |
 | `mode-s-auth-guide.md` | Mode S authentication modes (API/Bedrock/Vertex/Max) |
 | `voice-chat-guide.md` | Voice chat architecture, STT/TTS, installation |
+| `browser-automation-guide.md` | Headless browser automation with agent-browser |
 
 ### organization/ — Organization Structure Internals
 

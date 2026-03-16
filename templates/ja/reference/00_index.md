@@ -38,6 +38,7 @@ read_memory_file(path="reference/anatomy/anima-anatomy.md")  # 例
 | `model-guide.md` | モデル選択・実行モード・コンテキストウィンドウの技術詳細 |
 | `mode-s-auth-guide.md` | Mode S 認証モード設定（API/Bedrock/Vertex/Max） |
 | `voice-chat-guide.md` | 音声チャットのアーキテクチャ・STT/TTS・インストール |
+| `browser-automation-guide.md` | agent-browserによるヘッドレスブラウザ操作 |
 
 ### organization/ — 組織構造の仕組み
 
