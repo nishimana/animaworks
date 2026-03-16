@@ -126,7 +126,7 @@ animaworks/
 │   └── tools/                 # 外部ツール実装
 │       ├── web_search.py, x_search.py, slack.py
 │       ├── chatwork.py, gmail.py, github.py
-│       ├── google_calendar.py, call_human.py
+│       ├── google_calendar.py, google_tasks.py, call_human.py
 │       ├── transcribe.py, aws_collector.py
 │       ├── image_gen.py       #   画像・3Dモデル生成
 │       └── local_llm.py
@@ -836,7 +836,7 @@ Group 6: メタ設定
 - **永続タスクキュー** — task_queue.jsonl。滞留検知・DAG並列実行（submit_tasks）・委任プロンプト注入
 - **解決レジストリ** — shared/resolutions.jsonlによるAnima横断の課題解決追跡
 - **人間通知** — call_human 統合。Slack, Chatwork, LINE, Telegram, ntfy チャネル
-- **外部ツール** — web_search, x_search, slack, chatwork, gmail, github, google_calendar, transcribe, aws_collector, local_llm, image_gen, call_human
+- **外部ツール** — web_search, x_search, slack, chatwork, gmail, github, google_calendar, google_tasks, transcribe, aws_collector, local_llm, image_gen, call_human
 
 ### 11.1 内部ツール一覧
 

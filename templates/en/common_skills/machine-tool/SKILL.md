@@ -12,16 +12,6 @@ tags: [machine, agent, external, delegation]
 Delegate tasks to external agent CLIs.
 Offload heavy work like code changes, investigation, and analysis to external agents.
 
-## Engines and Default
-
-Available engines and the default **vary by environment**. Always check first:
-
-```bash
-animaworks-tool machine run --help
-```
-
-Omitting `-e` uses the system-selected default engine.
-
 ## Design Philosophy
 
 You are the **craftsperson**. The machine is a **machine tool** (CNC, laser cutter, etc.).
@@ -29,45 +19,38 @@ A machine tool can cut with incredible precision, but it doesn't decide what to 
 It has no memory, no communication, no identity.
 **Your job is to provide precise blueprints (instructions).**
 
-## CLI Usage (Mode S)
+## CLI Usage
 
 ```bash
-# Basic (default engine auto-selected)
-animaworks-tool machine run "detailed instruction" -d /path/to/workdir
+animaworks-tool machine run [options] "instruction" -d /path/to/workdir
+```
 
-# Explicitly specify engine
+### CLI Options
+
+| Option | Description |
+|--------|-------------|
+| `-e ENGINE` | Engine selection (omit for auto-selected default; use `-h` to list available engines) |
+| `-d PATH` | Working directory (default: current directory) |
+| `-t SECONDS` | Timeout in seconds (default: 600s sync, 1800s background) |
+| `-m MODEL` | Model override (default: engine's default) |
+| `--background` | Background execution (1800s timeout; output streams to `state/cmd_output/`) |
+| `-j / --json` | Output result as JSON |
+
+### Basic Examples
+
+```bash
+# Minimal (default engine, current directory)
+animaworks-tool machine run "detailed instruction"
+
+# Specify engine and directory
 animaworks-tool machine run -e cursor-agent "instruction" -d /path/to/workdir
-animaworks-tool machine run -e claude "instruction" -d /path/to/workdir
 
-# Override model
-animaworks-tool machine run -e claude -m claude-sonnet-4-6 "instruction" -d /path/to/workdir
-
-# Background execution (results retrieved at next heartbeat)
+# Background execution
 animaworks-tool machine run --background "instruction" -d /path/to/workdir
 
-# Timeout in seconds
+# Custom timeout
 animaworks-tool machine run -t 300 "instruction" -d /path/to/workdir
 ```
-
-## Bash Invocation (Mode A/B)
-
-Use **Bash** with `animaworks-tool machine run [options] "instruction" -d /path/to/workdir`:
-
-```bash
-animaworks-tool machine run -e cursor-agent "instruction" -d /path/to/workdir
-animaworks-tool machine run --background "instruction" -d /path/to/workdir
-```
-
-## Parameters
-
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| engine | YES | Engine name (check `--help` for available engines) |
-| instruction | YES | Task instruction. Specify goal, target, constraints, expected output |
-| working_directory | YES | Working directory. Absolute path, or workspace alias (e.g., `aischreiber` / `aischreiber#3af4be6e`) |
-| background | no | true for async execution (default: false) |
-| model | no | Model override (engine default if omitted) |
-| timeout | no | Timeout in seconds (sync: 600, async: 1800) |
 
 ## Writing Good Instructions (Important)
 
@@ -77,6 +60,45 @@ Vague instructions lead to poor results. Always include:
 2. **Target files/modules** — What to modify
 3. **Constraints** — Coding conventions, API compatibility, etc.
 4. **Expected output** — Code, report, diff, etc.
+
+### Pass Long Instructions via File
+
+Instructions containing Bash special characters (`|`, `` ` ``, `$`) will cause shell errors
+if passed directly. Write to a file first:
+
+```bash
+# Write instruction to file
+cat > /tmp/instruction.txt << 'INSTRUCTION'
+## Task: PR #2087 Code Review
+
+| Aspect | Check |
+|--------|-------|
+| Correctness | Meets issue requirements |
+| Maintainability | Readability, tests, SRP |
+
+Target file: `app/Services/Movacal/MovacalApiClient.php`
+INSTRUCTION
+
+# Read from file and execute
+animaworks-tool machine run "$(cat /tmp/instruction.txt)" -d /path/to/workdir
+```
+
+## Parallel Execution (`--background`)
+
+Use `--background` to run multiple machines simultaneously.
+Output streams in real-time to `state/cmd_output/`.
+
+### 3-Parallel Review Example
+
+```bash
+# Launch 3 review perspectives in parallel
+animaworks-tool machine run --background "Correctness review..." -d /path &
+animaworks-tool machine run --background "Maintainability review..." -d /path &
+animaworks-tool machine run --background "Consistency review..." -d /path &
+wait
+
+# Check results (Read files from state/cmd_output/)
+```
 
 ## When to Use
 
@@ -93,4 +115,4 @@ Vague instructions lead to poor results. Always include:
 
 - Machine tools have NO access to AnimaWorks infrastructure (no memory, messaging, or org info)
 - Rate limited (5 per session, 2 per heartbeat)
-- background=true results are written to `state/background_notifications/` and retrieved at next heartbeat
+- Background output streams to `state/cmd_output/`, check with Read/Glob

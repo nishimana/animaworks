@@ -631,7 +631,7 @@ USE_TOOL: list[dict[str, Any]] = [
                         "External tool module name "
                         "(e.g. 'chatwork', 'slack', 'gmail', 'web_search', "
                         "'github', 'aws_collector', 'image_gen', 'x_search', "
-                        "'transcribe', 'local_llm', 'google_calendar')"
+                        "'transcribe', 'local_llm', 'google_calendar', 'google_tasks')"
                     ),
                 },
                 "action": {

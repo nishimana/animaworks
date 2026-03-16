@@ -740,6 +740,33 @@ class TestCliMain:
         with patch("core.tools.machine.shutil.which", return_value=None), pytest.raises(SystemExit):
             cli_main(["run", "test", "-d", str(tmp_path)])
 
+    def test_run_background_flag_sets_async_timeout(self, tmp_path, capsys):
+        from core.tools.machine import _DEFAULT_TIMEOUT_ASYNC, cli_main
+
+        with patch("core.tools.machine.shutil.which", return_value="/usr/bin/claude"):
+            mock_proc = MagicMock()
+            mock_proc.stdout = iter(["bg output\n"])
+            mock_proc.stderr = iter([""])
+            mock_proc.stdin = MagicMock()
+            mock_proc.returncode = 0
+            mock_proc.pid = 99999
+            mock_proc.wait = MagicMock(return_value=None)
+            with patch("core.tools.machine.subprocess.Popen", return_value=mock_proc) as mock_popen:
+                with patch("core.tools.machine._execute", wraps=None) as mock_exec:
+                    mock_exec.return_value = ToolResult(success=True, text="bg done")
+                    cli_main(["run", "--background", "test bg", "-d", str(tmp_path)])
+                    mock_exec.assert_called_once()
+                    call_kwargs = mock_exec.call_args
+                    assert call_kwargs.kwargs.get("timeout") == _DEFAULT_TIMEOUT_ASYNC or call_kwargs[1].get("timeout") == _DEFAULT_TIMEOUT_ASYNC
+
+    def test_run_background_appears_in_help(self, capsys):
+        from core.tools.machine import cli_main
+
+        with pytest.raises(SystemExit):
+            cli_main(["run", "--help"])
+        captured = capsys.readouterr()
+        assert "--background" in captured.out
+
 
 # ── Auto-Discovery Test ───────────────────────────────────
 

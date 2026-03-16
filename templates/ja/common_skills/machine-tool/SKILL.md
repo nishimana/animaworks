@@ -11,16 +11,6 @@ tags: [machine, agent, external, delegation]
 外部エージェントCLI にタスクを委託するツール。
 コード変更・調査・分析など、自分で直接やると重い作業を外部エージェントに丸投げできる。
 
-## エンジンとデフォルト
-
-利用可能なエンジンとデフォルトは**環境によって異なる**。必ず以下で確認すること:
-
-```bash
-animaworks-tool machine run --help
-```
-
-`-e` を省略するとシステムが選んだデフォルトエンジンが使われる。
-
 ## 設計思想
 
 あなたは**棟梁（craftsperson）**。machineは**工作機械（CNC、レーザーカッター等）**。
@@ -29,36 +19,36 @@ animaworks-tool machine run --help
 
 ## 呼び出し方法
 
-**Bash**: `animaworks-tool machine run [オプション] "指示" -d /path/to/workdir` で実行
-
 ```bash
-# 基本形（デフォルトエンジンが自動選択される）
-animaworks-tool machine run "詳細な作業指示" -d /path/to/workdir
-
-# エンジンを明示的に指定
-animaworks-tool machine run -e cursor-agent "指示" -d /path/to/workdir
-animaworks-tool machine run -e claude "指示" -d /path/to/workdir
-
-# モデル上書き
-animaworks-tool machine run -e claude -m claude-sonnet-4-6 "指示" -d /path/to/workdir
-
-# バックグラウンド実行（結果は次回heartbeatで取得）
-animaworks-tool machine run --background "指示" -d /path/to/workdir
-
-# タイムアウト指定（秒）
-animaworks-tool machine run -t 300 "指示" -d /path/to/workdir
+animaworks-tool machine run [オプション] "指示" -d /path/to/workdir
 ```
 
-## パラメータ
+### CLIオプション一覧
 
-| パラメータ | 必須 | 説明 |
-|-----------|------|------|
-| engine | YES | エンジン名（`--help` で利用可能なエンジンを確認） |
-| instruction | YES | 作業指示。ゴール・対象・制約・期待出力を明記 |
-| working_directory | YES | 作業ディレクトリ。絶対パス、またはワークスペースエイリアス（例: `aischreiber` / `aischreiber#3af4be6e`） |
-| background | no | true で非同期実行（デフォルト: false） |
-| model | no | モデル上書き（省略時はエンジンのデフォルト） |
-| timeout | no | タイムアウト秒数（同期: 600、非同期: 1800） |
+| オプション | 説明 |
+|-----------|------|
+| `-e ENGINE` | エンジン指定（省略時: デフォルトが自動選択される。指定する場合は `-h` で一覧確認） |
+| `-d PATH` | 作業ディレクトリ（省略時: カレントディレクトリ） |
+| `-t SECONDS` | タイムアウト秒数（デフォルト: 同期600秒、バックグラウンド1800秒） |
+| `-m MODEL` | モデル上書き（省略時: エンジンのデフォルト） |
+| `--background` | バックグラウンド実行（タイムアウト1800秒。出力は `state/cmd_output/` にストリーミング） |
+| `-j / --json` | 結果をJSON形式で出力 |
+
+### 基本例
+
+```bash
+# 最小限（デフォルトエンジン・カレントディレクトリ）
+animaworks-tool machine run "詳細な作業指示"
+
+# エンジンとディレクトリを指定
+animaworks-tool machine run -e cursor-agent "指示" -d /path/to/workdir
+
+# バックグラウンド実行
+animaworks-tool machine run --background "指示" -d /path/to/workdir
+
+# タイムアウト指定
+animaworks-tool machine run -t 300 "指示" -d /path/to/workdir
+```
 
 ## instruction の書き方（重要）
 
@@ -68,6 +58,45 @@ animaworks-tool machine run -t 300 "指示" -d /path/to/workdir
 2. **対象ファイル・モジュール** — どこを触るか
 3. **制約条件** — コーディング規約、既存APIとの整合性等
 4. **期待する出力形式** — コード、レポート、diff等
+
+### 長い instruction はファイル経由で渡す
+
+Bash特殊文字（`|`, `` ` ``, `$`）を含む長い指示は、直接引数にするとシェルエラーになる。
+ファイルに書いてから渡す:
+
+```bash
+# ファイルに指示を書き出す
+cat > /tmp/instruction.txt << 'INSTRUCTION'
+## タスク: PR #2087 コードレビュー
+
+| 観点 | 確認内容 |
+|------|---------|
+| 正しさ | Issue要件を満たしているか |
+| 保守性 | 読みやすさ・テスト・責務分離 |
+
+対象ファイル: `app/Services/Movacal/MovacalApiClient.php`
+INSTRUCTION
+
+# ファイルから読み込んで実行
+animaworks-tool machine run "$(cat /tmp/instruction.txt)" -d /path/to/workdir
+```
+
+## 並列実行（`--background`）
+
+`--background` を使えば複数のmachineを同時に起動できる。
+出力は `state/cmd_output/` にリアルタイムでストリーミングされる。
+
+### 3並列レビューの例
+
+```bash
+# 3つの観点を並列で起動
+animaworks-tool machine run --background "Correctness観点でレビュー..." -d /path &
+animaworks-tool machine run --background "Maintainability観点でレビュー..." -d /path &
+animaworks-tool machine run --background "Consistency観点でレビュー..." -d /path &
+wait
+
+# 結果を確認（state/cmd_output/ のファイルをReadで読む）
+```
 
 ## 使い分けの目安
 
@@ -84,4 +113,4 @@ animaworks-tool machine run -t 300 "指示" -d /path/to/workdir
 
 - 工作機械はAnimaWorksインフラにアクセスできない（記憶・メッセージ・組織情報なし）
 - レート制限あり（セッション5回、heartbeat2回）
-- background=true の結果は `state/background_notifications/` に書かれ、次回heartbeatで確認
+- background実行の出力は `state/cmd_output/` にストリーミングされ、Read/Globで確認可能

@@ -126,7 +126,7 @@ animaworks/
 │   └── tools/                 # External tool implementations
 │       ├── web_search.py, x_search.py, slack.py
 │       ├── chatwork.py, gmail.py, github.py
-│       ├── google_calendar.py, call_human.py
+│       ├── google_calendar.py, google_tasks.py, call_human.py
 │       ├── transcribe.py, aws_collector.py
 │       ├── image_gen.py       #   Image and 3D model generation
 │       └── local_llm.py
@@ -836,7 +836,7 @@ Including "Making decisions without searching memory is prohibited" in `behavior
 - **submit_tasks** — DAG-based parallel task execution with dependency resolution
 - **FastAPI server** — REST + WebSocket + Web UI (3D office, conversation view)
 - **Voice chat** — WebSocket /ws/voice/{name}. STT (faster-whisper) → Chat IPC → TTS (VOICEVOX/ElevenLabs/SBV2)
-- **External tools** — web_search, x_search, slack, chatwork, gmail, github, transcribe, aws_collector, local_llm, image_gen, google_calendar, call_human
+- **External tools** — web_search, x_search, slack, chatwork, gmail, github, transcribe, aws_collector, local_llm, image_gen, google_calendar, google_tasks, call_human
 - **Anima creation** — From template / blank (_blank) / MD file (create --from-md)
 - **Skill progressive disclosure** — Only matched skill names injected. Full text loaded on demand via `skill` tool
 - **External messaging integration** — Slack Socket Mode (real-time bidirectional), Chatwork Webhook (inbound)
