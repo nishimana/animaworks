@@ -93,7 +93,7 @@ class TestDelegateTaskWritesPending:
 
         with patch("core.paths.get_animas_dir", return_value=animas_dir), \
              patch("core.config.models.load_config", return_value=cfg), \
-             patch("core.tooling.handler_org.build_outgoing_origin_chain", return_value=["anima"]):
+             patch("core.tooling.handler_delegation.build_outgoing_origin_chain", return_value=["anima"]):
             result = handler.handle("delegate_task", {
                 "name": "alice",
                 "instruction": "Implement the login form",
@@ -121,7 +121,7 @@ class TestDelegateTaskWritesPending:
 
         with patch("core.paths.get_animas_dir", return_value=animas_dir), \
              patch("core.config.models.load_config", return_value=cfg), \
-             patch("core.tooling.handler_org.build_outgoing_origin_chain", return_value=["anima"]):
+             patch("core.tooling.handler_delegation.build_outgoing_origin_chain", return_value=["anima"]):
             handler.handle("delegate_task", {
                 "name": "alice",
                 "instruction": "Do something",
@@ -144,7 +144,7 @@ class TestDelegateTaskWritesPending:
 
         with patch("core.paths.get_animas_dir", return_value=animas_dir), \
              patch("core.config.models.load_config", return_value=cfg), \
-             patch("core.tooling.handler_org.build_outgoing_origin_chain", return_value=["anima"]):
+             patch("core.tooling.handler_delegation.build_outgoing_origin_chain", return_value=["anima"]):
             handler.handle("delegate_task", {
                 "name": "alice",
                 "instruction": "Test instruction",
