@@ -175,7 +175,7 @@ class LiteLLMExecutor(
             )
 
             # ── Pre-flight: clamp max_tokens to fit context window ──
-            iter_kwargs = self._preflight_clamp(
+            iter_kwargs = await self._preflight_clamp_with_compaction(
                 llm_kwargs,
                 messages,
                 iter_tools,

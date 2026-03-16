@@ -378,7 +378,7 @@ class ToolHandler(
 
     # ── Main dispatch ────────────────────────────────────────
 
-    _MAX_TOOL_OUTPUT_BYTES = 512_000
+    _MAX_TOOL_OUTPUT_BYTES = 50_000
 
     def handle(self, name: str, args: dict[str, Any], tool_use_id: str | None = None) -> str:
         """Synchronous tool call dispatch.

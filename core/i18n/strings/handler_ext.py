@@ -125,8 +125,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Success",
     },
     "handler.output_truncated": {
-        "ja": "[出力が500KBを超えたためトランケーションしました。元のサイズ: {size}]",
-        "en": "[Output truncated because it exceeded 500KB. Original size: {size}]",
+        "ja": "[出力が50KBを超えたためトランケーションしました。元のサイズ: {size}]",
+        "en": "[Output truncated because it exceeded 50KB. Original size: {size}]",
     },
     "handler.peer_activity": {
         "ja": "同僚のactivity_log（読み取り専用）",

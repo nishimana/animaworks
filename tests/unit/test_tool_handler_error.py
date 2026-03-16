@@ -36,6 +36,7 @@ def _make_handler(tmp_path: Path) -> ToolHandler:
 class TestToolHandlerTopLevelCatch:
     def test_unhandled_exception_raises_tool_execution_error(self, tmp_path):
         from core.exceptions import ToolExecutionError
+
         handler = _make_handler(tmp_path)
         handler._dispatch["search_memory"] = MagicMock(side_effect=RuntimeError("boom"))
         with pytest.raises(ToolExecutionError, match="search_memory.*boom"):
@@ -154,5 +155,5 @@ class TestToolOutputTruncation:
         large_output = "a" * 600_000
         result = handler._truncate_output(large_output)
         assert "トランケーション" in result
-        assert "500KB" in result
+        assert "50KB" in result
         assert "600000" in result

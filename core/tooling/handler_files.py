@@ -19,6 +19,11 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from core.tooling.handler_base import (
+    _CMD_HEAD_BYTES,
+    _CMD_TAIL_BYTES,
+    _CMD_TRUNCATE_BYTES,
+    _GLOB_MAX_ENTRIES,
+    _GREP_MAX_MATCHES,
     _NEEDS_SHELL_RE,
     _READ_AVG_LINE_LENGTH,
     _READ_CHARS_PER_TOKEN,
@@ -625,7 +630,12 @@ class FileToolsMixin:
                 proc.returncode,
                 use_shell,
             )
-            return output[:50_000] or f"(exit code {proc.returncode})"
+            if len(output.encode("utf-8", errors="replace")) > _CMD_TRUNCATE_BYTES:
+                encoded = output.encode("utf-8", errors="replace")
+                head = encoded[:_CMD_HEAD_BYTES].decode("utf-8", errors="ignore")
+                tail = encoded[-_CMD_TAIL_BYTES:].decode("utf-8", errors="ignore")
+                output = f"{head}\n\n... [truncated: {len(encoded)} bytes total] ...\n\n{tail}"
+            return output or f"(exit code {proc.returncode})"
         except subprocess.TimeoutExpired:
             return _error_result(
                 "Timeout",
@@ -675,7 +685,7 @@ class FileToolsMixin:
 
         glob_pattern = args.get("glob", "")
         matches: list[str] = []
-        max_matches = 50
+        max_matches = _GREP_MAX_MATCHES
 
         if search_path.is_file():
             files = [search_path]
@@ -739,7 +749,7 @@ class FileToolsMixin:
         recursive = args.get("recursive", False)
 
         entries: list[str] = []
-        max_entries = 200
+        max_entries = _GLOB_MAX_ENTRIES
 
         if pattern:
             if recursive:

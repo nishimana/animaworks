@@ -58,4 +58,12 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "エラー: 不明なツール '{tool_name}' です。利用可能なツール: {available}",
         "en": "Error: Unknown tool '{tool_name}'. Available tools: {available}",
     },
+    "litellm_context.compact_system": {
+        "ja": "以下のAIアシスタントと人間の作業会話を簡潔に要約してください。主要な発見、決定事項、ツール結果、未完了の項目をすべて保持してください。要約のみを出力してください。",
+        "en": "Summarize the following work conversation between an AI assistant and a human concisely. Preserve all key findings, decisions, tool results, and pending items. Output only the summary.",
+    },
+    "litellm_context.compact_summary_prefix": {
+        "ja": "[前回の作業要約]",
+        "en": "[Previous work summary]",
+    },
 }
