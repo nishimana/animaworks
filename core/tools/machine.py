@@ -56,6 +56,7 @@ def _next_machine_id() -> str:
         _machine_counter += 1
         return f"machine_{_machine_counter}"
 
+
 from core.i18n import t
 from core.tools._base import ToolResult
 
@@ -390,9 +391,7 @@ def _stream_to_file(
                     total_bytes += len(line.encode("utf-8", errors="replace"))
                     if total_bytes > max_bytes:
                         truncated = True
-                        f.write(
-                            f"\n... (output truncated at {max_bytes // (1024 * 1024)} MB) ...\n"
-                        )
+                        f.write(f"\n... (output truncated at {max_bytes // (1024 * 1024)} MB) ...\n")
                         f.flush()
                         break
                     f.write(f"{prefix}{line}")
@@ -406,9 +405,7 @@ def _stream_to_file(
                 pass
 
     stdout_thread = _threading.Thread(target=_drain, args=(proc.stdout,), daemon=True)
-    stderr_thread = _threading.Thread(
-        target=_drain, args=(proc.stderr, "[stderr] "), daemon=True
-    )
+    stderr_thread = _threading.Thread(target=_drain, args=(proc.stderr, "[stderr] "), daemon=True)
     stdout_thread.start()
     stderr_thread.start()
 
@@ -526,10 +523,7 @@ def _execute(
             raw_output = ""
 
         if len(raw_output) > _MAX_OUTPUT_CHARS:
-            raw_output = (
-                raw_output[:_MAX_OUTPUT_CHARS]
-                + f"\n\n... (truncated at {_MAX_OUTPUT_CHARS} chars)"
-            )
+            raw_output = raw_output[:_MAX_OUTPUT_CHARS] + f"\n\n... (truncated at {_MAX_OUTPUT_CHARS} chars)"
 
         if timed_out:
             return ToolResult(

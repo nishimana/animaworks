@@ -6,13 +6,17 @@ from __future__ import annotations
 
 """FileToolsMixin — file read/write/edit, command execution, search, directory listing, web fetch."""
 
+import json as _json
 import logging
+import os
 import re
 import shlex
+import signal
 import subprocess
 import threading
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from core.tooling.handler_base import (
     _NEEDS_SHELL_RE,
@@ -26,11 +30,6 @@ from core.tooling.handler_base import (
     _error_result,
     _extract_first_heading,
 )
-import json as _json
-import os
-import signal
-import time
-from typing import ClassVar
 
 logger = logging.getLogger("animaworks.tool_handler")
 
@@ -113,7 +112,7 @@ class CommandRunner:
 
     _counter: ClassVar[int] = 0
     _counter_lock: ClassVar[threading.Lock] = threading.Lock()
-    _active: ClassVar[dict[str, "CommandRunner"]] = {}
+    _active: ClassVar[dict[str, CommandRunner]] = {}
 
     def __init__(self, command: str, cwd: Path, timeout: int = _BG_CMD_TIMEOUT_DEFAULT) -> None:
         self.command = command
@@ -243,9 +242,7 @@ class CommandRunner:
                 for line in pipe:
                     total_bytes += len(line.encode("utf-8", errors="replace"))
                     if total_bytes > _BG_CMD_OUTPUT_MAX_BYTES:
-                        f.write(
-                            f"\n... (output truncated at {_BG_CMD_OUTPUT_MAX_BYTES // (1024 * 1024)} MB) ...\n"
-                        )
+                        f.write(f"\n... (output truncated at {_BG_CMD_OUTPUT_MAX_BYTES // (1024 * 1024)} MB) ...\n")
                         f.flush()
                         break
                     f.write(f"{prefix}{line}")
@@ -293,7 +290,10 @@ class CommandRunner:
         CommandRunner._active.pop(self.cmd_id, None)
         logger.info(
             "background_cmd finished cmd_id=%s exit=%d elapsed=%.1fs timed_out=%s",
-            self.cmd_id, exit_code, elapsed, timed_out,
+            self.cmd_id,
+            exit_code,
+            elapsed,
+            timed_out,
         )
 
 

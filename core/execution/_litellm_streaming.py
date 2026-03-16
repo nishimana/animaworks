@@ -273,7 +273,9 @@ class StreamingMixin:
                             _reasoning_seen = True
                             _reasoning_parts.append(thinking_text)
                         if not _reasoning_seen and not thinking_text:
-                            _ut, response_text = strip_untagged_thinking(response_text if not thinking_text else response_text)
+                            _ut, response_text = strip_untagged_thinking(
+                                response_text if not thinking_text else response_text
+                            )
                             if _ut:
                                 _reasoning_seen = True
                                 yield {"type": "thinking_start"}

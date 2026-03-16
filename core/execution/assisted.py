@@ -675,7 +675,11 @@ class AssistedExecutor(BaseExecutor):
                 )
                 choice = response.choices[0]
                 content = choice.message.content or ""
-                _rc = getattr(choice.message, "reasoning_content", None) or getattr(choice.message, "reasoning", None) or ""
+                _rc = (
+                    getattr(choice.message, "reasoning_content", None)
+                    or getattr(choice.message, "reasoning", None)
+                    or ""
+                )
                 if _rc:
                     yield {"type": "thinking_start"}
                     yield {"type": "thinking_delta", "text": _rc}
