@@ -292,6 +292,20 @@ class TaskQueueManager:
         logger.info("Task updated: id=%s status=%s", task_id, status)
         return task
 
+    def find_by_summary(self, summary: str) -> TaskEntry | None:
+        """Find an active task whose summary contains the given text.
+
+        Searches only non-terminal tasks (pending, in_progress, blocked, delegated).
+        Returns the first match or None.
+        """
+        if not summary:
+            return None
+        tasks = self._load_all()
+        for task in tasks.values():
+            if task.status in _ACTIVE_STATUSES and summary in task.summary:
+                return task
+        return None
+
     # ── Read operations ──────────────────────────────────────
 
     def _load_all(self) -> dict[str, TaskEntry]:
