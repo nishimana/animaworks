@@ -813,25 +813,33 @@ def _write_permissions_json(path: Path, config: PermissionsConfig) -> None:
 
 
 def _extract_file_roots(text: str) -> list[str]:
-    """Extract file_roots from permissions.md text."""
+    """Extract file_roots from permissions.md text.
+
+    If a file section exists but contains no absolute paths, returns ``[]``
+    (anima_dir only — restrictive).  If no file section is found at all,
+    returns ``["/"]`` (open default).
+    """
+    _HEADERS = ("ファイル操作", "読める場所", "File Operations", "Readable Locations")
     roots: list[str] = []
+    found_section = False
     in_section = False
-    # Match Japanese and English headers
     for line in text.splitlines():
         stripped = line.strip()
-        if any(h in stripped for h in ("ファイル操作", "読める場所", "File Operations", "Readable Locations")):
+        if any(h in stripped for h in _HEADERS):
+            found_section = True
             in_section = True
             continue
         if in_section and stripped.startswith("#"):
             break
         if in_section and stripped.startswith("-"):
             item = stripped.lstrip("- ").split(":")[0].strip()
-            # Only extract absolute paths
             if item.startswith("/"):
                 roots.append(item)
-    if not roots:
-        return ["/"]  # open default
-    return roots
+    if roots:
+        return roots
+    if found_section:
+        return []  # section exists but no paths → restrict to anima_dir
+    return ["/"]  # no section at all → open default
 
 
 def _extract_commands(text: str) -> CommandsPermission:

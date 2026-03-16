@@ -88,7 +88,7 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     # deprecation warning message
     "core/config/cli.py": 1,
     # Japanese day-of-week names for cron migration + permissions.md section headers for migration
-    "core/config/migrate.py": 10,
+    "core/config/migrate.py": 9,
     # model catalog "note" descriptions (最高性能・推奨, etc.)
     "core/config/models.py": 25,
     # cron instruction prompt to Anima
