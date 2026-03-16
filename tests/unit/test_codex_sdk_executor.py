@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -13,24 +14,25 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from core.execution.base import ExecutionResult
 from core.execution.codex_sdk import (
     CodexSDKExecutor,
+    _clear_thread_id,
+    _codex_item_tool_name,
     _extract_item_text,
     _extract_tool_records,
     _get_thread_id,
     _item_to_tool_record,
+    _load_thread_id,
     _resolve_codex_model,
     _save_thread_id,
-    _load_thread_id,
-    _clear_thread_id,
     _usage_to_dict,
     clear_codex_thread_ids,
 )
-from core.execution.base import ExecutionResult
 from core.prompt.context import ContextTracker
 
-
 # ── Fixtures ─────────────────────────────────────────────────
+
 
 @pytest.fixture
 def anima_dir(tmp_path: Path) -> Path:
@@ -47,6 +49,7 @@ def anima_dir(tmp_path: Path) -> Path:
 @pytest.fixture
 def model_config():
     from core.schemas import ModelConfig
+
     return ModelConfig(
         model="codex/o4-mini",
         max_tokens=4096,
@@ -69,6 +72,7 @@ def executor(model_config, anima_dir):
 
 
 # ── Helper function tests ────────────────────────────────────
+
 
 class TestHelpers:
     def test_resolve_codex_model_strips_prefix(self):
@@ -113,29 +117,60 @@ class TestHelpers:
         item = MagicMock(spec=[])
         assert _extract_item_text(item) == ""
 
-    def test_item_to_tool_record(self):
-        item = MagicMock()
-        item.name = "web_search"
+    def test_item_to_tool_record_mcp(self):
+        item = MagicMock(spec=["type", "id", "server", "tool", "arguments", "result", "error", "status"])
+        item.type = "mcp_tool_call"
         item.id = "tool-1"
-        item.input = {"query": "test"}
-        item.output = "search results"
+        item.server = "aw"
+        item.tool = "web_search"
+        item.arguments = {"query": "test"}
+        item.result = MagicMock(content="search results")
+        item.error = None
+        item.status = "completed"
         record = _item_to_tool_record(item)
         assert record is not None
-        assert record.tool_name == "web_search"
+        assert record.tool_name == "aw/web_search"
         assert record.tool_id == "tool-1"
 
+    def test_item_to_tool_record_command(self):
+        item = MagicMock(spec=["type", "id", "command", "aggregated_output", "exit_code", "status"])
+        item.type = "command_execution"
+        item.id = "cmd-1"
+        item.command = "ls -la"
+        item.aggregated_output = "total 42\n..."
+        item.exit_code = 0
+        item.status = "completed"
+        record = _item_to_tool_record(item)
+        assert record is not None
+        assert record.tool_name == "ls -la"
+        assert not record.is_error
+
+    def test_codex_item_tool_name_mcp(self):
+        item = MagicMock(spec=["server", "tool"])
+        item.server = "aw"
+        item.tool = "search_memory"
+        assert _codex_item_tool_name(item, "mcp_tool_call") == "aw/search_memory"
+
+    def test_codex_item_tool_name_command(self):
+        item = MagicMock(spec=["command"])
+        item.command = "git status"
+        assert _codex_item_tool_name(item, "command_execution") == "git status"
+
     def test_extract_tool_records(self):
-        msg_item = MagicMock()
-        msg_item.type = "message"
-        tool_item = MagicMock()
-        tool_item.type = "tool_use"
-        tool_item.name = "read_file"
+        msg_item = MagicMock(spec=["type"])
+        msg_item.type = "agent_message"
+        tool_item = MagicMock(spec=["type", "id", "server", "tool", "arguments", "result", "error", "status"])
+        tool_item.type = "mcp_tool_call"
         tool_item.id = "t1"
-        tool_item.input = {}
-        tool_item.output = "content"
+        tool_item.server = "aw"
+        tool_item.tool = "read_file"
+        tool_item.arguments = {}
+        tool_item.result = MagicMock(content="content")
+        tool_item.error = None
+        tool_item.status = "completed"
         records = _extract_tool_records([msg_item, tool_item])
         assert len(records) == 1
-        assert records[0].tool_name == "read_file"
+        assert "read_file" in records[0].tool_name
 
     def test_usage_to_dict_from_dict(self):
         d = {"input_tokens": 100, "output_tokens": 50}
@@ -153,6 +188,7 @@ class TestHelpers:
 
 
 # ── Session persistence tests ────────────────────────────────
+
 
 class TestSessionPersistence:
     def test_save_and_load_thread_id(self, anima_dir):
@@ -177,6 +213,7 @@ class TestSessionPersistence:
 
 # ── Executor instantiation tests ─────────────────────────────
 
+
 class TestExecutorInit:
     def test_supports_streaming(self, executor):
         assert executor.supports_streaming is True
@@ -195,6 +232,7 @@ class TestExecutorInit:
 
 # ── Config writing tests ─────────────────────────────────────
 
+
 class TestConfigWriting:
     def test_write_codex_config_creates_files(self, executor, anima_dir):
         executor._write_codex_config("Test system prompt")
@@ -206,9 +244,7 @@ class TestConfigWriting:
 
     def test_write_codex_config_toml_content(self, executor, anima_dir):
         executor._write_codex_config("My prompt")
-        config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(
-            encoding="utf-8"
-        )
+        config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
         assert "model_instructions_file" in config_toml
         assert "sandbox_mode" in config_toml
         assert "workspace-write" in config_toml
@@ -218,9 +254,7 @@ class TestConfigWriting:
     def test_write_codex_config_includes_model_name(self, executor, anima_dir):
         """config.toml must include model = "o4-mini" (stripped prefix)."""
         executor._write_codex_config("prompt")
-        config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(
-            encoding="utf-8"
-        )
+        config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
         assert 'model = "o4-mini"' in config_toml
 
     def test_write_codex_config_model_name_gpt41(self, model_config, anima_dir):
@@ -228,19 +262,19 @@ class TestConfigWriting:
         model_config.model = "codex/gpt-4.1"
         exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
         exc._write_codex_config("prompt")
-        config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(
-            encoding="utf-8"
-        )
+        config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
         assert 'model = "gpt-4.1"' in config_toml
 
     def test_toml_escapes_special_characters(self, model_config, anima_dir):
         """Paths with quotes/backslashes are escaped in TOML output."""
         from core.execution.codex_sdk import _escape_toml_string
+
         assert _escape_toml_string('path/with"quote') == 'path/with\\"quote'
         assert _escape_toml_string("path\\back") == "path\\\\back"
 
 
 # ── Blocking execution tests ─────────────────────────────────
+
 
 class TestBlockingExecution:
     @pytest.mark.asyncio
@@ -363,12 +397,14 @@ class TestBlockingExecution:
 
 # ── Streaming execution tests ────────────────────────────────
 
+
 class TestStreamingExecution:
     @pytest.mark.asyncio
     async def test_stream_yields_events(self, executor, anima_dir):
-        msg_item = MagicMock()
-        msg_item.type = "message"
-        msg_item.content = "Streamed text"
+        msg_item = MagicMock(spec=["type", "id", "text"])
+        msg_item.type = "agent_message"
+        msg_item.id = "msg-1"
+        msg_item.text = "Streamed text"
 
         msg_event = MagicMock()
         msg_event.type = "item.completed"
@@ -415,12 +451,15 @@ class TestStreamingExecution:
 
     @pytest.mark.asyncio
     async def test_stream_tool_events(self, executor, anima_dir):
-        tool_item = MagicMock()
-        tool_item.type = "tool_use"
-        tool_item.name = "web_search"
+        tool_item = MagicMock(spec=["type", "id", "server", "tool", "arguments", "result", "error", "status"])
+        tool_item.type = "mcp_tool_call"
         tool_item.id = "ws-1"
-        tool_item.input = {"query": "test"}
-        tool_item.output = "results"
+        tool_item.server = "aw"
+        tool_item.tool = "web_search"
+        tool_item.arguments = {"query": "test"}
+        tool_item.result = MagicMock(content="results")
+        tool_item.error = None
+        tool_item.status = "completed"
 
         tool_event = MagicMock()
         tool_event.type = "item.completed"
@@ -458,15 +497,16 @@ class TestStreamingExecution:
         assert "tool_start" in types
         assert "tool_end" in types
         tool_start = next(e for e in events if e["type"] == "tool_start")
-        assert tool_start["tool_name"] == "web_search"
+        assert "web_search" in tool_start["tool_name"]
 
     @pytest.mark.asyncio
     async def test_stream_interrupted_mid_stream(self, model_config, anima_dir):
         interrupt = asyncio.Event()
 
-        msg_item = MagicMock()
-        msg_item.type = "message"
-        msg_item.content = "Before interrupt"
+        msg_item = MagicMock(spec=["type", "id", "text"])
+        msg_item.type = "agent_message"
+        msg_item.id = "msg-int"
+        msg_item.text = "Before interrupt"
 
         msg_event = MagicMock()
         msg_event.type = "item.completed"
@@ -512,11 +552,292 @@ class TestStreamingExecution:
         assert "interrupted" in combined.lower()
 
 
+# ── Progressive streaming tests ───────────────────────────────
+
+
+class TestProgressiveStreaming:
+    """Tests for item.started / item.updated progressive text deltas."""
+
+    @pytest.mark.asyncio
+    async def test_progressive_text_deltas(self, executor, anima_dir):
+        """item.started + item.updated should yield incremental text deltas."""
+
+        def _make_msg(item_id, text):
+            item = MagicMock(spec=["type", "id", "text"])
+            item.type = "agent_message"
+            item.id = item_id
+            item.text = text
+            return item
+
+        started_event = MagicMock()
+        started_event.type = "item.started"
+        started_event.item = _make_msg("msg-1", "He")
+
+        updated1 = MagicMock()
+        updated1.type = "item.updated"
+        updated1.item = _make_msg("msg-1", "Hello ")
+
+        updated2 = MagicMock()
+        updated2.type = "item.updated"
+        updated2.item = _make_msg("msg-1", "Hello world!")
+
+        completed = MagicMock()
+        completed.type = "item.completed"
+        completed.item = _make_msg("msg-1", "Hello world!")
+
+        done_event = MagicMock()
+        done_event.type = "turn.completed"
+        done_event.usage = MagicMock(input_tokens=50, output_tokens=20)
+
+        async def fake_events():
+            yield started_event
+            yield updated1
+            yield updated2
+            yield completed
+            yield done_event
+
+        mock_streamed = MagicMock()
+        mock_streamed.events = fake_events()
+        mock_thread = MagicMock()
+        mock_thread.run_streamed = AsyncMock(return_value=mock_streamed)
+        mock_thread.id = "prog-thread"
+        mock_codex = MagicMock()
+        mock_codex.start_thread.return_value = mock_thread
+
+        events = []
+        with patch.object(executor, "_create_codex_client", return_value=mock_codex):
+            tracker = ContextTracker(model="codex/o4-mini")
+            async for ev in executor.execute_streaming(
+                system_prompt="test",
+                prompt="Hello",
+                tracker=tracker,
+            ):
+                events.append(ev)
+
+        text_deltas = [e for e in events if e["type"] == "text_delta"]
+        assert len(text_deltas) >= 3, f"Expected >= 3 text_delta events, got {len(text_deltas)}"
+
+        # Reconstruct full text from deltas
+        reconstructed = "".join(e["text"] for e in text_deltas)
+        assert reconstructed == "Hello world!"
+
+    @pytest.mark.asyncio
+    async def test_reasoning_events_yield_thinking_delta(self, executor, anima_dir):
+        """item.started/updated with reasoning type should yield thinking_delta."""
+
+        def _make_reasoning(item_id, text):
+            item = MagicMock(spec=["type", "id", "text"])
+            item.type = "reasoning"
+            item.id = item_id
+            item.text = text
+            return item
+
+        started = MagicMock()
+        started.type = "item.started"
+        started.item = _make_reasoning("r-1", "Let me think")
+
+        updated = MagicMock()
+        updated.type = "item.updated"
+        updated.item = _make_reasoning("r-1", "Let me think about this problem")
+
+        completed = MagicMock()
+        completed.type = "item.completed"
+        completed.item = _make_reasoning("r-1", "Let me think about this problem")
+
+        msg = MagicMock(spec=["type", "id", "text"])
+        msg.type = "agent_message"
+        msg.id = "msg-1"
+        msg.text = "The answer is 42."
+        msg_completed = MagicMock()
+        msg_completed.type = "item.completed"
+        msg_completed.item = msg
+
+        done = MagicMock()
+        done.type = "turn.completed"
+        done.usage = None
+
+        async def fake_events():
+            yield started
+            yield updated
+            yield completed
+            yield msg_completed
+            yield done
+
+        mock_streamed = MagicMock()
+        mock_streamed.events = fake_events()
+        mock_thread = MagicMock()
+        mock_thread.run_streamed = AsyncMock(return_value=mock_streamed)
+        mock_thread.id = "think-thread"
+        mock_codex = MagicMock()
+        mock_codex.start_thread.return_value = mock_thread
+
+        events = []
+        with patch.object(executor, "_create_codex_client", return_value=mock_codex):
+            tracker = ContextTracker(model="codex/o4-mini")
+            async for ev in executor.execute_streaming(
+                system_prompt="test",
+                prompt="What is the answer?",
+                tracker=tracker,
+            ):
+                events.append(ev)
+
+        thinking = [e for e in events if e["type"] == "thinking_delta"]
+        assert len(thinking) >= 2
+
+    @pytest.mark.asyncio
+    async def test_tool_started_before_completed(self, executor, anima_dir):
+        """item.started for command_execution should emit tool_start early."""
+        tool_item_partial = MagicMock(spec=["type", "id", "command", "aggregated_output", "exit_code", "status"])
+        tool_item_partial.type = "command_execution"
+        tool_item_partial.id = "cmd-1"
+        tool_item_partial.command = "npm test"
+        tool_item_partial.aggregated_output = ""
+        tool_item_partial.exit_code = None
+        tool_item_partial.status = "in_progress"
+
+        started = MagicMock()
+        started.type = "item.started"
+        started.item = tool_item_partial
+
+        tool_item_done = MagicMock(spec=["type", "id", "command", "aggregated_output", "exit_code", "status"])
+        tool_item_done.type = "command_execution"
+        tool_item_done.id = "cmd-1"
+        tool_item_done.command = "npm test"
+        tool_item_done.aggregated_output = "all passed"
+        tool_item_done.exit_code = 0
+        tool_item_done.status = "completed"
+
+        completed = MagicMock()
+        completed.type = "item.completed"
+        completed.item = tool_item_done
+
+        done = MagicMock()
+        done.type = "turn.completed"
+        done.usage = None
+
+        async def fake_events():
+            yield started
+            yield completed
+            yield done
+
+        mock_streamed = MagicMock()
+        mock_streamed.events = fake_events()
+        mock_thread = MagicMock()
+        mock_thread.run_streamed = AsyncMock(return_value=mock_streamed)
+        mock_thread.id = "tool-thread"
+        mock_codex = MagicMock()
+        mock_codex.start_thread.return_value = mock_thread
+
+        events = []
+        with patch.object(executor, "_create_codex_client", return_value=mock_codex):
+            tracker = ContextTracker(model="codex/o4-mini")
+            async for ev in executor.execute_streaming(
+                system_prompt="test",
+                prompt="run tests",
+                tracker=tracker,
+            ):
+                events.append(ev)
+
+        types = [e["type"] for e in events]
+        # tool_start should appear BEFORE tool_end
+        assert "tool_start" in types
+        assert "tool_end" in types
+        start_idx = types.index("tool_start")
+        end_idx = types.index("tool_end")
+        assert start_idx < end_idx
+
+    @pytest.mark.asyncio
+    async def test_turn_failed_yields_error(self, executor, anima_dir):
+        """turn.failed event should yield an error event."""
+        failed_event = MagicMock()
+        failed_event.type = "turn.failed"
+        err = MagicMock()
+        err.message = "Rate limit exceeded"
+        failed_event.error = err
+
+        async def fake_events():
+            yield failed_event
+
+        mock_streamed = MagicMock()
+        mock_streamed.events = fake_events()
+        mock_thread = MagicMock()
+        mock_thread.run_streamed = AsyncMock(return_value=mock_streamed)
+        mock_thread.id = "fail-thread"
+        mock_codex = MagicMock()
+        mock_codex.start_thread.return_value = mock_thread
+
+        events = []
+        with patch.object(executor, "_create_codex_client", return_value=mock_codex):
+            tracker = ContextTracker(model="codex/o4-mini")
+            async for ev in executor.execute_streaming(
+                system_prompt="test",
+                prompt="fail",
+                tracker=tracker,
+            ):
+                events.append(ev)
+
+        error_events = [e for e in events if e["type"] == "error"]
+        assert len(error_events) >= 1
+        assert "Rate limit" in error_events[0]["message"]
+
+    @pytest.mark.asyncio
+    async def test_no_duplicate_text_on_completed(self, executor, anima_dir):
+        """item.completed should not re-emit text already sent via item.updated."""
+
+        def _make_msg(item_id, text):
+            item = MagicMock(spec=["type", "id", "text"])
+            item.type = "agent_message"
+            item.id = item_id
+            item.text = text
+            return item
+
+        updated = MagicMock()
+        updated.type = "item.updated"
+        updated.item = _make_msg("msg-1", "Complete text here")
+
+        completed = MagicMock()
+        completed.type = "item.completed"
+        completed.item = _make_msg("msg-1", "Complete text here")
+
+        done = MagicMock()
+        done.type = "turn.completed"
+        done.usage = None
+
+        async def fake_events():
+            yield updated
+            yield completed
+            yield done
+
+        mock_streamed = MagicMock()
+        mock_streamed.events = fake_events()
+        mock_thread = MagicMock()
+        mock_thread.run_streamed = AsyncMock(return_value=mock_streamed)
+        mock_thread.id = "dup-thread"
+        mock_codex = MagicMock()
+        mock_codex.start_thread.return_value = mock_thread
+
+        events = []
+        with patch.object(executor, "_create_codex_client", return_value=mock_codex):
+            tracker = ContextTracker(model="codex/o4-mini")
+            async for ev in executor.execute_streaming(
+                system_prompt="test",
+                prompt="Hello",
+                tracker=tracker,
+            ):
+                events.append(ev)
+
+        text_deltas = [e for e in events if e["type"] == "text_delta"]
+        full_text = "".join(e["text"] for e in text_deltas)
+        assert full_text == "Complete text here"
+
+
 # ── Mode resolution tests ────────────────────────────────────
+
 
 class TestModeResolution:
     def test_resolve_execution_mode_codex_pattern(self):
         from core.config.models import resolve_execution_mode
+
         with patch("core.config.models.load_config") as mock_load:
             mock_config = MagicMock()
             mock_config.model_modes = {}
@@ -526,6 +847,7 @@ class TestModeResolution:
 
     def test_resolve_execution_mode_codex_gpt41(self):
         from core.config.models import resolve_execution_mode
+
         mock_config = MagicMock()
         mock_config.model_modes = {}
         mode = resolve_execution_mode(mock_config, "codex/gpt-4.1")
@@ -533,11 +855,13 @@ class TestModeResolution:
 
     def test_normalise_mode_c(self):
         from core.config.models import _normalise_mode
+
         assert _normalise_mode("C") == "C"
         assert _normalise_mode("c") == "C"
 
     def test_openai_model_still_routes_to_a(self):
         from core.config.models import resolve_execution_mode
+
         mock_config = MagicMock()
         mock_config.model_modes = {}
         mode = resolve_execution_mode(mock_config, "openai/gpt-4.1")

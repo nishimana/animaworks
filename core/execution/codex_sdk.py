@@ -161,11 +161,51 @@ def _extract_item_text(item: Any) -> str:
     return ""
 
 
+def _codex_item_tool_name(item: Any, item_type: str) -> str:
+    """Derive a human-readable tool name from a Codex item."""
+    if item_type == "mcp_tool_call":
+        server = getattr(item, "server", "")
+        tool = getattr(item, "tool", "")
+        return f"{server}/{tool}" if server else tool or "mcp_tool"
+    if item_type == "command_execution":
+        cmd = getattr(item, "command", "")
+        return cmd[:60] if cmd else "command"
+    return getattr(item, "name", None) or item_type or "unknown"
+
+
 def _item_to_tool_record(item: Any) -> ToolCallRecord | None:
-    """Convert a Codex tool_use item to a ``ToolCallRecord``."""
+    """Convert a Codex item (command_execution / mcp_tool_call) to a ``ToolCallRecord``."""
     try:
-        name = getattr(item, "name", "unknown")
+        item_type = getattr(item, "type", "")
         tool_id = getattr(item, "id", "")
+        if item_type == "mcp_tool_call":
+            name = _codex_item_tool_name(item, item_type)
+            input_data = getattr(item, "arguments", {})
+            result_obj = getattr(item, "result", None)
+            result_data = str(getattr(result_obj, "content", "")) if result_obj else ""
+            error_obj = getattr(item, "error", None)
+            is_error = error_obj is not None
+            return ToolCallRecord(
+                tool_name=name,
+                tool_id=tool_id,
+                input_summary=_truncate_for_record(str(input_data), 500),
+                result_summary=_truncate_for_record(result_data, 500),
+                is_error=is_error,
+            )
+        if item_type == "command_execution":
+            cmd = getattr(item, "command", "")
+            output = getattr(item, "aggregated_output", "")
+            exit_code = getattr(item, "exit_code", None)
+            is_error = exit_code is not None and exit_code != 0
+            return ToolCallRecord(
+                tool_name=cmd[:80] if cmd else "command",
+                tool_id=tool_id,
+                input_summary=_truncate_for_record(cmd, 500),
+                result_summary=_truncate_for_record(output, 500),
+                is_error=is_error,
+            )
+        # Legacy fallback for unknown tool-like items
+        name = getattr(item, "name", "unknown")
         input_data = getattr(item, "input", {})
         result_data = getattr(item, "output", "")
         return ToolCallRecord(
@@ -181,7 +221,8 @@ def _item_to_tool_record(item: Any) -> ToolCallRecord | None:
 def _extract_tool_records(items: list[Any]) -> list[ToolCallRecord]:
     records: list[ToolCallRecord] = []
     for item in items:
-        if getattr(item, "type", None) == "tool_use":
+        itype = getattr(item, "type", None)
+        if itype in ("tool_use", "command_execution", "mcp_tool_call"):
             rec = _item_to_tool_record(item)
             if rec:
                 records.append(rec)
@@ -656,10 +697,19 @@ class CodexSDKExecutor(BaseExecutor):
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Stream events from Codex SDK.
 
+        Handles the full Codex event lifecycle for progressive streaming:
+
+        - ``item.started`` / ``item.updated``: emit incremental text deltas
+          by tracking per-item text length and yielding only the new portion.
+        - ``item.completed``: emit any remaining text delta and tool records.
+        - ``turn.completed``: update context tracker with usage stats.
+        - ``turn.failed`` / ``error``: propagate as error events.
+
         Yields dicts:
             ``{"type": "text_delta", "text": "..."}``
             ``{"type": "tool_start", "tool_name": "...", "tool_id": "..."}``
             ``{"type": "tool_end", "tool_id": "...", "tool_name": "..."}``
+            ``{"type": "tool_detail", "tool_id": "...", ...}``
             ``{"type": "done", "full_text": "...", "result_message": ...}``
         """
         if self._check_interrupted():
@@ -694,33 +744,87 @@ class CodexSDKExecutor(BaseExecutor):
             active_thread = thread
             streamed = await thread.run_streamed(prompt)
 
+            # Per-item text length tracker for delta computation.
+            # item.started/updated carry the full text so far; we yield
+            # only the newly appended portion each time.
+            _item_text_len: dict[str, int] = {}
+            # Track which tool items have already emitted tool_start.
+            _tool_started: set[str] = set()
+
             async for event in streamed.events:
                 if self._check_interrupted():
                     logger.info("Codex SDK streaming interrupted")
                     yield {"type": "text_delta", "text": "[Session interrupted by user]"}
                     return
                 etype = getattr(event, "type", "")
-                if etype == "item.completed":
-                    item = event.item
+
+                # ── Progressive events: item.started / item.updated ──
+                if etype in ("item.started", "item.updated"):
+                    item = getattr(event, "item", None)
+                    if item is None:
+                        continue
                     item_type = getattr(item, "type", "")
-                    if item_type == "message":
+                    item_id = getattr(item, "id", "")
+
+                    if item_type == "agent_message":
                         text = _extract_item_text(item)
                         if text:
+                            prev_len = _item_text_len.get(item_id, 0)
+                            if len(text) > prev_len:
+                                delta = text[prev_len:]
+                                _item_text_len[item_id] = len(text)
+                                yield {"type": "text_delta", "text": delta}
+
+                    elif item_type == "reasoning":
+                        text = _extract_item_text(item)
+                        if text:
+                            prev_len = _item_text_len.get(item_id, 0)
+                            if len(text) > prev_len:
+                                delta = text[prev_len:]
+                                _item_text_len[item_id] = len(text)
+                                yield {"type": "thinking_delta", "text": delta}
+
+                    elif item_type in ("command_execution", "mcp_tool_call"):
+                        if item_id and item_id not in _tool_started:
+                            _tool_started.add(item_id)
+                            tool_name = _codex_item_tool_name(item, item_type)
+                            yield {
+                                "type": "tool_start",
+                                "tool_name": tool_name,
+                                "tool_id": item_id,
+                            }
+
+                # ── item.completed: finalise per-item data ──
+                elif etype == "item.completed":
+                    item = event.item
+                    item_type = getattr(item, "type", "")
+                    item_id = getattr(item, "id", "")
+
+                    if item_type == "agent_message":
+                        text = _extract_item_text(item)
+                        if text:
+                            prev_len = _item_text_len.get(item_id, 0)
+                            if len(text) > prev_len:
+                                delta = text[prev_len:]
+                                yield {"type": "text_delta", "text": delta}
+                            _item_text_len[item_id] = len(text)
                             response_text_parts.append(text)
-                            yield {"type": "text_delta", "text": text}
                         else:
                             logger.debug(
-                                "Codex item.completed message with empty text: %s",
+                                "Codex item.completed agent_message with empty text: %s",
                                 repr(item)[:300],
                             )
-                    elif item_type == "tool_use":
-                        tool_name = getattr(item, "name", "unknown")
-                        tool_id = getattr(item, "id", "")
-                        yield {
-                            "type": "tool_start",
-                            "tool_name": tool_name,
-                            "tool_id": tool_id,
-                        }
+
+                    elif item_type in ("command_execution", "mcp_tool_call"):
+                        tool_name = _codex_item_tool_name(item, item_type)
+                        tool_id = item_id
+                        if tool_id not in _tool_started:
+                            _tool_started.add(tool_id)
+                            yield {
+                                "type": "tool_start",
+                                "tool_name": tool_name,
+                                "tool_id": tool_id,
+                            }
                         rec = _item_to_tool_record(item)
                         if rec:
                             all_tool_records.append(rec)
@@ -729,11 +833,44 @@ class CodexSDKExecutor(BaseExecutor):
                             "tool_id": tool_id,
                             "tool_name": tool_name,
                         }
+
+                    elif item_type == "file_change":
+                        changes = getattr(item, "changes", [])
+                        tool_id = item_id
+                        if tool_id not in _tool_started:
+                            _tool_started.add(tool_id)
+                            yield {
+                                "type": "tool_start",
+                                "tool_name": "file_change",
+                                "tool_id": tool_id,
+                            }
+                        detail_parts = [f"{c.kind}: {c.path}" for c in changes if hasattr(c, "kind")]
+                        if detail_parts:
+                            yield {
+                                "type": "tool_detail",
+                                "tool_id": tool_id,
+                                "tool_name": "file_change",
+                                "detail": "; ".join(detail_parts[:10]),
+                            }
+                        yield {
+                            "type": "tool_end",
+                            "tool_id": tool_id,
+                            "tool_name": "file_change",
+                        }
+
+                    elif item_type == "reasoning":
+                        text = _extract_item_text(item)
+                        if text:
+                            prev_len = _item_text_len.get(item_id, 0)
+                            if len(text) > prev_len:
+                                yield {"type": "thinking_delta", "text": text[prev_len:]}
+                            _item_text_len[item_id] = len(text)
+
                     else:
                         text = _extract_item_text(item)
                         if text:
                             logger.info(
-                                "Codex item.completed unhandled type=%s but has text (%d chars); emitting",
+                                "Codex item.completed type=%s has text (%d chars); emitting",
                                 item_type,
                                 len(text),
                             )
@@ -741,10 +878,12 @@ class CodexSDKExecutor(BaseExecutor):
                             yield {"type": "text_delta", "text": text}
                         else:
                             logger.debug(
-                                "Codex item.completed unhandled type=%s: %s",
+                                "Codex item.completed type=%s: %s",
                                 item_type,
                                 repr(item)[:300],
                             )
+
+                # ── turn.completed: usage + thread persistence ──
                 elif etype == "turn.completed":
                     turn_result = _wrap_result_message(event, thread)
                     raw_usage = getattr(event, "usage", None)
@@ -763,17 +902,24 @@ class CodexSDKExecutor(BaseExecutor):
                     saved_tid = _get_thread_id(thread)
                     if saved_tid:
                         _save_thread_id(self._anima_dir, saved_tid, session_type)
-                elif etype == "text.delta":
-                    text = getattr(event, "text", "") or getattr(event, "delta", "")
-                    if text:
-                        response_text_parts.append(text)
-                        yield {"type": "text_delta", "text": text}
-                elif etype == "response.completed":
-                    resp = getattr(event, "response", event)
-                    text = _extract_item_text(resp)
-                    if text and text not in response_text_parts:
-                        response_text_parts.append(text)
-                        yield {"type": "text_delta", "text": text}
+
+                # ── Error events ──
+                elif etype == "turn.failed":
+                    error_msg = ""
+                    err_obj = getattr(event, "error", None)
+                    if err_obj:
+                        error_msg = getattr(err_obj, "message", str(err_obj))
+                    logger.error("Codex turn.failed: %s", error_msg)
+                    yield {"type": "error", "message": f"[Codex turn failed: {error_msg}]"}
+
+                elif etype == "error":
+                    error_msg = getattr(event, "message", str(event))
+                    logger.error("Codex error event: %s", error_msg)
+                    yield {"type": "error", "message": f"[Codex error: {error_msg}]"}
+
+                elif etype in ("thread.started", "turn.started"):
+                    logger.debug("Codex lifecycle event: %s", etype)
+
                 else:
                     logger.debug(
                         "Codex unhandled event type=%s attrs=%s",
