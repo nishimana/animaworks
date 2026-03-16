@@ -32,11 +32,10 @@ def cmd_models_list(args: argparse.Namespace) -> None:
     from core.config.models import (
         KNOWN_MODELS,
         load_config,
-        resolve_context_window,
     )
-    from core.prompt.context import resolve_context_window as resolve_cw_fallback
+    from core.prompt.context import resolve_context_window
 
-    config = load_config()
+    load_config()
     mode_filter: str | None = getattr(args, "mode", None)
 
     rows: list[dict[str, str]] = []
@@ -45,10 +44,7 @@ def cmd_models_list(args: argparse.Namespace) -> None:
         if mode_filter and mode.upper() != mode_filter.upper():
             continue
         name = m["name"]
-        cw = resolve_context_window(name, config)
-        if cw is None:
-            overrides = config.model_context_windows or {}
-            cw = resolve_cw_fallback(name, overrides)
+        cw = resolve_context_window(name)
         rows.append(
             {
                 "name": name,
@@ -91,25 +87,18 @@ def cmd_models_info(args: argparse.Namespace) -> None:
     from core.config.models import (
         KNOWN_MODELS,
         load_config,
-        resolve_context_window,
         resolve_execution_mode,
     )
     from core.prompt.context import (
         resolve_context_threshold,
-    )
-    from core.prompt.context import (
-        resolve_context_window as resolve_context_window_fallback,
+        resolve_context_window,
     )
 
     model_name: str = args.model
     config = load_config()
 
     mode = resolve_execution_mode(config, model_name)
-
-    cw = resolve_context_window(model_name, config)
-    if cw is None:
-        overrides = config.model_context_windows or {}
-        cw = resolve_context_window_fallback(model_name, overrides)
+    cw = resolve_context_window(model_name)
     source = _resolve_source(model_name)
 
     threshold = resolve_context_threshold(0.50, cw)

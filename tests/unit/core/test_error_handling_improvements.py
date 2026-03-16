@@ -187,37 +187,31 @@ class TestMessengerErrorHandling:
 
 
 class TestConfigModelsErrorHandling:
-    """Verify config/models.py catches ConfigError specifically."""
+    """Verify resolve_context_window gracefully falls back on errors."""
 
-    def test_resolve_context_window_returns_none_on_config_error(self):
-        """resolve_context_window should return None when config fails."""
-        from core.config import invalidate_cache
-        invalidate_cache()
-        with patch("core.config.models.load_config", side_effect=ConfigError("bad")):
-            from core.config.models import resolve_context_window
-            result = resolve_context_window("test-model")
-            assert result is None
-        invalidate_cache()
+    def test_resolve_context_window_falls_back_on_models_json_failure(self):
+        """When models.json is unavailable, fall through to hardcoded defaults."""
+        from core.prompt.context import _DEFAULT_CONTEXT_WINDOW, resolve_context_window
 
-    def test_resolve_context_window_returns_none_on_os_error(self):
-        """resolve_context_window should return None when file I/O fails."""
-        from core.config import invalidate_cache
-        invalidate_cache()
-        with patch("core.config.models.load_config", side_effect=OSError("perm denied")):
-            from core.config.models import resolve_context_window
+        with patch("core.config.model_mode._match_models_json", return_value=None):
             result = resolve_context_window("test-model")
-            assert result is None
-        invalidate_cache()
+            assert result == _DEFAULT_CONTEXT_WINDOW
 
-    def test_resolve_context_window_catches_any_exception(self):
-        """All exceptions are caught (safe fallback to None)."""
-        from core.config import invalidate_cache
-        invalidate_cache()
-        with patch("core.config.models.load_config", side_effect=RuntimeError("unexpected")):
-            from core.config.models import resolve_context_window
-            result = resolve_context_window("test-model")
-            assert result is None
-        invalidate_cache()
+    def test_resolve_context_window_uses_hardcoded_on_known_model(self):
+        """Known model without models.json still resolves from hardcoded dict."""
+        from core.prompt.context import MODEL_CONTEXT_WINDOWS, resolve_context_window
+
+        with patch("core.config.model_mode._match_models_json", return_value=None):
+            result = resolve_context_window("gpt-4o")
+            assert result == MODEL_CONTEXT_WINDOWS["gpt-4o"]
+
+    def test_resolve_context_window_never_returns_none(self):
+        """Unified resolve_context_window always returns an int, never None."""
+        from core.prompt.context import resolve_context_window
+
+        with patch("core.config.model_mode._match_models_json", return_value=None):
+            result = resolve_context_window("totally-unknown-model")
+            assert isinstance(result, int)
 
 
 # ── Layer 7: Memory ────────────────────────────────────────────────

@@ -91,10 +91,9 @@ class AgentCore(
         # Background task manager
         self._background_manager = self._build_background_manager()
 
-        # Composable subsystems
-        from core.config.models import resolve_context_window
+        from core.prompt.context import resolve_context_window
 
-        cw = resolve_context_window(self.model_config.model) or 32_000
+        cw = resolve_context_window(self.model_config.model)
         self._tool_handler = ToolHandler(
             anima_dir=anima_dir,
             memory=memory,
@@ -167,9 +166,9 @@ class AgentCore(
     def update_model_config(self, new_config: ModelConfig) -> None:
         """Update model config, rebuild executor and refresh context window."""
         self.model_config = new_config
-        from core.config.models import resolve_context_window
+        from core.prompt.context import resolve_context_window
 
-        cw = resolve_context_window(new_config.model) or 32_000
+        cw = resolve_context_window(new_config.model)
         self._tool_handler._context_window = cw
         self._executor = self._create_executor()
         logger.info(

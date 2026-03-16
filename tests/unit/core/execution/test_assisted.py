@@ -379,41 +379,31 @@ class TestPreflightCheck:
             {"role": "user", "content": "hi"},
         ]
         with patch("litellm.token_counter", return_value=500), \
-             patch("core.config.load_config") as mock_lc:
-            mock_lc.return_value = MagicMock(model_context_windows=None)
+             patch("core.config.model_mode._match_models_json", return_value=None):
             result = assisted_executor._preflight_check(messages)
         assert result is not None
         assert result["max_tokens"] == 4096
 
     def test_clamped_when_tight(self, assisted_executor):
-        # context_window=128000 default for gemma3
-        # est_input high enough that available < configured_max (4096)
-        # but available - 128 >= 256 so it doesn't return None
-        # available = ctx_window - est_input; we want available < 4096
-        # e.g. est_input = 128000 - 2000 = 126000 → available = 2000
+        # context_window=128000 hardcoded fallback for gemma3 (models.json mocked out)
         messages = [
             {"role": "system", "content": "x"},
             {"role": "user", "content": "y"},
         ]
         with patch("litellm.token_counter", return_value=126000), \
-             patch("core.config.load_config") as mock_lc:
-            mock_lc.return_value = MagicMock(model_context_windows=None)
+             patch("core.config.model_mode._match_models_json", return_value=None):
             result = assisted_executor._preflight_check(messages)
         assert result is not None
         # available = 128000 - 126000 = 2000; clamped = 2000 - 128 = 1872
         assert result["max_tokens"] == 2000 - 128
 
     def test_none_when_too_large(self, assisted_executor):
-        # available - 128 < 256 → returns None
-        # available = ctx_window - est_input < 384
-        # e.g. est_input = 128000 - 300 = 127700 → available = 300; 300-128=172 < 256
         messages = [
             {"role": "system", "content": "x"},
             {"role": "user", "content": "y"},
         ]
         with patch("litellm.token_counter", return_value=127700), \
-             patch("core.config.load_config") as mock_lc:
-            mock_lc.return_value = MagicMock(model_context_windows=None)
+             patch("core.config.model_mode._match_models_json", return_value=None):
             result = assisted_executor._preflight_check(messages)
         assert result is None
 
@@ -426,8 +416,7 @@ class TestPreflightCheck:
             {"role": "user", "content": "hi"},
         ]
         with patch("litellm.token_counter", side_effect=Exception("model not found")), \
-             patch("core.config.load_config") as mock_lc:
-            mock_lc.return_value = MagicMock(model_context_windows=None)
+             patch("core.config.model_mode._match_models_json", return_value=None):
             result = assisted_executor._preflight_check(messages)
         assert result is not None
         assert result["max_tokens"] == 4096

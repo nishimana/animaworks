@@ -5,7 +5,7 @@
 # This file is part of AnimaWorks core/server, licensed under Apache-2.0.
 # See LICENSE for the full license text.
 
-"""Model configuration resolution: load_model_config, context_window, penalties, max_tokens."""
+"""Model configuration resolution: load_model_config, penalties, max_tokens."""
 
 from __future__ import annotations
 
@@ -78,59 +78,6 @@ def load_model_config(anima_dir: Path) -> ModelConfig:
         mode_s_auth=resolved.mode_s_auth,
         extra_mcp_servers=resolved.extra_mcp_servers,
     )
-
-
-# ---------------------------------------------------------------------------
-# resolve_context_window
-# ---------------------------------------------------------------------------
-
-
-def resolve_context_window(
-    model_name: str,
-    config: AnimaWorksConfig | None = None,
-) -> int | None:
-    """Resolve context window size from model name.
-
-    Priority:
-      1. models.json (``~/.animaworks/models.json``, ``"context_window"`` field)
-      2. config.json ``model_context_windows`` (deprecated fallback)
-      3. ``None`` (caller should fall through to ``core.prompt.context``
-         defaults)
-
-    Args:
-        model_name: The model name to resolve (e.g. ``"claude-sonnet-4-6"``).
-        config: Optional config instance.  Loaded lazily if not provided.
-
-    Returns:
-        Context window size in tokens, or ``None`` if not found in any
-        user-editable source (caller should use hardcoded defaults).
-    """
-    # 1. models.json
-    entry = _match_models_json(model_name)
-    if entry is not None:
-        cw = entry.get("context_window")
-        if cw is not None:
-            try:
-                return int(cw)
-            except (ValueError, TypeError):
-                pass
-
-    # 2. config.json model_context_windows
-    if config is None:
-        try:
-            from core.config.models import load_config
-
-            config = load_config()
-        except Exception:
-            return None
-    overrides = config.model_context_windows or {}
-    if overrides:
-        bare = model_name.split("/", 1)[-1] if "/" in model_name else model_name
-        for pattern, size in overrides.items():
-            if fnmatch.fnmatch(model_name, pattern) or fnmatch.fnmatch(bare, pattern):
-                return size
-
-    return None
 
 
 # ---------------------------------------------------------------------------
@@ -257,7 +204,6 @@ def update_status_model(
 
 __all__ = [
     "load_model_config",
-    "resolve_context_window",
     "resolve_penalties",
     "resolve_max_tokens",
     "DEFAULT_MAX_TOKENS",

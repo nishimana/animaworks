@@ -116,22 +116,35 @@ def resolve_context_window(
     """Return the context window size for the given model name.
 
     Resolution priority:
-      1. ``overrides`` (config-driven, fnmatch wildcard)
-      2. ``MODEL_CONTEXT_WINDOWS`` (hardcoded, prefix match)
-      3. ``_DEFAULT_CONTEXT_WINDOW`` (128K fallback)
+      1. ``models.json`` (SSoT — ``~/.animaworks/models.json``)
+      2. ``overrides`` (deprecated ``config.json model_context_windows``)
+      3. ``MODEL_CONTEXT_WINDOWS`` (hardcoded last-resort fallback)
+      4. ``_DEFAULT_CONTEXT_WINDOW`` (128K)
 
     Strips the ``provider/`` prefix (e.g. ``openai/gpt-4o`` -> ``gpt-4o``)
     before matching.
     """
+    from core.config.model_mode import _match_models_json
+
+    if not isinstance(model, str):
+        return _DEFAULT_CONTEXT_WINDOW
     bare = model.split("/", 1)[-1] if "/" in model else model
-    # Strip Bedrock cross-region prefix (e.g. "jp.anthropic.claude-..." → "claude-...")
     bare = re.sub(r"^[a-z]{2}\.anthropic\.", "", bare)
-    # Phase 1: config overrides (fnmatch wildcard)
+    # Phase 1: models.json (SSoT)
+    entry = _match_models_json(model)
+    if entry is not None:
+        cw = entry.get("context_window")
+        if cw is not None:
+            try:
+                return int(cw)
+            except (ValueError, TypeError):
+                pass
+    # Phase 2: config.json model_context_windows (deprecated)
     if overrides:
         for pattern, size in overrides.items():
             if fnmatch.fnmatch(model, pattern) or fnmatch.fnmatch(bare, pattern):
                 return size
-    # Phase 2: hardcoded defaults (prefix match)
+    # Phase 3: hardcoded fallback
     for prefix, size in MODEL_CONTEXT_WINDOWS.items():
         if bare.startswith(prefix):
             return size

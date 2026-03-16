@@ -631,16 +631,10 @@ class BaseExecutor(ABC):
             return 3
 
     def _resolve_cw(self) -> int:
-        """Resolve context window with config overrides."""
-        from core.config import load_config
-        from core.exceptions import ConfigError
+        """Resolve context window (models.json SSoT → hardcoded fallback)."""
         from core.prompt.context import resolve_context_window
 
-        try:
-            overrides = load_config().model_context_windows
-        except (ConfigError, OSError):
-            overrides = None
-        return resolve_context_window(self._model_config.model, overrides)
+        return resolve_context_window(self._model_config.model)
 
     def _resolve_cw_overrides(self) -> dict[str, int] | None:
         """Return config model_context_windows or None."""

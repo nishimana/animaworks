@@ -134,7 +134,7 @@ class TestAgentUpdateModelConfig:
         agent = AgentCore(anima_dir, memory, ModelConfig(model="claude-sonnet-4-6"))
         old_cw = agent._tool_handler._context_window
 
-        with patch("core.config.models.resolve_context_window", return_value=200_000):
+        with patch("core.prompt.context.resolve_context_window", return_value=200_000):
             agent.update_model_config(ModelConfig(model="claude-opus-4-6"))
 
         assert agent._tool_handler._context_window == 200_000

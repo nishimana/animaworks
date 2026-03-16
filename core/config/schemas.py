@@ -596,7 +596,7 @@ class AnimaWorksConfig(BaseModel):
     system: SystemConfig = SystemConfig()
     credentials: dict[str, CredentialConfig] = {"anthropic": CredentialConfig()}
     model_modes: dict[str, str] = {}  # モデル名 → "S"/"A"/"B" (legacy: "A1"/"A2" も可)
-    model_context_windows: dict[str, int] = {}  # モデル名パターン → コンテキストウィンドウサイズ
+    model_context_windows: dict[str, int] = {}  # DEPRECATED: use models.json instead. Kept for backward compat only.
     model_max_tokens: dict[str, int] = {}  # モデル名パターン → デフォルト max_tokens
     anima_defaults: AnimaDefaults = AnimaDefaults()
     animas: dict[str, AnimaModelConfig] = {}

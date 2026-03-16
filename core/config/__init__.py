@@ -26,9 +26,7 @@ from core.config.models import (
     resolve_execution_mode,
     save_config,
 )
-from core.config.models import (
-    resolve_context_window as resolve_config_context_window,
-)
+from core.config.models import resolve_context_window  # noqa: F811
 from core.config.vault import (
     VaultError,
     VaultManager,
