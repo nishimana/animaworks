@@ -11,49 +11,47 @@
 {merge_candidates}
 
 ## Critical constraints
-- **You MUST perform this work yourself directly**. Do NOT use `delegate_task`, `submit_tasks`, or `send_message`. Do not delegate to subordinates or send any messages. Complete all work using only memory operation tools
+- **You MUST perform this work yourself directly**. Do NOT use `delegate_task`, `submit_tasks`, or `send_message`. Complete all work using only memory operation tools
 
 ## Workflow
 
-### 1. Merge candidate consolidation (highest priority, MUST)
-The merge candidates above are file pairs detected for consolidation based on RAG vector similarity.
-**For every pair**, perform the following:
-1. Use `read_memory_file` to review both file contents
-2. Merge the content and write with `write_memory_file`
-3. Archive the obsolete one with `archive_memory_file`
-4. If the `[IMPORTANT]` tag exists, preserve it in the merged file
+### Step 1: Merge duplicate files (highest priority — MUST)
 
-Skip this step if no merge candidates are provided.
+When merge candidates are provided, process **every pair**.
+Additionally, review the file list above and find duplicate files covering the same topic yourself.
 
-### 2. Additional duplicate check
-Review the file list above; even if not in the merge candidates, if similar files exist:
-- Use `read_memory_file` to review the content
-- If they should be merged, follow the same procedure
+Merge procedure:
+1. Use `read_memory_file` to review both contents
+2. Combine the information and write to one file with `write_memory_file`
+3. Archive the redundant one with `archive_memory_file`
+4. If `[IMPORTANT]` tag exists, preserve it in the merged file
 
-### 3. Conceptual integration of [IMPORTANT] knowledge
-Consolidate `[IMPORTANT]`-tagged knowledge/ files that are 30+ days old. Transform specific incident records into universal principles and rules.
+- "Merge later" or "too complex, skip" is NOT allowed. Complete all merges now
 
-1. Use `search_memory` to find knowledge/ files containing `[IMPORTANT]`; review those 30+ days old with `read_memory_file`
-2. Group by related themes and extract abstract principles from each group
-3. Create `concept-{theme}.md` with `write_memory_file` (include `[IMPORTANT]` at the top)
-4. Remove `[IMPORTANT]` tag from the original files (keep the files; they will naturally be forgotten)
+### Step 2: Conceptual integration of [IMPORTANT] knowledge
 
-Skip isolated `[IMPORTANT]` entries with no related group, items less than 30 days old, and already concept-level entries.
+Consolidate `[IMPORTANT]`-tagged knowledge/ files older than 30 days.
 
-### 4. Procedure knowledge organization
-Use `Glob` to check files in procedures/:
-- Outdated procedures → Update to reflect current state or archive with `archive_memory_file`
-- Unused procedures → Consider archiving
-- Similar procedures → Merge
+1. Use `search_memory` to find knowledge/ with `[IMPORTANT]`; review those 30+ days old
+2. Group by related themes and extract abstract principles
+3. Create `concept-{theme}.md` (include `[IMPORTANT]` at the top)
+4. Remove `[IMPORTANT]` tag from original files (keep the files themselves)
 
-### 5. Compress old episodes
-Use `Glob` to check episodes/; if there are files older than 30 days:
-- Use `read_memory_file` to review the content
-- Compress entries without the [IMPORTANT] tag to key points only and overwrite with `write_memory_file`
+Skip isolated `[IMPORTANT]` entries or those less than 30 days old.
 
-### 6. Resolve knowledge contradictions
-Check for contradictory knowledge files:
-- Keep the accurate one based on the latest information
-- Archive the outdated one with `archive_memory_file`
+### Step 3: Procedure knowledge organization
 
-After completion, output a summary of what was done.
+Review files in procedures/:
+- Outdated procedures → update or archive
+- Similar procedures → merge
+
+### Step 4: Compress old episodes
+
+If episodes/ has files older than 30 days:
+- Compress entries without `[IMPORTANT]` tag to key points only
+
+### Step 5: Resolve knowledge contradictions
+
+Check for contradictory knowledge files; keep the accurate one and archive the outdated one.
+
+After completion, output a summary (include number of pairs merged and files archived).
