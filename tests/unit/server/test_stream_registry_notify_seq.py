@@ -19,14 +19,15 @@ import pytest
 
 from server.stream_registry import ResponseStream
 
-
 # ── Helpers ──────────────────────────────────────────────
 
 
 def _make_stream(**kwargs) -> ResponseStream:
     """Create a ResponseStream with deterministic defaults."""
     return ResponseStream(
-        response_id="test123", anima_name="alice", **kwargs,
+        response_id="test123",
+        anima_name="alice",
+        **kwargs,
     )
 
 
@@ -220,3 +221,76 @@ class TestNotifySeqEdgeCases:
         # Both may detect it since they both see the seq change.
         assert any(r is True for r in results)
         await task
+
+
+class TestWaitNewEventAfterSeq:
+    """Tests for wait_new_event(after_seq=) fast-path."""
+
+    @pytest.mark.asyncio
+    async def test_returns_immediately_when_events_buffered(self):
+        """If events exist beyond after_seq, return True without waiting."""
+        stream = _make_stream()
+        stream.add_event("text_delta", {"text": "a"})  # seq 0
+        stream.add_event("text_delta", {"text": "b"})  # seq 1
+
+        result = await stream.wait_new_event(timeout=0.1, after_seq=0)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_after_seq_negative_one_does_not_fast_path(self):
+        """after_seq=-1 (default) does not trigger fast-path; waiter must wait normally."""
+        stream = _make_stream()
+        stream.add_event("text_delta", {"text": "x"})  # seq 0
+
+        # after_seq=-1 means "I have no baseline", so fast-path is skipped.
+        # Without a new event arriving, this should timeout.
+        result = await stream.wait_new_event(timeout=0.05, after_seq=-1)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_waits_when_no_events_beyond_after_seq(self):
+        """If no events beyond after_seq, should wait and timeout."""
+        stream = _make_stream()
+        stream.add_event("text_delta", {"text": "only"})  # seq 0
+
+        result = await stream.wait_new_event(timeout=0.05, after_seq=0)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_race_condition_fixed(self):
+        """Simulate the _sse_tail race: events added between events_after() and wait_new_event().
+
+        Without the after_seq fix, the waiter would miss the event and
+        wait up to timeout seconds.
+        """
+        stream = _make_stream()
+        stream.add_event("text_delta", {"text": "a"})  # seq 0
+        stream.add_event("text_delta", {"text": "b"})  # seq 1
+
+        # Simulate: tail fetched events_after(-1) → got [0, 1], yielded them, seq=1
+        fetched = stream.events_after(-1)
+        assert len(fetched) == 2
+        last_seq = fetched[-1].seq  # 1
+
+        # Simulate: while yielding, producer added event seq 2
+        stream.add_event("text_delta", {"text": "c"})  # seq 2
+
+        # Without after_seq, this would wait up to timeout because
+        # _notify_seq already accounts for seq 2.
+        # With after_seq=1, it detects seq 2 in the buffer immediately.
+        import time
+
+        t0 = time.monotonic()
+        result = await stream.wait_new_event(timeout=5.0, after_seq=last_seq)
+        elapsed = time.monotonic() - t0
+
+        assert result is True
+        assert elapsed < 0.1  # should be nearly instant
+
+    @pytest.mark.asyncio
+    async def test_negative_after_seq_ignored(self):
+        """Default after_seq=-1 should not trigger fast-path on empty stream."""
+        stream = _make_stream()
+        # No events in buffer, after_seq=-1
+        result = await stream.wait_new_event(timeout=0.05, after_seq=-1)
+        assert result is False

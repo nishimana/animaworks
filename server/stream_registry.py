@@ -160,14 +160,33 @@ class ResponseStream:
         """The sequence number of the most recent event, or -1 if empty."""
         return self._seq_counter - 1 if self.events else -1
 
-    async def wait_new_event(self, timeout: float = 30.0) -> bool:
+    async def wait_new_event(
+        self,
+        timeout: float = 30.0,
+        after_seq: int = -1,
+    ) -> bool:
         """Wait for a new event. Returns False on timeout.
 
         Uses a sequence counter to avoid the race where set()+clear()
         fires before the waiter's await runs.  Even if the Event is
         already cleared, the changed ``_notify_seq`` tells us a new
         event arrived.
+
+        When *after_seq* >= 0, the method first checks whether events
+        already exist in the buffer beyond that sequence number.  This
+        eliminates the race where events are added between the caller's
+        ``events_after()`` and this wait call.
         """
+        # Fast path: events already buffered beyond caller's last seq
+        if after_seq >= 0 and self._seq_counter - 1 > after_seq:
+            logger.debug(
+                "[SSE-WAIT] immediate_return stream=%s after_seq=%d buf_seq=%d",
+                self.response_id,
+                after_seq,
+                self._seq_counter - 1,
+            )
+            return True
+
         logger.debug(
             "[SSE-WAIT] wait_new_event stream=%s timeout=%.1fs complete=%s seq=%d",
             self.response_id,

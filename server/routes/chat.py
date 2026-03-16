@@ -744,6 +744,11 @@ async def _sse_tail(
                 seq = event.seq
             # Yield control so ASGI server can flush chunks to the client
             await asyncio.sleep(0)
+            # Loop back immediately to check for more events before waiting.
+            # This prevents a race where events added during the yield above
+            # would be missed by wait_new_event (their _notify_seq is already
+            # captured), causing up to 30s delay.
+            continue
 
         # Check if stream is complete and fully drained
         if stream.complete:
@@ -759,8 +764,10 @@ async def _sse_tail(
             )
             break
 
-        # Wait efficiently for new events (no busy polling)
-        got_event = await stream.wait_new_event(timeout=30.0)
+        # Wait efficiently for new events (no busy polling).
+        # Pass after_seq so that events buffered between events_after()
+        # and this call are detected immediately without waiting.
+        got_event = await stream.wait_new_event(timeout=30.0, after_seq=seq)
         if not got_event and not stream.complete:
             # Timeout with no events — send keepalive to prevent connection drop
             yield ": keepalive\n\n"
