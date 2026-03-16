@@ -1279,8 +1279,14 @@ export async function startReplay(hours = 24) {
     onSeek: (ms) => _replayEngine?.seek(ms),
     onSpeedChange: (s) => _replayEngine?.setSpeed(s),
     onExit: () => stopReplay(),
+    onRangeChange: (h) => _reloadReplayRange(h),
+    initialHours: hours,
   });
 
+  await _loadReplayData(hours);
+}
+
+async function _loadReplayData(hours) {
   _replayUI.setLoading(true);
   _replayUI.show();
   _clearAllCardStreams();
@@ -1295,6 +1301,13 @@ export async function startReplay(hours = 24) {
     _replayUI.setLoading(false);
     stopReplay();
   }
+}
+
+async function _reloadReplayRange(hours) {
+  if (!_replayMode || !_replayEngine || !_replayUI) return;
+  _replayEngine.pause();
+  _replayUI.setPlaying(false);
+  await _loadReplayData(hours);
 }
 
 /**

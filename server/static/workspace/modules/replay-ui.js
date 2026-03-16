@@ -13,6 +13,13 @@ const logger = createLogger("replay-ui");
 
 const SPEED_CYCLE = [1, 5, 10, 50, 100, 200];
 const SKIP_MS = 5 * 60 * 1000; // 5 minutes
+const RANGE_OPTIONS = [
+  { value: 1, label: "1h" },
+  { value: 3, label: "3h" },
+  { value: 6, label: "6h" },
+  { value: 12, label: "12h" },
+  { value: 24, label: "24h" },
+];
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -45,14 +52,18 @@ export class ReplayUI {
    * @param {(timeMs: number) => void} opts.onSeek - Called when seek position changes
    * @param {(speed: number) => void} opts.onSpeedChange - Called when speed changes
    * @param {() => void} opts.onExit - Called when exiting replay mode
+   * @param {(hours: number) => void} [opts.onRangeChange] - Called when time range changes
+   * @param {number} [opts.initialHours=24] - Initial hours range
    */
-  constructor({ container, onPlay, onPause, onSeek, onSpeedChange, onExit }) {
+  constructor({ container, onPlay, onPause, onSeek, onSpeedChange, onExit, onRangeChange, initialHours = 24 }) {
     this._container = container;
     this._onPlay = onPlay || (() => {});
     this._onPause = onPause || (() => {});
     this._onSeek = onSeek || (() => {});
     this._onSpeedChange = onSpeedChange || (() => {});
     this._onExit = onExit || (() => {});
+    this._onRangeChange = onRangeChange || (() => {});
+    this._initialHours = initialHours;
 
     this._startMs = 0;
     this._endMs = 1000;
@@ -69,6 +80,7 @@ export class ReplayUI {
     this._timeCurrent = null;
     this._timeEnd = null;
     this._speedBtn = null;
+    this._rangeSelect = null;
 
     this._build();
   }
@@ -77,6 +89,10 @@ export class ReplayUI {
     this._root = document.createElement("div");
     this._root.className = "org-replay-bar";
     this._root.id = "orgReplayBar";
+
+    const rangeOpts = RANGE_OPTIONS.map(o =>
+      `<option value="${o.value}"${o.value === this._initialHours ? " selected" : ""}>${o.label}</option>`
+    ).join("");
 
     this._root.innerHTML = `
       <div class="org-replay-controls">
@@ -91,6 +107,7 @@ export class ReplayUI {
         <span class="org-replay-time" id="replayTimeCurrent">--:--</span>
         <span class="org-replay-time" id="replayTimeEnd">--:--</span>
       </div>
+      <select class="org-replay-range" id="replayRangeSelect" title="遡り時間">${rangeOpts}</select>
       <button class="org-replay-speed" id="replaySpeedBtn">1x</button>
     `;
 
@@ -100,6 +117,7 @@ export class ReplayUI {
     this._timeCurrent = this._root.querySelector("#replayTimeCurrent");
     this._timeEnd = this._root.querySelector("#replayTimeEnd");
     this._speedBtn = this._root.querySelector("#replaySpeedBtn");
+    this._rangeSelect = this._root.querySelector("#replayRangeSelect");
 
     const exitBtn = this._root.querySelector("#replayExitBtn");
     const prevBtn = this._root.querySelector("#replayPrevBtn");
@@ -142,12 +160,18 @@ export class ReplayUI {
       this._onSeek(time);
     });
 
-    // Speed cycle: 1x → 5x → 10x → 50x → 100x → 1x
+    // Speed cycle
     this._speedBtn.addEventListener("click", () => {
       this._speedIndex = (this._speedIndex + 1) % SPEED_CYCLE.length;
       const speed = SPEED_CYCLE[this._speedIndex];
       this._speedBtn.textContent = `${speed}x`;
       this._onSpeedChange(speed);
+    });
+
+    // Range change
+    this._rangeSelect.addEventListener("change", () => {
+      const hours = Number(this._rangeSelect.value);
+      if (hours > 0) this._onRangeChange(hours);
     });
 
     // Insert after KPI bar
@@ -261,6 +285,7 @@ export class ReplayUI {
     this._timeCurrent = null;
     this._timeEnd = null;
     this._speedBtn = null;
+    this._rangeSelect = null;
     this._container = null;
     logger.debug("ReplayUI disposed");
   }
