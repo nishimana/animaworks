@@ -53,10 +53,7 @@ class DashboardMixin(OrgHelpersMixin):
             none_str = t("handler.current_state_none")
             if child["current_state"] != none_str:
                 line += (
-                    "\n"
-                    + "  " * (indent + 1)
-                    + "└ "
-                    + t("handler.dashboard_working_on", task=child["current_state"])
+                    "\n" + "  " * (indent + 1) + "└ " + t("handler.dashboard_working_on", task=child["current_state"])
                 )
             lines.append(line)
             self._render_tree(by_supervisor, lines, child["name"], indent + 1)

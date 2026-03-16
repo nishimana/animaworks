@@ -289,11 +289,11 @@ def cli_dispatch():
                 perm_config = load_permissions(Path(anima_dir_str))
                 permitted = get_permitted_tools(perm_config)
                 if is_action_gated(tool_name, subcommand, permitted):
-                        from core.i18n import t
+                    from core.i18n import t
 
-                        msg = t("tooling.gated_action_denied", tool=tool_name, action=subcommand)
-                        print(f"Error: {msg}", file=sys.stderr)
-                        sys.exit(1)
+                    msg = t("tooling.gated_action_denied", tool=tool_name, action=subcommand)
+                    print(f"Error: {msg}", file=sys.stderr)
+                    sys.exit(1)
             except Exception:
                 logger.debug(
                     "CLI gated check failed for %s %s",

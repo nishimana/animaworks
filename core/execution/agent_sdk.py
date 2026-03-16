@@ -201,7 +201,10 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                 logger.info("Agent SDK execute interrupted — sending graceful interrupt")
                 response_text.append("[Session interrupted by user]")
                 await _graceful_interrupt_blocking(
-                    client, self._anima_dir, session_type, thread_id=thread_id,
+                    client,
+                    self._anima_dir,
+                    session_type,
+                    thread_id=thread_id,
                 )
                 return result_message
 
@@ -221,8 +224,11 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                         response_text.append(block.text)
                     elif isinstance(block, ToolUseBlock):
                         _handle_tool_use_block(
-                            block, pending_records, None,
-                            self._model_config.model, cw_overrides=self._resolve_cw_overrides(),
+                            block,
+                            pending_records,
+                            None,
+                            self._model_config.model,
+                            cw_overrides=self._resolve_cw_overrides(),
                         )
             elif isinstance(message, UserMessage):
                 if isinstance(message.content, list):
@@ -230,9 +236,12 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                         if isinstance(block, ToolResultBlock):
                             session_stats["total_result_bytes"] += _tool_result_content_len(block)
                             _handle_tool_result_block(
-                                block, pending_records, None,
+                                block,
+                                pending_records,
+                                None,
                                 self._model_config.model,
-                                anima_dir=self._anima_dir, cw_overrides=self._resolve_cw_overrides(),
+                                anima_dir=self._anima_dir,
+                                cw_overrides=self._resolve_cw_overrides(),
                             )
             elif isinstance(message, SystemMessage):
                 if message.subtype == "init" and message.data:
@@ -272,7 +281,11 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
         )
 
         options, prompt_file = self._build_sdk_options(
-            system_prompt, _max_turns, _cw, session_stats, resume=session_id_to_resume,
+            system_prompt,
+            _max_turns,
+            _cw,
+            session_stats,
+            resume=session_id_to_resume,
         )
         _prompt_files: list[Path] = [prompt_file] if prompt_file else []
         response_text: list[str] = []
@@ -280,9 +293,15 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
         result_message = None
         usage_acc = TokenUsage()
         _msg_args = dict(
-            prompt=prompt, response_text=response_text, pending_records=pending_records,
-            session_stats=session_stats, tracker=tracker, session_type=session_type,
-            images=images, usage_acc=usage_acc, thread_id=thread_id,
+            prompt=prompt,
+            response_text=response_text,
+            pending_records=pending_records,
+            session_stats=session_stats,
+            tracker=tracker,
+            session_type=session_type,
+            images=images,
+            usage_acc=usage_acc,
+            thread_id=thread_id,
         )
 
         try:
@@ -362,23 +381,36 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
         )
 
         options, prompt_file = self._build_sdk_options(
-            system_prompt, _max_turns, _cw, session_stats,
-            resume=session_id_to_resume, include_partial_messages=True,
+            system_prompt,
+            _max_turns,
+            _cw,
+            session_stats,
+            resume=session_id_to_resume,
+            include_partial_messages=True,
         )
         _prompt_files: list[Path] = [prompt_file] if prompt_file else []
         state = StreamingState(usage_acc=TokenUsage())
         ctx = StreamingContext(
-            prompt=prompt, images=images, session_stats=session_stats,
-            tracker=tracker, session_type=session_type,
-            model=self._model_config.model, anima_dir=self._anima_dir,
+            prompt=prompt,
+            images=images,
+            session_stats=session_stats,
+            tracker=tracker,
+            session_type=session_type,
+            model=self._model_config.model,
+            anima_dir=self._anima_dir,
             cw_overrides=self._resolve_cw_overrides(),
-            check_interrupted=self._check_interrupted, thread_id=thread_id,
+            check_interrupted=self._check_interrupted,
+            thread_id=thread_id,
         )
 
         async def _fresh_session() -> AsyncGenerator[dict[str, Any], None]:
             fresh_opts, pf = self._build_sdk_options(
-                system_prompt, _max_turns, _cw, session_stats,
-                resume=None, include_partial_messages=True,
+                system_prompt,
+                _max_turns,
+                _cw,
+                session_stats,
+                resume=None,
+                include_partial_messages=True,
             )
             if pf:
                 _prompt_files.append(pf)

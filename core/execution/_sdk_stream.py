@@ -300,8 +300,11 @@ async def process_stream_messages(
             logger.info("Agent SDK streaming interrupted — sending graceful interrupt")
             yield {"type": "text_delta", "text": "[Session interrupted by user]"}
             await _graceful_interrupt_stream(
-                client, ctx.anima_dir, ctx.session_type,
-                _captured_session_id, thread_id=ctx.thread_id,
+                client,
+                ctx.anima_dir,
+                ctx.session_type,
+                _captured_session_id,
+                thread_id=ctx.thread_id,
             )
             return
 
@@ -373,7 +376,10 @@ async def process_stream_messages(
                     state.response_text.append(block.text)
                 elif isinstance(block, ToolUseBlock):
                     _handle_tool_use_block(
-                        block, state.pending_records, None, ctx.model,
+                        block,
+                        state.pending_records,
+                        None,
+                        ctx.model,
                         cw_overrides=ctx.cw_overrides,
                     )
                     detail_chunk = make_tool_detail_chunk(block.name, block.id, block.input or {})
@@ -391,8 +397,12 @@ async def process_stream_messages(
                     if isinstance(block, ToolResultBlock):
                         ctx.session_stats["total_result_bytes"] += _tool_result_content_len(block)
                         _handle_tool_result_block(
-                            block, state.pending_records, None, ctx.model,
-                            anima_dir=ctx.anima_dir, cw_overrides=ctx.cw_overrides,
+                            block,
+                            state.pending_records,
+                            None,
+                            ctx.model,
+                            anima_dir=ctx.anima_dir,
+                            cw_overrides=ctx.cw_overrides,
                         )
 
         elif isinstance(message, ResultMessage):

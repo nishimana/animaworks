@@ -277,7 +277,9 @@ async def compact_sdk_session(
 
     logger.info(
         "Starting idle compaction (session=%s, type=%s, thread=%s)",
-        session_id, session_type, thread_id,
+        session_id,
+        session_type,
+        thread_id,
     )
 
     try:
@@ -298,14 +300,18 @@ async def compact_sdk_session(
                         _save_session_id(anima_dir, message.session_id, session_type, thread_id)
                         logger.info(
                             "Idle compaction completed (session=%s, type=%s, thread=%s)",
-                            message.session_id, session_type, thread_id,
+                            message.session_id,
+                            session_type,
+                            thread_id,
                         )
                         found_session_id = True
 
         if not found_session_id:
             logger.warning(
                 "Idle compaction did not receive session_id for %s/%s/%s",
-                anima_dir.name, session_type, thread_id,
+                anima_dir.name,
+                session_type,
+                thread_id,
             )
         return found_session_id
     except ImportError:
@@ -314,13 +320,17 @@ async def compact_sdk_session(
     except TimeoutError:
         logger.warning(
             "Idle compaction timed out for %s/%s/%s; session preserved for next resume",
-            anima_dir.name, session_type, thread_id,
+            anima_dir.name,
+            session_type,
+            thread_id,
         )
         return False
     except Exception:
         logger.warning(
             "Idle compaction failed for %s/%s/%s; session preserved for next resume",
-            anima_dir.name, session_type, thread_id,
+            anima_dir.name,
+            session_type,
+            thread_id,
             exc_info=True,
         )
         return False
