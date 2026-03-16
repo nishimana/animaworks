@@ -209,6 +209,16 @@ class PermissionsMixin:
                 if shared_dir.exists() and resolved.is_relative_to(shared_dir.resolve()):
                     return None
 
+        # Inter-anima boundary: block access to other anima's directories
+        # that were not already allowed by subordinate/descendant/peer rules.
+        animas_root = self._anima_dir.resolve().parent
+        if resolved.is_relative_to(animas_root) and not resolved.is_relative_to(self._anima_dir.resolve()):
+            logger.warning("permission_denied anima=%s path=%s reason=other_anima_dir", self._anima_name, path)
+            return _error_result(
+                "PermissionDenied",
+                f"Access to other anima's directory is not allowed: {path}",
+            )
+
         config = self._load_permissions_config()
 
         # file_roots == ["/"]: allow all (after protected file check)
