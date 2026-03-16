@@ -310,11 +310,7 @@ class TaskQueueManager:
 
         Use this for batch operations to avoid repeated file reads.
         """
-        return {
-            tid: t
-            for tid, t in self._load_all().items()
-            if t.status in _ACTIVE_STATUSES
-        }
+        return {tid: t for tid, t in self._load_all().items() if t.status in _ACTIVE_STATUSES}
 
     # ── Read operations ──────────────────────────────────────
 
