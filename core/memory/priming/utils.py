@@ -79,22 +79,47 @@ class RetrieverCache:
 # ── Dual-query helpers ──────────────────────────────────────────
 
 
-def build_dual_queries(message: str, keywords: list[str]) -> list[str]:
-    """Build dual queries: message-context + keyword-only.
+def _build_context_query(recent_msgs: list[str], max_chars: int = 500) -> str:
+    """Build a context query from recent messages (newest-first, max_chars cutoff)."""
+    parts: list[str] = []
+    total = 0
+    for msg in recent_msgs:
+        remaining = max_chars - total
+        if remaining <= 0:
+            break
+        if len(msg) <= remaining:
+            parts.append(msg)
+            total += len(msg)
+        else:
+            parts.append(msg[:remaining])
+            total += remaining
+            break
+    return "\n".join(parts)
 
-    Returns 1–2 queries.  Avoids issuing a duplicate when the keyword
-    query is identical to the message query.
-    """
+
+def build_queries(
+    message: str,
+    keywords: list[str],
+    recent_human_messages: list[str] | None = None,
+) -> list[str]:
+    """Build 1–3 queries: message, keywords, and optional conversation context."""
     queries: list[str] = []
     msg_query = message[:300].strip() if message else ""
     kw_query = " ".join(keywords[:5]).strip() if keywords else ""
-
     if msg_query:
         queries.append(msg_query)
     if kw_query and kw_query != msg_query:
         queries.append(kw_query)
-
+    if recent_human_messages:
+        ctx = _build_context_query(recent_human_messages, max_chars=500)
+        if ctx and ctx != msg_query:
+            queries.append(ctx)
     return queries
+
+
+def build_dual_queries(message: str, keywords: list[str]) -> list[str]:
+    """Backward-compatible alias for build_queries."""
+    return build_queries(message, keywords)
 
 
 def search_and_merge(

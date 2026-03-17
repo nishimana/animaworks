@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from core.memory.priming.constants import _BUDGET_IMPORTANT_KNOWLEDGE, _CHARS_PER_TOKEN
-from core.memory.priming.utils import build_dual_queries, search_and_merge
+from core.memory.priming.utils import build_queries, search_and_merge
 
 if TYPE_CHECKING:
     from core.memory.rag.retriever import MemoryRetriever
@@ -125,6 +125,7 @@ async def channel_c_related_knowledge(
     keywords: list[str],
     restrict_to: list[str] | None = None,
     message: str = "",
+    recent_human_messages: list[str] | None = None,
 ) -> tuple[str, str]:
     """Channel C: Related knowledge search (vector search).
 
@@ -145,7 +146,7 @@ async def channel_c_related_knowledge(
             logger.debug("Channel C: Retriever unavailable")
             return ("", "")
 
-        queries = build_dual_queries(message, keywords)
+        queries = build_queries(message, keywords, recent_human_messages)
         if not queries:
             logger.debug("Channel C: No keywords and no message")
             return ("", "")

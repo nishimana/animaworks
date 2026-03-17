@@ -213,6 +213,7 @@ class PrimingEngine:
         intent: str = "",
         enable_dynamic_budget: bool = False,
         overflow_files: list[str] | None = None,
+        recent_human_messages: list[str] | None = None,
     ) -> PrimingResult:
         """Prime memories based on incoming message."""
         logger.debug(
@@ -241,12 +242,17 @@ class PrimingEngine:
         keywords = self._extract_keywords(message or effective_message)
 
         if overflow_files is None:
-            channel_c_coro = self._channel_c_related_knowledge(keywords, message=effective_message)
+            channel_c_coro = self._channel_c_related_knowledge(
+                keywords,
+                message=effective_message,
+                recent_human_messages=recent_human_messages,
+            )
         elif overflow_files:
             channel_c_coro = self._channel_c_related_knowledge(
                 keywords,
                 restrict_to=overflow_files,
                 message=effective_message,
+                recent_human_messages=recent_human_messages,
             )
         else:
 
@@ -263,7 +269,11 @@ class PrimingEngine:
             self._channel_d_skill_match(message, keywords, channel=channel),
             self._channel_e_pending_tasks(),
             self._collect_recent_outbound(),
-            self._channel_f_episodes(keywords, message=message),
+            self._channel_f_episodes(
+                keywords,
+                message=message,
+                recent_human_messages=recent_human_messages,
+            ),
             self._collect_pending_human_notifications(channel=channel),
             return_exceptions=True,
         )
@@ -368,6 +378,7 @@ class PrimingEngine:
         keywords: list[str],
         restrict_to: list[str] | None = None,
         message: str = "",
+        recent_human_messages: list[str] | None = None,
     ) -> tuple[str, str]:
         return await _channel_c.channel_c_related_knowledge(
             self.anima_dir,
@@ -376,6 +387,7 @@ class PrimingEngine:
             keywords,
             restrict_to=restrict_to,
             message=message,
+            recent_human_messages=recent_human_messages,
         )
 
     async def _channel_d_skill_match(
@@ -407,6 +419,7 @@ class PrimingEngine:
         keywords: list[str],
         *,
         message: str = "",
+        recent_human_messages: list[str] | None = None,
     ) -> str:
         return await _channel_f.channel_f_episodes(
             self.anima_dir,
@@ -414,6 +427,7 @@ class PrimingEngine:
             self._get_retriever,
             keywords,
             message=message,
+            recent_human_messages=recent_human_messages,
         )
 
     async def _collect_pending_human_notifications(self, *, channel: str = "") -> str:

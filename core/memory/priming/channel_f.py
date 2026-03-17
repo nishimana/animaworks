@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from core.memory.priming.utils import build_dual_queries, search_and_merge
+from core.memory.priming.utils import build_queries, search_and_merge
 
 logger = logging.getLogger("animaworks.priming")
 
@@ -24,6 +24,7 @@ async def channel_f_episodes(
     keywords: list[str],
     *,
     message: str = "",
+    recent_human_messages: list[str] | None = None,
 ) -> str:
     """Channel F: Episode memory search (vector search).
 
@@ -40,7 +41,7 @@ async def channel_f_episodes(
         if retriever is None:
             return ""
 
-        queries = build_dual_queries(message, keywords)
+        queries = build_queries(message, keywords, recent_human_messages)
         if not queries:
             return ""
         anima_name = anima_dir.name

@@ -65,11 +65,26 @@ class PrimingMixin:
             logger.debug("Priming: skipped (tier=minimal)")
             return ("", "")
 
+        if trigger == "heartbeat" or trigger.startswith("consolidation:"):
+            channel = "heartbeat"
+        elif trigger.startswith("cron"):
+            channel = "cron"
+        else:
+            channel = "chat"
+
+        if channel == "heartbeat":
+            message = self._get_recent_reflections_text()
+        else:
+            message = self._extract_message_from_prompt(prompt)
+
         sender_name = "human"
         if trigger.startswith("message:"):
             sender_name = trigger.split(":", 1)[1]
+        elif trigger.startswith("inbox:"):
+            senders = trigger.split(":", 1)[1]
+            sender_name = senders.split(",")[0].strip() or "human"
 
-        message = self._extract_message_from_prompt(prompt)
+        recent_human_messages = self._get_recent_human_messages(trigger)
 
         try:
             if not hasattr(self, "_priming_engine"):
@@ -88,12 +103,6 @@ class PrimingMixin:
                 # Inject callback for active parallel tasks (DAG scheduler)
                 if hasattr(self, "_active_parallel_tasks_getter"):
                     self._priming_engine._get_active_parallel_tasks = self._active_parallel_tasks_getter
-            if trigger == "heartbeat" or trigger.startswith("consolidation:"):
-                channel = "heartbeat"
-            elif trigger.startswith("cron"):
-                channel = "cron"
-            else:
-                channel = "chat"
 
             result = await self._priming_engine.prime_memories(
                 message,
@@ -102,6 +111,7 @@ class PrimingMixin:
                 intent=message_intent,
                 overflow_files=overflow_files,
                 enable_dynamic_budget=True,
+                recent_human_messages=recent_human_messages,
             )
 
             pending_notifications = result.pending_human_notifications
@@ -163,6 +173,55 @@ class PrimingMixin:
                 content_lines.insert(0, line)
 
         return "\n".join(content_lines) if content_lines else prompt
+
+    def _get_recent_human_messages(self, trigger: str) -> list[str]:
+        """Get last 5 human messages from conversation memory for priming context.
+
+        Returns newest-first list of human message contents.
+        Only active for chat triggers (message:*).
+        """
+        if not trigger.startswith("message:"):
+            return []
+        try:
+            from core.memory.conversation import ConversationMemory
+
+            conv = ConversationMemory(self.anima_dir, self.model_config)
+            state = conv.load()
+            human_turns = [t for t in state.turns if t.role == "human"]
+            recent = human_turns[-5:]
+            recent.reverse()
+            return [t.content for t in recent]
+        except Exception:
+            logger.debug("Failed to load recent human messages for priming")
+            return []
+
+    def _get_recent_reflections_text(self) -> str:
+        """Get recent heartbeat REFLECTION text for priming query.
+
+        Retrieves last 3 heartbeat_reflection entries from activity log,
+        providing high-density situation/insight text instead of the
+        full heartbeat prompt template.
+        """
+        try:
+            from core.memory.activity import ActivityLogger
+
+            activity = ActivityLogger(self.anima_dir)
+            entries = activity.recent(
+                days=3,
+                types=["heartbeat_reflection"],
+                limit=3,
+            )
+            if not entries:
+                return ""
+            parts = []
+            for e in entries:
+                content = e.content or e.summary
+                if content:
+                    parts.append(content[:500])
+            return "\n".join(parts)
+        except Exception:
+            logger.debug("Failed to load reflections for heartbeat priming")
+            return ""
 
     # ── Context window overrides ─────────────────────────────
 
