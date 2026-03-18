@@ -19,6 +19,7 @@ def _merge_strings() -> dict[str, dict[str, str]]:
         handler_ext,
         lifecycle,
         memory,
+        migrate,
         misc,
         misc_machine,
         misc_routes,
@@ -46,6 +47,7 @@ def _merge_strings() -> dict[str, dict[str, str]]:
         misc,
         misc_routes,
         misc_machine,
+        migrate,
     ):
         merged.update(mod.STRINGS)
     return merged

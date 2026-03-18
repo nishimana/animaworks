@@ -1,0 +1,110 @@
+from __future__ import annotations
+
+# AnimaWorks - Digital Anima Framework
+# Copyright (C) 2026 AnimaWorks Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# This file is part of AnimaWorks core/server, licensed under Apache-2.0.
+# See LICENSE for the full license text.
+
+"""Version tracking for AnimaWorks runtime migrations."""
+
+import json
+import logging
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from core.time_utils import now_local
+
+logger = logging.getLogger(__name__)
+
+_STATE_FILE = "migration_state.json"
+
+
+def _get_package_version() -> str:
+    """Resolve the current AnimaWorks package version."""
+    try:
+        from importlib.metadata import version
+
+        return version("animaworks")
+    except Exception:
+        pass
+    try:
+        from core.paths import PROJECT_DIR
+
+        toml = PROJECT_DIR / "pyproject.toml"
+        if toml.exists():
+            for line in toml.read_text(encoding="utf-8").splitlines():
+                if line.strip().startswith("version"):
+                    return line.split("=", 1)[1].strip().strip('"').strip("'")
+    except Exception:
+        pass
+    return "0.0.0"
+
+
+# ── Data model ──────────────────────────────────────────────
+
+
+@dataclass
+class MigrationState:
+    """Persistent state of applied migrations."""
+
+    applied_version: str = ""
+    steps_applied: dict[str, str] = field(default_factory=dict)
+    last_migrated_at: str = ""
+
+
+# ── Tracker ─────────────────────────────────────────────────
+
+
+class MigrationTracker:
+    """Read/write ``migration_state.json`` in the runtime data directory."""
+
+    def __init__(self, data_dir: Path) -> None:
+        self._path = data_dir / _STATE_FILE
+        self._state: MigrationState | None = None
+
+    def load(self) -> MigrationState:
+        """Load state from disk, returning empty state if missing."""
+        if self._state is not None:
+            return self._state
+        if self._path.exists():
+            try:
+                raw = json.loads(self._path.read_text(encoding="utf-8"))
+                self._state = MigrationState(
+                    applied_version=raw.get("applied_version", ""),
+                    steps_applied=raw.get("steps_applied", {}),
+                    last_migrated_at=raw.get("last_migrated_at", ""),
+                )
+            except Exception:
+                logger.warning("Corrupt %s — starting fresh", self._path.name)
+                self._state = MigrationState()
+        else:
+            self._state = MigrationState()
+        return self._state
+
+    def save(self, state: MigrationState) -> None:
+        """Persist state to disk."""
+        self._state = state
+        payload = {
+            "applied_version": state.applied_version,
+            "steps_applied": state.steps_applied,
+            "last_migrated_at": state.last_migrated_at,
+        }
+        self._path.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+
+    def is_step_applied(self, step_id: str) -> bool:
+        return step_id in self.load().steps_applied
+
+    def mark_applied(self, step_id: str) -> None:
+        state = self.load()
+        state.steps_applied[step_id] = now_local().isoformat()
+        state.applied_version = _get_package_version()
+        state.last_migrated_at = now_local().isoformat()
+        self.save(state)
+
+    def get_current_version(self) -> str:
+        return _get_package_version()

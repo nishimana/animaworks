@@ -377,15 +377,19 @@ def ensure_runtime_dir(*, skip_animas: bool = False) -> Path:
     # but not be fully initialized yet.
     config_json = data_dir / "config.json"
     if config_json.exists():
-        # Run Person→Anima rename migration before any other access
+        # Run unified migration (includes Person→Anima, config, templates, DB sync)
         try:
-            from core.config.migrate import migrate_person_to_anima
-
-            migrate_person_to_anima(data_dir)
+            _run_auto_migrations(data_dir)
         except Exception:
-            logger.exception("Person-to-Anima migration failed")
-        _maybe_migrate_config(data_dir)
-        _sync_shared_templates(data_dir)
+            logger.exception("Auto-migration failed; continuing with legacy path")
+            try:
+                from core.config.migrate import migrate_person_to_anima
+
+                migrate_person_to_anima(data_dir)
+            except Exception:
+                logger.exception("Person-to-Anima migration failed")
+            _maybe_migrate_config(data_dir)
+            _sync_shared_templates(data_dir)
         _ensure_runtime_only_dirs(data_dir)
         logger.debug("Runtime directory already initialized: %s", data_dir)
         return data_dir
@@ -688,3 +692,26 @@ def _maybe_migrate_config(data_dir: Path) -> None:
     from core.config.migrate import migrate_to_config_json
 
     migrate_to_config_json(data_dir)
+
+
+# ── Unified migration on startup ────────────────────────────
+
+
+def _run_auto_migrations(data_dir: Path) -> None:
+    """Run all pending migrations automatically on server startup."""
+    from core.migrations.registry import MigrationRunner
+    from core.migrations.steps import register_all_steps
+
+    runner = MigrationRunner(data_dir)
+    register_all_steps(runner)
+    report = runner.run_all()
+    if report.total_changed:
+        logger.info(
+            "Auto-migration: %d change(s), %d skip(s), %d error(s)",
+            report.total_changed,
+            report.total_skipped,
+            len(report.errors),
+        )
+    if report.errors:
+        for e in report.errors:
+            logger.warning("Migration error: %s", e)

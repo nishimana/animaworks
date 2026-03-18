@@ -585,6 +585,11 @@ def cli_main() -> None:
     )
     p_migrate_cron.set_defaults(func=_lazy_migrate_cron)
 
+    # ── Migrate ────────────────────────────────────────────────
+    from cli.commands.migrate_cmd import register_migrate_command
+
+    register_migrate_command(sub)
+
     # ── Optimize Assets ──────────────────────────────────────
     from cli.commands import optimize_assets
 
