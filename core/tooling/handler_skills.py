@@ -382,9 +382,7 @@ class SkillsToolsMixin:
         task_file = f"{entry.task_id}.json"
 
         if (pending_dir / task_file).exists() or (processing_dir / task_file).exists():
-            logger.warning(
-                "Task %s already in pipeline, skip regeneration", entry.task_id
-            )
+            logger.warning("Task %s already in pipeline, skip regeneration", entry.task_id)
             return
 
         retry_count = entry.meta.get("retry_count", 0)

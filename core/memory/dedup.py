@@ -32,9 +32,7 @@ class MessageDeduplicator:
         self.anima_dir = anima_dir
         self._overflow_dir = anima_dir / "state" / "overflow_inbox"
 
-    def split_critical(
-        self, messages: list[Any]
-    ) -> tuple[list[Any], list[Any]]:
+    def split_critical(self, messages: list[Any]) -> tuple[list[Any], list[Any]]:
         """Split into critical (bypass all filtering) and non-critical.
 
         Critical messages are those with ``intent="delegation"``; they
@@ -44,9 +42,7 @@ class MessageDeduplicator:
         non_critical = [m for m in messages if getattr(m, "intent", "") != "delegation"]
         return critical, non_critical
 
-    def overflow_to_files(
-        self, messages: list[Any]
-    ) -> tuple[list[Any], int]:
+    def overflow_to_files(self, messages: list[Any]) -> tuple[list[Any], int]:
         """Keep first N messages, write the rest to overflow_inbox/ as individual files.
 
         Returns:
