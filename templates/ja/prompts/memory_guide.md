@@ -14,3 +14,7 @@
 スキル・手順書の一覧はskillツールで確認できます。
 
 共有ユーザー: {shared_users_list}
+
+### パス規約
+- `read_memory_file` / `write_memory_file` → **相対パス**（例: `knowledge/foo.md`, `common_knowledge/ops/guide.md`）
+- `Read` / `Write` / `read_file` / `write_file` → **絶対パス**

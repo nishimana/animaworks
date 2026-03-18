@@ -7,6 +7,8 @@ from __future__ import annotations
 """MemoryToolsMixin — memory file search, read, write, and archive handlers."""
 
 import logging
+import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -33,6 +35,120 @@ _SEARCH_MAX_TOKENS = 25_000
 _SEARCH_MAX_LINES = 2_000
 _SEARCH_CONTEXT_BASE = 128_000
 _SEARCH_MIN_RESULTS = 3
+
+
+@dataclass(frozen=True, slots=True)
+class _PathNormResult:
+    """Result of memory path normalization."""
+
+    rel: str
+    channel_redirect: str | None = None
+
+
+def _normalize_memory_path(raw: str, anima_dir: Path) -> _PathNormResult:
+    """Normalize a memory file path to a canonical relative form.
+
+    Resolves absolute paths, collapses slashes, and maps shared dirs
+    (common_knowledge, reference, common_skills, shared/channels) to
+    canonical prefixes. For shared/channels, returns channel_redirect
+    so the caller can delegate to read_channel/post_channel.
+    """
+    original = raw
+    raw = raw.strip()
+    raw = re.sub(r"/+", "/", raw)
+    if raw.endswith("/") and raw != "/":
+        raw = raw[:-1]
+    while raw.startswith("./"):
+        raw = raw[2:]
+
+    # Fast path: no absolute path and no .. in path
+    if not raw.startswith("/") and ".." not in raw:
+        result = _PathNormResult(rel=raw)
+        if result.rel != original:
+            logger.info("memory path normalized: %r → %r", original, result.rel)
+        return result
+
+    # Prefix-qualified paths with .. must NOT be normalized here — they must
+    # go through the downstream prefix-specific traversal checks unchanged.
+    _PREFIX_DIRS = ("common_knowledge/", "reference/", "common_skills/")
+    if any(raw.startswith(p) for p in _PREFIX_DIRS) and ".." in raw:
+        return _PathNormResult(rel=raw)
+
+    # Resolve to absolute
+    if raw.startswith("/"):
+        resolved = Path(raw).resolve()
+    else:
+        resolved = (anima_dir / raw).resolve()
+
+    anima_resolved = anima_dir.resolve()
+    animas_dir = anima_resolved.parent
+
+    # a. Under anima_dir
+    try:
+        rel = str(resolved.relative_to(anima_resolved))
+        result = _PathNormResult(rel=rel)
+        if result.rel != original:
+            logger.info("memory path normalized: %r → %r", original, result.rel)
+        return result
+    except ValueError:
+        pass
+
+    # b. Under animas dir (sibling anima)
+    if resolved.is_relative_to(animas_dir):
+        try:
+            rel = str(resolved.relative_to(animas_dir))
+            result = _PathNormResult(rel=f"../{rel}")
+            if result.rel != original:
+                logger.info("memory path normalized: %r → %r", original, result.rel)
+            return result
+        except ValueError:
+            pass
+
+    # c–f. Shared dirs (lazy import to avoid circular deps)
+    from core.paths import get_common_knowledge_dir, get_common_skills_dir, get_data_dir, get_reference_dir
+
+    ck_dir = get_common_knowledge_dir().resolve()
+    if resolved.is_relative_to(ck_dir):
+        try:
+            rel = str(resolved.relative_to(ck_dir))
+            result = _PathNormResult(rel=f"common_knowledge/{rel}")
+            if result.rel != original:
+                logger.info("memory path normalized: %r → %r", original, result.rel)
+            return result
+        except ValueError:
+            pass
+
+    ref_dir = get_reference_dir().resolve()
+    if resolved.is_relative_to(ref_dir):
+        try:
+            rel = str(resolved.relative_to(ref_dir))
+            result = _PathNormResult(rel=f"reference/{rel}")
+            if result.rel != original:
+                logger.info("memory path normalized: %r → %r", original, result.rel)
+            return result
+        except ValueError:
+            pass
+
+    cs_dir = get_common_skills_dir().resolve()
+    if resolved.is_relative_to(cs_dir):
+        try:
+            rel = str(resolved.relative_to(cs_dir))
+            result = _PathNormResult(rel=f"common_skills/{rel}")
+            if result.rel != original:
+                logger.info("memory path normalized: %r → %r", original, result.rel)
+            return result
+        except ValueError:
+            pass
+
+    channels_dir = (get_data_dir() / "shared" / "channels").resolve()
+    if resolved.is_relative_to(channels_dir):
+        return _PathNormResult(rel=raw, channel_redirect=resolved.stem)
+
+    # g. Fallback: strip leading /
+    result = _PathNormResult(rel=raw.lstrip("/") if raw.startswith("/") else raw)
+    if result.rel != original:
+        logger.info("memory path normalized: %r → %r", original, result.rel)
+    return result
 
 
 class MemoryToolsMixin:
@@ -120,7 +236,10 @@ class MemoryToolsMixin:
         return "".join(output_parts)
 
     def _handle_read_memory_file(self, args: dict[str, Any]) -> str:
-        rel = args["path"]
+        norm = _normalize_memory_path(args["path"], self._anima_dir)
+        if norm.channel_redirect:
+            return self._handle_read_channel({"channel": norm.channel_redirect})
+        rel = args["path"] = norm.rel
 
         if rel == "state/current_task.md":
             rel = args["path"] = "state/current_state.md"
@@ -181,7 +300,9 @@ class MemoryToolsMixin:
                 if not allowed:
                     return _error_result(
                         "PermissionDenied",
-                        "Path resolves outside anima directory",
+                        f"Path '{rel}' resolves outside your directory. "
+                        "Use relative paths like 'knowledge/foo.md'. "
+                        "For shared channels use read_channel/post_channel.",
                     )
         if path.exists() and path.is_file():
             logger.debug("read_memory_file path=%s", rel)
@@ -206,7 +327,15 @@ class MemoryToolsMixin:
         return f"File not found: {rel}{hint}"
 
     def _handle_write_memory_file(self, args: dict[str, Any]) -> str:
-        rel = args["path"]
+        norm = _normalize_memory_path(args["path"], self._anima_dir)
+        if norm.channel_redirect:
+            return self._handle_post_channel(
+                {
+                    "channel": norm.channel_redirect,
+                    "content": args.get("content", ""),
+                }
+            )
+        rel = args["path"] = norm.rel
 
         if rel == "state/current_task.md":
             rel = args["path"] = "state/current_state.md"
@@ -549,6 +678,8 @@ class MemoryToolsMixin:
         import shutil
 
         rel = args.get("path", "")
+        norm = _normalize_memory_path(rel, self._anima_dir)
+        rel = args["path"] = norm.rel
         reason = args.get("reason", "")
 
         if not rel:

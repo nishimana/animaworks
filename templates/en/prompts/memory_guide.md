@@ -14,3 +14,7 @@ Knowledge: {knowledge_count} files | Procedures: {procedure_count} files
 Use the skill tool to list available skills and procedures.
 
 Shared users: {shared_users_list}
+
+### Path conventions
+- `read_memory_file` / `write_memory_file` → **relative paths** (e.g. `knowledge/foo.md`, `common_knowledge/ops/guide.md`)
+- `Read` / `Write` / `read_file` / `write_file` → **absolute paths**

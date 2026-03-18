@@ -56,7 +56,7 @@ MEMORY_TOOLS: list[dict[str, Any]] = [
         "parameters": {
             "type": "object",
             "properties": {
-                "path": {"type": "string"},
+                "path": {"type": "string", "description": "Relative path within anima dir"},
                 "content": {"type": "string"},
                 "mode": {"type": "string", "enum": ["overwrite", "append"]},
             },

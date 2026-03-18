@@ -1224,7 +1224,7 @@ class TestMemoryWriteSecurity:
         )
         parsed = json.loads(result)
         assert parsed["error_type"] == "PermissionDenied"
-        assert "outside anima directory" in parsed["message"]
+        assert "resolves outside" in parsed["message"]
         # Verify file was NOT created
         assert not (other / "stolen.md").exists()
 
@@ -1243,7 +1243,7 @@ class TestMemoryWriteSecurity:
         )
         parsed = json.loads(result)
         assert parsed["error_type"] == "PermissionDenied"
-        assert "outside anima directory" in parsed["message"]
+        assert "resolves outside your directory" in parsed["message"]
 
     def test_read_memory_file_normal_access_allowed(
         self,
@@ -1402,7 +1402,7 @@ class TestCommandPathTraversal:
             )
         parsed = json.loads(result)
         assert parsed["error_type"] == "PermissionDenied"
-        assert "outside anima directory" in parsed["message"]
+        assert "resolves outside" in parsed["message"]
 
     def test_command_without_traversal_allowed(
         self,

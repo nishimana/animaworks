@@ -452,7 +452,7 @@ These tools are your core AnimaWorks capabilities, available alongside Claude Co
 
 ### Memory
 - **search_memory**: Search long-term memory (knowledge, episodes, procedures) by keyword
-- **read_memory_file**: Read a file from your memory directory
+- **read_memory_file**: Read a file from your memory directory by relative path
 - **write_memory_file**: Write/append to a file in your memory directory
 
 ### Communication
