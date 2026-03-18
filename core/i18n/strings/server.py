@@ -74,6 +74,14 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "ワークスペース '{alias}' が見つかりません。エイリアス、ハッシュ、または絶対パスを確認してください。",
         "en": "Workspace '{alias}' not found. Check the alias, hash, or absolute path.",
     },
+    "workspace.not_found_with_suggestions": {
+        "ja": "ワークスペース '{alias}' が見つかりません。もしかして: {suggestions}",
+        "en": "Workspace '{alias}' not found. Did you mean: {suggestions}",
+    },
+    "workspace.not_found_with_list": {
+        "ja": "ワークスペース '{alias}' が見つかりません。登録済みワークスペース: {available}",
+        "en": "Workspace '{alias}' not found. Available workspaces: {available}",
+    },
     "workspace.registered": {
         "ja": "ワークスペースを登録しました: {qualified} → {path}",
         "en": "Workspace registered: {qualified} → {path}",

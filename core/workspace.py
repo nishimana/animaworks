@@ -18,6 +18,7 @@ registry in ``config.json`` and resolves aliases like ``aischreiber`` or
 
 import hashlib
 import logging
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
@@ -94,7 +95,29 @@ def resolve_workspace(alias_or_path: str) -> Path:
     if p.is_absolute() and p.is_dir():
         return p
 
-    raise ValueError(t("workspace.not_found", alias=alias_or_path))
+    candidates: list[tuple[float, str]] = []
+    for reg_alias, reg_path in registry.items():
+        ratio = SequenceMatcher(
+            None, alias_or_path.lower(), reg_alias.lower()
+        ).ratio()
+        if ratio >= 0.5:
+            candidates.append((ratio, qualified_alias(reg_alias, reg_path)))
+    candidates.sort(reverse=True)
+
+    if candidates:
+        suggestions = ", ".join(qa for _, qa in candidates[:3])
+        raise ValueError(
+            t("workspace.not_found_with_suggestions",
+              alias=alias_or_path, suggestions=suggestions)
+        )
+
+    all_ws = ", ".join(
+        qualified_alias(a, p) for a, p in registry.items()
+    )
+    raise ValueError(
+        t("workspace.not_found_with_list",
+          alias=alias_or_path, available=all_ws or "(none)")
+    )
 
 
 def resolve_default_workspace(anima_dir: Path) -> tuple[Path | None, str]:

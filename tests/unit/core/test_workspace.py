@@ -138,6 +138,37 @@ class TestResolveWorkspace:
             resolve_workspace("nonexistent")
         assert "nonexistent" in str(excinfo.value)
 
+    def test_resolve_workspace_suggests_similar(
+        self, tmp_path: Path
+    ) -> None:
+        """Fuzzy match suggests similar aliases when resolution fails."""
+        cfg = AnimaWorksConfig()
+        cfg.workspaces = {"aischreiber": str(tmp_path)}
+        with patch("core.config.models.load_config", return_value=cfg), pytest.raises(ValueError) as excinfo:
+            resolve_workspace("ai-schreiber")
+        msg = str(excinfo.value)
+        assert "もしかして" in msg or "Did you mean" in msg
+
+    def test_resolve_workspace_lists_all_when_no_match(
+        self, tmp_path: Path
+    ) -> None:
+        """When no fuzzy match, ValueError lists all registered workspaces."""
+        cfg = AnimaWorksConfig()
+        cfg.workspaces = {"myproject": str(tmp_path)}
+        with patch("core.config.models.load_config", return_value=cfg), pytest.raises(ValueError) as excinfo:
+            resolve_workspace("zzz-completely-different")
+        msg = str(excinfo.value)
+        assert "myproject" in msg
+
+    def test_resolve_workspace_empty_registry(self) -> None:
+        """Empty registry raises ValueError with (none) in message."""
+        cfg = AnimaWorksConfig()
+        cfg.workspaces = {}
+        with patch("core.config.models.load_config", return_value=cfg), pytest.raises(ValueError) as excinfo:
+            resolve_workspace("anything")
+        msg = str(excinfo.value)
+        assert "(none)" in msg
+
     def test_registered_path_deleted_raises_value_error(
         self, tmp_path: Path
     ) -> None:
