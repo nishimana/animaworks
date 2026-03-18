@@ -139,7 +139,7 @@ class SystemCronsMixin:
 
         try:
             from core.memory.rag import MemoryIndexer
-            from core.memory.rag.store import ChromaVectorStore
+            from core.memory.rag.singleton import get_vector_store
         except ImportError:
             logger.warning("RAG dependencies not available, skipping daily indexing")
             return
@@ -147,7 +147,6 @@ class SystemCronsMixin:
         from core.memory.rag.singleton import get_embedding_model_name
         from core.memory.rag_search import _compute_dir_hash, _read_shared_hash, _write_shared_hash
         from core.paths import (
-            get_anima_vectordb_dir,
             get_common_knowledge_dir,
             get_common_skills_dir,
             get_data_dir,
@@ -195,8 +194,10 @@ class SystemCronsMixin:
                 continue
 
             try:
-                vdb_dir = get_anima_vectordb_dir(anima_name)
-                vector_store = ChromaVectorStore(persist_dir=vdb_dir)
+                vector_store = get_vector_store(anima_name)
+                if vector_store is None:
+                    logger.warning("Vector store unavailable for %s, skipping indexing", anima_name)
+                    continue
                 indexer = MemoryIndexer(vector_store, anima_name, anima_dir)
                 memory_types = [
                     ("knowledge", anima_dir / "knowledge"),
@@ -239,7 +240,7 @@ class SystemCronsMixin:
 
                 logger.info("Daily indexing for %s complete", anima_name)
 
-                del indexer, vector_store
+                del indexer
                 gc.collect()
 
             except Exception:
@@ -249,8 +250,9 @@ class SystemCronsMixin:
         if shared_users_dir.is_dir():
             try:
                 for anima_name, _anima in self.animas.items():
-                    vdb_dir = get_anima_vectordb_dir(anima_name)
-                    vs = ChromaVectorStore(persist_dir=vdb_dir)
+                    vs = get_vector_store(anima_name)
+                    if vs is None:
+                        continue
                     su_indexer = MemoryIndexer(vs, "shared", shared_users_dir.parent)
                     chunks = await loop.run_in_executor(
                         None,
@@ -259,7 +261,7 @@ class SystemCronsMixin:
                         "shared_users",
                     )
                     total_chunks += chunks
-                    del su_indexer, vs
+                    del su_indexer
             except Exception:
                 logger.exception("Daily indexing failed for shared_users")
 

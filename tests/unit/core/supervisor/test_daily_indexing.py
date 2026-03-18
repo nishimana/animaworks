@@ -45,17 +45,16 @@ async def test_daily_indexing_uses_per_anima_vectordb(tmp_path: Path) -> None:
     sup = _make_supervisor(tmp_path)
     _create_anima_dir(sup.animas_dir, "sakura", with_knowledge=True)
 
-    chroma_calls: list[tuple] = []
+    get_vs_calls: list[str | None] = []
+    mock_store = MagicMock()
 
-    def capture_chroma(persist_dir=None, **kwargs):
-        chroma_calls.append((persist_dir,))
-        store = MagicMock()
-        return store
+    def capture_get_vs(anima_name=None):
+        get_vs_calls.append(anima_name)
+        return mock_store
 
     with (
         patch("core.paths.get_data_dir", return_value=tmp_path),
-        patch("core.paths.get_anima_vectordb_dir", side_effect=lambda n: tmp_path / "animas" / n / "vectordb"),
-        patch("core.memory.rag.store.ChromaVectorStore", side_effect=capture_chroma),
+        patch("core.memory.rag.singleton.get_vector_store", side_effect=capture_get_vs),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
         patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
@@ -67,8 +66,8 @@ async def test_daily_indexing_uses_per_anima_vectordb(tmp_path: Path) -> None:
 
         await sup._run_daily_indexing()
 
-    assert len(chroma_calls) >= 1
-    assert chroma_calls[0][0] == tmp_path / "animas" / "sakura" / "vectordb"
+    assert len(get_vs_calls) >= 1
+    assert get_vs_calls[0] == "sakura"
 
 
 @pytest.mark.asyncio
@@ -85,8 +84,7 @@ async def test_daily_indexing_incremental(tmp_path: Path) -> None:
     mock_store = MagicMock()
     with (
         patch("core.paths.get_data_dir", return_value=tmp_path),
-        patch("core.paths.get_anima_vectordb_dir", side_effect=lambda n: tmp_path / "animas" / n / "vectordb"),
-        patch("core.memory.rag.store.ChromaVectorStore", return_value=mock_store),
+        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
         patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
@@ -110,8 +108,7 @@ async def test_daily_indexing_writes_marker(tmp_path: Path) -> None:
     mock_store = MagicMock()
     with (
         patch("core.paths.get_data_dir", return_value=tmp_path),
-        patch("core.paths.get_anima_vectordb_dir", side_effect=lambda n: tmp_path / "animas" / n / "vectordb"),
-        patch("core.memory.rag.store.ChromaVectorStore", return_value=mock_store),
+        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
         patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
@@ -148,7 +145,7 @@ async def test_daily_indexing_skips_on_model_change(tmp_path: Path) -> None:
             "core.memory.rag.singleton.get_embedding_model_name",
             return_value="intfloat/multilingual-e5-small",
         ),
-        patch("core.memory.rag.store.ChromaVectorStore", side_effect=track_chroma),
+        patch("core.memory.rag.singleton.get_vector_store", side_effect=track_chroma),
     ):
         await sup._run_daily_indexing()
 

@@ -515,7 +515,7 @@ class SchedulerMixin:
 
         try:
             from core.memory.rag import MemoryIndexer
-            from core.memory.rag.store import ChromaVectorStore
+            from core.memory.rag.singleton import get_vector_store
         except ImportError:
             logger.warning("RAG dependencies not available, skipping daily indexing")
             return
@@ -524,7 +524,6 @@ class SchedulerMixin:
         import json
 
         from core.paths import (
-            get_anima_vectordb_dir,
             get_common_knowledge_dir,
             get_common_skills_dir,
         )
@@ -565,8 +564,10 @@ class SchedulerMixin:
 
         for anima_name, anima_dir in self._iter_consolidation_targets():
             try:
-                vdb_dir = get_anima_vectordb_dir(anima_name)
-                vector_store = ChromaVectorStore(persist_dir=vdb_dir)
+                vector_store = get_vector_store(anima_name)
+                if vector_store is None:
+                    logger.warning("Vector store unavailable for %s, skipping indexing", anima_name)
+                    continue
                 indexer = MemoryIndexer(vector_store, anima_name, anima_dir)
 
                 memory_types = [
@@ -622,7 +623,7 @@ class SchedulerMixin:
 
                 logger.info("Daily indexing for %s complete", anima_name)
 
-                del indexer, vector_store
+                del indexer
                 gc.collect()
 
             except Exception:

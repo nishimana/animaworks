@@ -213,7 +213,7 @@ class ForgettingEngine:
         """Get vector store singleton.
 
         Returns:
-            ChromaVectorStore instance, or ``None`` if ChromaDB is unavailable.
+            VectorStore instance, or ``None`` if unavailable.
         """
         from core.memory.rag.singleton import get_vector_store
 
@@ -223,19 +223,17 @@ class ForgettingEngine:
         """Get all chunks from a collection with their metadata."""
         try:
             store = self._get_vector_store()
-            coll = store.client.get_collection(name=collection_name)
-            result = coll.get(include=["metadatas", "documents"])
-            chunks = []
-            if result["ids"]:
-                for i, doc_id in enumerate(result["ids"]):
-                    chunks.append(
-                        {
-                            "id": doc_id,
-                            "metadata": result["metadatas"][i] if result["metadatas"] else {},
-                            "content": result["documents"][i] if result["documents"] else "",
-                        }
-                    )
-            return chunks
+            if store is None:
+                return []
+            results = store.get_by_metadata(collection_name, {}, limit=100_000)
+            return [
+                {
+                    "id": r.document.id,
+                    "metadata": dict(r.document.metadata),
+                    "content": r.document.content,
+                }
+                for r in results
+            ]
         except Exception as e:
             logger.warning("Failed to get chunks from %s: %s", collection_name, e)
             return []
