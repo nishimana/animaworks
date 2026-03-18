@@ -304,7 +304,8 @@ class TestCmdConfigExportSections:
         args = argparse.Namespace(dry_run=True)
         with patch("core.paths.TEMPLATES_DIR", tmp_path / "templates"), \
              patch("core.paths._get_locale", return_value="ja"), \
-             patch("core.tooling.prompt_db.get_prompt_store", return_value=store):
+             patch("core.tooling.prompt_db.get_prompt_store", return_value=store), \
+             patch("core.init.ensure_runtime_dir"):
             cmd_config_export_sections(args)
 
         captured = capsys.readouterr()
@@ -329,7 +330,8 @@ class TestCmdConfigExportSections:
         args = argparse.Namespace(dry_run=False)
         with patch("core.paths.TEMPLATES_DIR", tmp_path / "templates"), \
              patch("core.paths._get_locale", return_value="ja"), \
-             patch("core.tooling.prompt_db.get_prompt_store", return_value=store):
+             patch("core.tooling.prompt_db.get_prompt_store", return_value=store), \
+             patch("core.init.ensure_runtime_dir"):
             cmd_config_export_sections(args)
 
         captured = capsys.readouterr()
@@ -353,7 +355,8 @@ class TestCmdConfigExportSections:
         args = argparse.Namespace(dry_run=False)
         with patch("core.paths.TEMPLATES_DIR", tmp_path / "templates"), \
              patch("core.paths._get_locale", return_value="ja"), \
-             patch("core.tooling.prompt_db.get_prompt_store", return_value=store):
+             patch("core.tooling.prompt_db.get_prompt_store", return_value=store), \
+             patch("core.init.ensure_runtime_dir"):
             cmd_config_export_sections(args)
 
         captured = capsys.readouterr()
