@@ -278,17 +278,26 @@ export function createMeetingController(ctx) {
     }
   }
 
+  async function _refetchRoom(roomId) {
+    try {
+      const room = await api(`/api/rooms/${encodeURIComponent(roomId)}`);
+      state.meetingRoom = room;
+    } catch (err) {
+      deps.logger?.error?.("Failed to refetch room", err);
+    }
+  }
+
   async function addParticipant(name) {
     const room = state.meetingRoom;
     if (!room?.room_id) return;
 
     try {
-      const res = await api(`/api/rooms/${encodeURIComponent(room.room_id)}/participants`, {
+      await api(`/api/rooms/${encodeURIComponent(room.room_id)}/participants`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
       });
-      state.meetingRoom = res;
+      await _refetchRoom(room.room_id);
       _updateMeetingPanel();
     } catch (err) {
       deps.logger?.error?.("Failed to add participant", err);
@@ -300,11 +309,11 @@ export function createMeetingController(ctx) {
     if (!room?.room_id) return;
 
     try {
-      const res = await api(
+      await api(
         `/api/rooms/${encodeURIComponent(room.room_id)}/participants/${encodeURIComponent(name)}`,
         { method: "DELETE" }
       );
-      state.meetingRoom = res;
+      await _refetchRoom(room.room_id);
       _updateMeetingPanel();
     } catch (err) {
       deps.logger?.error?.("Failed to remove participant", err);

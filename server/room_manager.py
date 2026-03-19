@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -25,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 MAX_PARTICIPANTS = 5
 DEFAULT_MAX_CONTEXT_MESSAGES = 50
+_ROOM_ID_RE = re.compile(r"^[a-f0-9]{12}$")
 
 # ── Data Model ──────────────────────────────────────────────
 
@@ -87,6 +89,7 @@ class RoomManager:
         self._data_dir = Path(data_dir)
         self._data_dir.mkdir(parents=True, exist_ok=True)
         self._rooms: dict[str, MeetingRoom] = {}
+        self._lock = asyncio.Lock()
 
     # ── Room CRUD ───────────────────────────────────────────
 
@@ -131,6 +134,12 @@ class RoomManager:
         self.save_room(room_id)
         logger.info("Created meeting room %s (chair=%s, participants=%s)", room_id, chair, participants)
         return room
+
+    @staticmethod
+    def _validate_room_id(room_id: str) -> None:
+        """Validate room_id to prevent path traversal."""
+        if not _ROOM_ID_RE.match(room_id):
+            raise ValueError(f"Invalid room_id: {room_id!r}")
 
     def get_room(self, room_id: str) -> MeetingRoom | None:
         """Get a room by ID."""
@@ -319,6 +328,7 @@ class RoomManager:
 
     def save_room(self, room_id: str) -> None:
         """Save room state to JSON file at data_dir/{room_id}.json."""
+        self._validate_room_id(room_id)
         room = self.get_room(room_id)
         if room is None:
             return
@@ -328,6 +338,7 @@ class RoomManager:
 
     def load_room(self, room_id: str) -> MeetingRoom | None:
         """Load room from disk."""
+        self._validate_room_id(room_id)
         path = self._data_dir / f"{room_id}.json"
         if not path.exists():
             return None

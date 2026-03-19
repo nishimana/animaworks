@@ -348,7 +348,7 @@ class TestPersistence:
         data_dir = tmp_path / "meetings"
         data_dir.mkdir(parents=True, exist_ok=True)
         manager = RoomManager(data_dir)
-        loaded = manager.load_room("nonexistent123")
+        loaded = manager.load_room("aabbccddeeff")
         assert loaded is None
 
 
@@ -392,5 +392,5 @@ class TestGenerateMinutes:
     @pytest.mark.asyncio
     async def test_generate_minutes_room_not_found(self, room_manager: RoomManager, tmp_path: Path):
         common_knowledge_dir = tmp_path / "common_knowledge"
-        path = await room_manager.generate_minutes("nonexistent123", common_knowledge_dir)
+        path = await room_manager.generate_minutes("aabbccddeeff", common_knowledge_dir)
         assert path is None

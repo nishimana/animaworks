@@ -675,9 +675,11 @@ export function createStreamingController(ctx) {
       });
 
       await streamMeetingChat(roomId, body, abortController.signal, {
-        onSpeakerStart: ({ speaker }) => {
+        onSpeakerStart: ({ speaker, role: speakerRole }) => {
           currentStreamingMsg = {
             role: "assistant",
+            speaker,
+            speakerRole: speakerRole || "participant",
             from_person: speaker,
             text: "",
             streaming: true,
