@@ -98,8 +98,8 @@ class TestUpdateStateFromSummary:
         assert task is not None
         assert task.status == "done"
 
-    def test_new_tasks_added_to_queue(self, conv_memory, anima_dir):
-        """New tasks are registered in task_queue.jsonl."""
+    def test_new_tasks_not_added_to_queue(self, conv_memory, anima_dir):
+        """new_tasks from session summary are NOT registered (auto-detection disabled)."""
         from core.memory.manager import MemoryManager
         from core.memory.task_queue import TaskQueueManager
 
@@ -118,9 +118,7 @@ class TestUpdateStateFromSummary:
         conv_memory._update_state_from_summary(memory_mgr, parsed)
 
         pending = tqm.get_pending()
-        summaries = [t.summary for t in pending]
-        assert "Implement feature X" in summaries
-        assert "Review PR #42" in summaries
+        assert len(pending) == 0
 
     def test_current_state_unchanged(self, conv_memory, anima_dir):
         """current_state.md is NOT modified by _update_state_from_summary."""

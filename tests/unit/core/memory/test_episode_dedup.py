@@ -340,8 +340,8 @@ class TestUpdateState:
         assert task is not None
         assert task.status == "done"
 
-    def test_new_tasks_added_to_queue(self, conv_memory, anima_dir):
-        """New tasks are registered in task_queue.jsonl."""
+    def test_new_tasks_not_added_to_queue(self, conv_memory, anima_dir):
+        """new_tasks from session summary are NOT registered (auto-detection disabled)."""
         from core.memory.manager import MemoryManager
         from core.memory.task_queue import TaskQueueManager
 
@@ -360,8 +360,7 @@ class TestUpdateState:
         conv_memory._update_state_from_summary(mm, parsed)
         tqm = TaskQueueManager(anima_dir)
         pending = tqm.get_pending()
-        summaries = [t.summary for t in pending]
-        assert "レポート作成" in summaries
+        assert len(pending) == 0
 
     def test_resolved_items_mark_matching_task_done(self, conv_memory, anima_dir):
         """Resolved items update matching task_queue entries to done."""
@@ -392,8 +391,8 @@ class TestUpdateState:
         assert task is not None
         assert task.status == "done"
 
-    def test_no_duplicate_new_tasks(self, conv_memory, anima_dir):
-        """Already-present tasks in queue are not duplicated."""
+    def test_existing_tasks_unaffected_by_new_tasks(self, conv_memory, anima_dir):
+        """Existing tasks in queue are not affected when new_tasks are present."""
         from core.memory.manager import MemoryManager
         from core.memory.task_queue import TaskQueueManager
 

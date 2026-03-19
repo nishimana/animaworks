@@ -57,17 +57,15 @@ def _update_state_from_summary(
                 logger.info("Task marked done from session summary: %s", task.task_id)
                 break
 
-    existing_summaries = {t.summary for t in active_tasks.values()}
-    for task_text in parsed.new_tasks:
-        if not any(task_text in s or s in task_text for s in existing_summaries):
-            tqm.add_task(
-                source="anima",
-                original_instruction=task_text,
-                assignee=anima_name,
-                summary=task_text,
-                meta={"origin": "session_summary_auto_detected"},
-            )
-            logger.info("New task registered from session summary: %s", task_text[:60])
+    # NOTE: Auto-detection of new tasks from session summaries is disabled.
+    # Investigation showed zero cases where auto-detected tasks drove useful
+    # work; they produced noise (wrong assignees, stale "待ち" items, literal
+    # "なし" entries) and duplicated what heartbeat Observe→Plan already covers.
+    if parsed.new_tasks:
+        logger.debug(
+            "Session summary contained %d new_tasks (auto-registration disabled)",
+            len(parsed.new_tasks),
+        )
 
 
 def _auto_track_procedure_outcomes(
