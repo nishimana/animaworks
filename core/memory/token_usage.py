@@ -240,12 +240,18 @@ class TokenUsageLogger:
             if not path.is_file():
                 continue
             try:
-                for line in path.read_text(encoding="utf-8").splitlines():
-                    line = line.strip()
-                    if line:
-                        entries.append(json.loads(line))
-            except (OSError, json.JSONDecodeError):
+                raw = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
                 logger.warning("Failed to read %s", path, exc_info=True)
+                continue
+            for line in raw.splitlines():
+                line = line.strip().strip("\x00")
+                if not line:
+                    continue
+                try:
+                    entries.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
         return entries
 
     def summarize(

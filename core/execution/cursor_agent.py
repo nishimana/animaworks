@@ -153,21 +153,19 @@ class CursorAgentExecutor(BaseExecutor):
         ]
 
     def _build_env(self) -> dict[str, str]:
-        """Build environment for subprocess."""
+        """Build environment for subprocess.
+
+        cursor-agent authenticates via ``agent login`` (stored in
+        ``~/.cursor-agent/``).  We do NOT inject ``CURSOR_API_KEY`` from
+        AnimaWorks credentials — only pass it through if it's already
+        set in the host environment.
+        """
         env = dict(os.environ)
-        api_key = self._resolve_api_key()
-        if api_key:
-            env["CURSOR_API_KEY"] = api_key
-        elif "CURSOR_API_KEY" not in env and "CURSOR_ACCESS_TOKEN" not in env:
-            pass
         for key in ("PATH", "HOME", "LANG"):
             if key not in env:
-                if key == "PATH":
-                    env[key] = os.environ.get("PATH", "/usr/bin:/bin")
-                elif key == "HOME":
-                    env[key] = os.environ.get("HOME", "/tmp")
-                elif key == "LANG":
-                    env[key] = os.environ.get("LANG", "en_US.UTF-8")
+                val = os.environ.get(key)
+                if val:
+                    env[key] = val
         return env
 
     def _parse_ndjson_event(self, stdout_line: str) -> dict[str, Any] | None:

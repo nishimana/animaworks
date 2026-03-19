@@ -152,10 +152,10 @@ class TestBuildEnv:
         assert "PATH" in env
         assert "HOME" in env
 
-    def test_api_key_propagated(self, executor):
-        executor._model_config.api_key = "test-cursor-key"
+    def test_no_api_key_injected(self, executor):
+        executor._model_config.api_key = "test-anthropic-key"
         env = executor._build_env()
-        assert env.get("CURSOR_API_KEY") == "test-cursor-key"
+        assert "CURSOR_API_KEY" not in env or env.get("CURSOR_API_KEY") != "test-anthropic-key"
 
 
 class TestNDJSONParsing:
