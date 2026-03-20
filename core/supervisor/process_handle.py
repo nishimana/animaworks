@@ -164,6 +164,9 @@ class ProcessHandle:
             )
 
             child_env = os.environ.copy()
+            # Remove Claude Code marker so child processes don't refuse to
+            # launch their own Claude SDK sessions.
+            child_env.pop("CLAUDECODE", None)
             child_env.update(self._child_env_urls)
 
             popen_kwargs: dict = dict(

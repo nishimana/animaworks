@@ -100,7 +100,7 @@ class SDKOptionsMixin:
         env: dict[str, str] = {
             "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
             "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
-            "PATH": f"{self._anima_dir}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+            "PATH": f"{self._anima_dir}{os.pathsep}{os.environ.get('PATH', '/usr/bin:/bin')}",
             "CLAUDE_CODE_DISABLE_SKILL_IMPROVEMENT": "true",
             "CLAUDECODE": "",
         }
@@ -151,18 +151,33 @@ class SDKOptionsMixin:
         return env
 
     def _build_mcp_env(self) -> dict[str, str]:
-        """Build env dict for the MCP server subprocess.
+        """Build env dict for the built-in ``aw`` MCP server subprocess.
 
         The MCP server needs ANIMAWORKS_ANIMA_DIR and ANIMAWORKS_PROJECT_DIR
         to initialize ToolHandler, plus PYTHONPATH so it can import core modules.
+
+        Note: This env is only used for the built-in ``aw`` MCP server
+        (Python-based).  User-defined ``extra_mcp_servers`` carry their own
+        env and are not affected by this PATH minimization.
         """
         from core.paths import PROJECT_DIR
+
+        if sys.platform == "win32":
+            # Windows では PATH を最小化して --mcp-config のサイズを抑える。
+            # Windows の PATH は 2,000-5,000+ 文字になることがあり、
+            # コマンドライン長超過の一因となる。
+            # 詳細: docs/design/fix-win-cmdline-overflow-analysis.md
+            python_dir = str(Path(sys.executable).resolve().parent)
+            project_dir_str = str(Path(PROJECT_DIR).resolve())
+            path_val = ";".join(dict.fromkeys([python_dir, project_dir_str]))
+        else:
+            path_val = os.environ.get("PATH", "/usr/bin:/bin")
 
         return {
             "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
             "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
             "PYTHONPATH": str(PROJECT_DIR),
-            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "PATH": path_val,
         }
 
     def _make_pending_executor_wake_callback(self) -> Callable[[], None] | None:

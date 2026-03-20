@@ -8,19 +8,25 @@ from __future__ import annotations
 # See LICENSE for the full license text.
 
 
-"""Monkey-patch for claude-agent-sdk SubprocessCLITransport.close().
+"""Monkey-patches for claude-agent-sdk SubprocessCLITransport.
 
-Upstream bug: The SDK sends SIGTERM immediately after closing stdin,
-killing the Claude Code CLI before it can flush the session JSONL file.
-This causes the final assistant text response to be lost from the session,
-breaking session resume (the model cannot see its own previous response).
+Patch 1 — close() graceful shutdown:
+  Upstream bug: The SDK sends SIGTERM immediately after closing stdin,
+  killing the Claude Code CLI before it can flush the session JSONL file.
+  This causes the final assistant text response to be lost from the session,
+  breaking session resume (the model cannot see its own previous response).
+  Upstream references:
+    - https://github.com/anthropics/claude-agent-sdk-python/pull/614
+    - https://github.com/anthropics/claude-code/issues/21971
+  Remove once the SDK ships a fix.
 
-Upstream references:
-  - https://github.com/anthropics/claude-agent-sdk-python/pull/614
-  - https://github.com/anthropics/claude-code/issues/21971
-
-This patch waits for the CLI subprocess to exit gracefully after stdin EOF
-(with a timeout) before sending SIGTERM.  Remove once the SDK ships a fix.
+Patch 2 — connect() CLAUDECODE env removal:
+  When AnimaWorks is started from within a Claude Code session, the
+  CLAUDECODE env var is inherited.  The SDK merges os.environ with
+  user-provided env, so even setting CLAUDECODE="" keeps it present.
+  Claude Code checks for this variable and refuses to start nested
+  sessions.  This patch strips CLAUDECODE from the process env before
+  spawning the CLI subprocess.
 """
 
 import logging
@@ -98,9 +104,24 @@ def apply_sdk_transport_patch() -> None:
         self._stderr_stream = None
         self._exit_error = None
 
+    # --- Patch 2: Strip CLAUDECODE from env in connect() ---
+    _original_connect = SubprocessCLITransport.connect
+
+    async def _patched_connect(self: SubprocessCLITransport) -> None:
+        import os as _os
+
+        _had_claudecode = "CLAUDECODE" in _os.environ
+        _saved = _os.environ.pop("CLAUDECODE", None)
+        try:
+            await _original_connect(self)
+        finally:
+            if _had_claudecode and _saved is not None:
+                _os.environ["CLAUDECODE"] = _saved
+
+    SubprocessCLITransport.connect = _patched_connect  # type: ignore[assignment]
     SubprocessCLITransport.close = _patched_close  # type: ignore[assignment]
     _patched = True
     logger.info(
-        "Applied SubprocessCLITransport.close() patch (graceful %ds shutdown before SIGTERM)",
+        "Applied SubprocessCLITransport patches (graceful %ds shutdown, CLAUDECODE removal)",
         _GRACEFUL_EXIT_TIMEOUT_SEC,
     )

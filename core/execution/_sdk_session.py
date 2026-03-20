@@ -18,6 +18,7 @@ import asyncio
 import json
 import logging
 import shutil
+import sys
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -35,13 +36,20 @@ logger = logging.getLogger("animaworks.execution.agent_sdk")
 # comfortable headroom while still catching genuinely broken messages.
 _SDK_MAX_BUFFER_SIZE = 4 * 1024 * 1024  # 4 MB
 
-# Linux MAX_ARG_STRLEN is 128 KiB (131072 bytes) per argument — a kernel
-# compile-time constant that cannot be changed at runtime.  When the
-# system prompt exceeds this limit, `execve` fails with E2BIG ([Errno 7]).
-# We use a conservative threshold (100 KB) to leave headroom for encoding
-# overhead and other arguments.  When exceeded, the prompt is written to a
-# temp file and passed via the CLI's undocumented --system-prompt-file flag.
-_PROMPT_FILE_THRESHOLD = 100_000  # 100 KB
+# システムプロンプトがこの閾値を超えると、CLIの --system-prompt-file フラグ経由で
+# 一時ファイルに書き出される。プラットフォームごとに制限が異なる:
+#
+# Linux: MAX_ARG_STRLEN は 128 KiB (131,072 bytes) per argument — カーネル
+# コンパイル時定数で実行時には変更できない。100 KB の保守的閾値を使用。
+#
+# Windows: CreateProcess() のコマンドライン全体の上限は 32,767 Unicode 文字。
+# システムプロンプト以外の引数（--mcp-config, --model 等）で 2,000-10,000 文字
+# 消費されるため、プロンプトの閾値を 6,000 バイトに抑える。
+# 詳細: docs/design/fix-win-cmdline-overflow-analysis.md
+if sys.platform == "win32":
+    _PROMPT_FILE_THRESHOLD = 6_000   # Windows CreateProcess 全体上限: ~32,767 chars
+else:
+    _PROMPT_FILE_THRESHOLD = 100_000  # Linux MAX_ARG_STRLEN: 131,072 bytes per arg
 
 # SDK Issue #387: invalid session ID causes SDK to hang for ~60s before
 # raising an error.  We wrap the first-event receive in asyncio.wait_for
