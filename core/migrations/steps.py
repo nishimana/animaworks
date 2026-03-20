@@ -686,6 +686,16 @@ def step_stale_sections_cleanup(data_dir: Path, dry_run: bool, verbose: bool) ->
         return StepResult(changed=0, skipped=0, details=[], error=str(exc))
 
 
+def step_v056_heartbeat_quality_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """v0.5.6: Resync prompts for heartbeat quality improvement (Issue #138)."""
+    details: list[str] = []
+    total = 0
+    r1 = step_prompt_resync(data_dir, dry_run, verbose)
+    total += r1.changed
+    details.extend(r1.details)
+    return StepResult(changed=total, skipped=0, details=details)
+
+
 # ── Category 5: Version tracking ────────────────────────────────
 
 
@@ -736,6 +746,12 @@ def register_all_steps(runner: Any) -> None:
             "v0.5.6: Resync common_knowledge + prompts (message-quality-protocol)",
             "template_sync",
             step_v056_resync,
+        ),
+        MigrationStep(
+            "v056_heartbeat_quality_resync",
+            "v0.5.6: Resync prompts (heartbeat quality)",
+            "template_sync",
+            step_v056_heartbeat_quality_resync,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]

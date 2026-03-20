@@ -6,6 +6,8 @@ This is a Heartbeat. Follow the process below.
 ## Plan
 Based on your observations, decide what to do next.
 
+**Message quality check (MUST)**: Before sending delegation/report/escalation, verify required fields in `common_knowledge/communication/message-quality-protocol.md`
+
 **[MUST] If you identify anything that requires action, you MUST formalize it as a task. "Acknowledged but no action taken" is prohibited.**
 Use one of the following to create a concrete action:
 - Delegate to subordinates → `delegate_task`
