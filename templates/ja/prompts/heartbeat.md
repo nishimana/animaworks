@@ -26,7 +26,7 @@
 **重要: このフェーズで実際の作業（コード変更、ファイル編集、調査等）を行わないでください。**
 **タスクの実行は別セッションで自動的に行われます。**
 
-{task_delegation_rules}
+**タスク投入ガイドライン**: `submit_tasks` / `delegate_task` 使用時は `read_memory_file(path="common_knowledge/operations/task-delegation-guide.md")` の記述原則・禁止パターンに従うこと（MUST）。
 
 ## Reflect（振り返り）
 上記の観察・計画をすべて終えた後、気づいたことや洞察があれば以下の形式で述べてください。
