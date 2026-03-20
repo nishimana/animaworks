@@ -6,8 +6,11 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 from core.execution.agent_sdk import AgentSDKExecutor
 from core.schemas import ModelConfig
@@ -32,7 +35,7 @@ class TestBuildEnvPathAndProjectDir:
         env = executor._build_env()
 
         assert "PATH" in env
-        path_entries = env["PATH"].split(":")
+        path_entries = env["PATH"].split(os.pathsep)
         assert str(anima_dir) == path_entries[0], (
             "anima_dir must be the first entry in PATH"
         )
@@ -42,12 +45,12 @@ class TestBuildEnvPathAndProjectDir:
         anima_dir = tmp_path / "animas" / "bob"
         anima_dir.mkdir(parents=True)
 
-        original_path = "/usr/local/bin:/usr/bin:/bin"
+        original_path = os.pathsep.join(["/usr/local/bin", "/usr/bin", "/bin"])
         with patch.dict(os.environ, {"PATH": original_path}):
             executor = self._make_executor(anima_dir)
             env = executor._build_env()
 
-        assert env["PATH"] == f"{anima_dir}:{original_path}"
+        assert env["PATH"] == f"{anima_dir}{os.pathsep}{original_path}"
 
     def test_project_dir_set(self, tmp_path: Path) -> None:
         """ANIMAWORKS_PROJECT_DIR should be set to the project root."""
@@ -82,7 +85,8 @@ class TestBuildEnvPathAndProjectDir:
             executor = self._make_executor(anima_dir)
             env = executor._build_env()
 
-        assert env["PATH"] == f"{anima_dir}:/usr/bin:/bin"
+        fallback = os.pathsep.join(["/usr/bin", "/bin"])
+        assert env["PATH"] == f"{anima_dir}{os.pathsep}{fallback}"
 
 
 # ── _build_mcp_env() ─────────────────────────────────────
@@ -129,6 +133,7 @@ class TestBuildMcpEnv:
 
         assert env["PYTHONPATH"] == str(PROJECT_DIR)
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Windows minimizes MCP PATH instead of passing system PATH")
     def test_path_includes_system_path(self, tmp_path: Path) -> None:
         """PATH should include the system PATH."""
         anima_dir = tmp_path / "animas" / "dave"
@@ -141,6 +146,7 @@ class TestBuildMcpEnv:
 
         assert env["PATH"] == original_path
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Windows minimizes MCP PATH instead of passing system PATH")
     def test_path_fallback_when_no_env(self, tmp_path: Path) -> None:
         """When PATH is not in os.environ, fall back to /usr/bin:/bin."""
         anima_dir = tmp_path / "animas" / "eve"

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -91,6 +92,7 @@ class TestSaveAuth:
         assert loaded["auth_mode"] == "password"
         assert loaded["owner"]["username"] == "alice"
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Unix file permissions not supported on Windows")
     def test_sets_restrictive_permissions(self, data_dir: Path):
         config = AuthConfig()
         save_auth(config)

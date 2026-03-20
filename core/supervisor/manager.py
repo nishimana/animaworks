@@ -619,7 +619,12 @@ class ProcessSupervisor(HealthMixin, ReconcileMixin, SchedulerMixin):
         processes that have exited but not yet been waited on.  This runs
         every 60 seconds and acts purely as a fallback — normal code paths
         should call ``wait()`` explicitly.
+
+        On Windows, ``os.waitpid(-1, WNOHANG)`` is not available, so this
+        loop is a no-op.
         """
+        if sys.platform == "win32":
+            return
         from core.i18n import t as _t
 
         while not self._shutdown:

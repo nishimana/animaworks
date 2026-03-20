@@ -100,7 +100,7 @@ class SDKOptionsMixin:
         env: dict[str, str] = {
             "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
             "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
-            "PATH": f"{self._anima_dir}{os.pathsep}{os.environ.get('PATH', '/usr/bin:/bin')}",
+            "PATH": f"{self._anima_dir}{os.pathsep}{os.environ.get('PATH', os.pathsep.join(['/usr/bin', '/bin']))}",
             "CLAUDE_CODE_DISABLE_SKILL_IMPROVEMENT": "true",
             "CLAUDECODE": "",
         }

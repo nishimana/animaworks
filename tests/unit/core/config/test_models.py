@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -324,6 +325,7 @@ class TestSaveConfig:
         data = json.loads(path.read_text(encoding="utf-8"))
         assert data["version"] == 1
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Unix file permissions not supported on Windows")
     def test_save_sets_permissions(self, tmp_path):
         config = AnimaWorksConfig()
         path = tmp_path / "config.json"

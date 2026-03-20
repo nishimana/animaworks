@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import stat
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -163,12 +164,14 @@ class TestReceiveWithPathsFromPersonValidation:
 
 
 class TestInboxPermissions:
+    @pytest.mark.skipif(sys.platform == "win32", reason="Unix file permissions not supported on Windows")
     def test_messenger_init_sets_inbox_chmod_700(self, shared_dir: Path):
         Messenger(shared_dir, "bob")
         inbox = shared_dir / "inbox" / "bob"
         mode = stat.S_IMODE(inbox.stat().st_mode)
         assert mode == 0o700
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Unix file permissions not supported on Windows")
     def test_ensure_runtime_only_dirs_sets_inbox_chmod_700(self, tmp_path: Path):
         from core.init import _ensure_runtime_only_dirs
 

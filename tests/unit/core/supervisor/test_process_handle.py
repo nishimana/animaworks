@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -177,8 +178,11 @@ class TestCleanupZombieReap:
         handle.ipc_client = None
         handle.socket_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with patch("os.killpg"), patch("os.getpgid", return_value=12345):
+        if sys.platform == "win32":
             await handle._cleanup()
+        else:
+            with patch("os.killpg"), patch("os.getpgid", return_value=12345):
+                await handle._cleanup()
 
         mock_process.wait.assert_called()
         assert handle.process is None

@@ -59,6 +59,7 @@ class TestBuildMcpEnv:
         env = executor._build_mcp_env()
         assert env["PYTHONPATH"] == str(PROJECT_DIR)
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Windows minimizes MCP PATH instead of passing system PATH")
     def test_returns_path_from_os_environ(self, tmp_path: Path) -> None:
         """PATH is taken from os.environ."""
         executor = _make_executor(tmp_path / "animas" / "test-anima")
@@ -66,6 +67,7 @@ class TestBuildMcpEnv:
             env = executor._build_mcp_env()
         assert env["PATH"] == "/custom/bin:/other/bin"
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Windows minimizes MCP PATH instead of passing system PATH")
     def test_path_fallback_when_missing(self, tmp_path: Path) -> None:
         """When PATH is missing from os.environ, falls back to /usr/bin:/bin."""
         executor = _make_executor(tmp_path / "animas" / "test-anima")

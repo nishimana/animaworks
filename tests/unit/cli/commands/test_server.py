@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import os
 import signal
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -108,6 +109,7 @@ class TestFindServerPidByProcess:
             result = _find_server_pid_by_process()
         assert result is None
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="os.getuid and /proc not available on Windows")
     @patch("cli.commands.server.os.getuid", return_value=1000)
     def test_finds_matching_process(self, mock_uid, tmp_path):
         """Finds a process whose cmdline matches the server marker."""
@@ -211,6 +213,7 @@ class TestStopServer:
 
     # ── Force mode tests ─────────────────────────────────
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="os.killpg/os.getpgid not available on Windows")
     @patch("cli.commands.server._kill_orphan_runners", return_value=0)
     @patch("cli.commands.server._remove_pid_file")
     @patch("os.killpg")
@@ -607,7 +610,11 @@ class TestSpawnRestartHelper:
 
         assert pid == 77777
         call_kwargs = mock_popen.call_args
-        assert call_kwargs.kwargs["start_new_session"] is True
+        if sys.platform == "win32":
+            import subprocess
+            assert call_kwargs.kwargs["creationflags"] == subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            assert call_kwargs.kwargs["start_new_session"] is True
 
     @patch("cli.commands.server._get_daemon_log_path")
     def test_helper_accepts_none_old_pid(self, mock_log_path, tmp_path):
