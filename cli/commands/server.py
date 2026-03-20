@@ -90,6 +90,72 @@ def _is_process_alive(pid: int) -> bool:
         return True
 
 
+def _kill_process_tree_win32(pid: int) -> bool:
+    """Kill a process and all its descendants on Windows using taskkill."""
+    try:
+        result = subprocess.run(
+            ["taskkill", "/T", "/F", "/PID", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        # Fallback: kill single process
+        try:
+            os.kill(pid, signal.SIGTERM)
+            return True
+        except (ProcessLookupError, PermissionError):
+            return False
+
+
+def _enum_python_processes_win32() -> list[tuple[int, str]]:
+    """Enumerate Python processes on Windows, returning (pid, cmdline) pairs.
+
+    Uses PowerShell Get-CimInstance to query process command lines.
+    Returns an empty list on failure.
+    """
+    ps_cmd = (
+        "Get-CimInstance Win32_Process "
+        "| Where-Object { $_.Name -like '*python*' } "
+        "| Select-Object ProcessId, CommandLine "
+        "| ForEach-Object { \"$($_.ProcessId)|$($_.CommandLine)\" }"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-NoLogo", "-Command", ps_cmd],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode != 0:
+            return []
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return []
+
+    processes = []
+    for line in result.stdout.strip().splitlines():
+        sep = line.find("|")
+        if sep < 0:
+            continue
+        pid_str = line[:sep].strip()
+        cmdline = line[sep + 1 :]
+        if pid_str.isdigit() and cmdline:
+            processes.append((int(pid_str), cmdline))
+    return processes
+
+
+def _find_server_pid_by_process_win32() -> int | None:
+    """Find the animaworks server process on Windows via PowerShell."""
+    exclude_pids = {os.getpid(), os.getppid()}
+    for pid, cmdline in _enum_python_processes_win32():
+        if pid in exclude_pids:
+            continue
+        if any(m in cmdline for m in _SERVER_CMD_MARKERS):
+            return pid
+    return None
+
+
 def _find_server_pid_by_process() -> int | None:
     """Scan /proc to find the animaworks server process by command pattern.
 
@@ -100,7 +166,7 @@ def _find_server_pid_by_process() -> int | None:
     Returns the PID if found, or None.
     """
     if sys.platform == "win32":
-        return None
+        return _find_server_pid_by_process_win32()
     my_uid = os.getuid()
     proc = Path("/proc")
     if not proc.exists():
@@ -206,11 +272,11 @@ def _stop_server(timeout: int = 10, *, force: bool = False) -> bool:
         print(f"Error: Server (pid={pid}) did not stop within {timeout}s.")
         return False
 
-    # Force mode: escalate to SIGKILL
-    print(f"Server (pid={pid}) did not stop within {timeout}s. Sending SIGKILL...")
+    # Force mode: escalate to SIGKILL / taskkill
+    print(f"Server (pid={pid}) did not stop within {timeout}s. Force-killing...")
     try:
         if sys.platform == "win32":
-            os.kill(pid, signal.SIGTERM)
+            _kill_process_tree_win32(pid)
         else:
             try:
                 os.killpg(os.getpgid(pid), signal.SIGKILL)
@@ -247,6 +313,37 @@ def _stop_server(timeout: int = 10, *, force: bool = False) -> bool:
 _RUNNER_CMD_MARKER = "core.supervisor.runner"
 
 
+def _kill_orphan_runners_win32() -> int:
+    """Kill orphaned Anima runner processes on Windows.
+
+    Uses PowerShell Get-CimInstance to find Python processes whose command line
+    contains the runner module marker and the data directory path.
+    """
+    from core.paths import get_data_dir
+
+    data_prefix = str(get_data_dir())
+    my_pid = os.getpid()
+    killed = 0
+
+    for pid, cmdline in _enum_python_processes_win32():
+        if pid == my_pid:
+            continue
+        if _RUNNER_CMD_MARKER not in cmdline:
+            continue
+        if data_prefix not in cmdline:
+            continue
+        logger.info("Killing orphan runner (PID %d): %s", pid, cmdline[:120])
+        try:
+            _kill_process_tree_win32(pid)
+            killed += 1
+        except (ProcessLookupError, PermissionError):
+            pass
+
+    if killed:
+        time.sleep(1)
+    return killed
+
+
 def _kill_orphan_runners() -> int:
     """Kill orphaned Anima runner processes from previous server instances.
 
@@ -257,7 +354,7 @@ def _kill_orphan_runners() -> int:
     Returns the number of processes killed.
     """
     if sys.platform == "win32":
-        return 0
+        return _kill_orphan_runners_win32()
     from core.paths import get_data_dir
 
     data_prefix = str(get_data_dir())
@@ -549,6 +646,14 @@ port = {port!r}
 _SERVER_CMD_MARKERS = {_SERVER_CMD_MARKERS!r}
 
 def _alive(pid):
+    if sys.platform == "win32":
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        h = kernel32.OpenProcess(0x00100000, False, pid)
+        if h:
+            kernel32.CloseHandle(h)
+            return True
+        return False
     try:
         os.kill(pid, 0)
         return True
@@ -559,6 +664,33 @@ def _alive(pid):
 
 def _find_server_process():
     if sys.platform == "win32":
+        ps_cmd = (
+            "Get-CimInstance Win32_Process "
+            "| Where-Object {{ $_.Name -like '*python*' }} "
+            "| Select-Object ProcessId, CommandLine "
+            "| ForEach-Object {{ \\"$($_.ProcessId)|$($_.CommandLine)\\" }}"
+        )
+        try:
+            r = subprocess.run(
+                ["powershell", "-NoProfile", "-NoLogo", "-Command", ps_cmd],
+                capture_output=True, text=True, timeout=15,
+            )
+            my_pid = os.getpid()
+            for line in r.stdout.strip().splitlines():
+                sep = line.find("|")
+                if sep < 0:
+                    continue
+                pid_str = line[:sep].strip()
+                cmdline = line[sep + 1:]
+                if not pid_str.isdigit():
+                    continue
+                pid = int(pid_str)
+                if pid == my_pid:
+                    continue
+                if any(m in cmdline for m in _SERVER_CMD_MARKERS):
+                    return pid
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            pass
         return None
     my_uid = os.getuid()
     my_pid = os.getpid()
@@ -595,7 +727,8 @@ if old_pid is not None:
     if _alive(old_pid):
         try:
             if sys.platform == "win32":
-                os.kill(old_pid, signal.SIGTERM)
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(old_pid)],
+                               capture_output=True, timeout=10)
             else:
                 os.killpg(os.getpgid(old_pid), signal.SIGKILL)
         except (OSError, ProcessLookupError):

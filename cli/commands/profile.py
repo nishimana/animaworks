@@ -73,7 +73,17 @@ def _read_pid_for(data_dir: Path) -> int | None:
 
 
 def _is_process_alive(pid: int) -> bool:
-    """Check if process exists (os.kill(pid, 0))."""
+    """Check if process exists."""
+    if sys.platform == "win32":
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        SYNCHRONIZE = 0x00100000
+        handle = kernel32.OpenProcess(SYNCHRONIZE, False, pid)
+        if handle:
+            kernel32.CloseHandle(handle)
+            return True
+        return False
     try:
         os.kill(pid, 0)
         return True

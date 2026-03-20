@@ -13,6 +13,8 @@ import json
 import logging
 import os
 import signal as _signal
+import subprocess
+import sys
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -218,6 +220,27 @@ class ProcessSupervisor(HealthMixin, ReconcileMixin, SchedulerMixin):
 
         logger.info("All processes started")
 
+    @staticmethod
+    def _is_pid_alive(pid: int) -> bool:
+        """Check whether a process with the given PID is running."""
+        if sys.platform == "win32":
+            import ctypes
+
+            kernel32 = ctypes.windll.kernel32
+            SYNCHRONIZE = 0x00100000
+            handle = kernel32.OpenProcess(SYNCHRONIZE, False, pid)
+            if handle:
+                kernel32.CloseHandle(handle)
+                return True
+            return False
+        try:
+            os.kill(pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+
     def _kill_zombie_runners(self, anima_names: list[str]) -> None:
         """Detect and kill zombie runner processes from a previous server crash.
 
@@ -233,14 +256,23 @@ class ProcessSupervisor(HealthMixin, ReconcileMixin, SchedulerMixin):
             anima_name = pid_file.stem
             try:
                 pid = int(pid_file.read_text().strip())
-                os.kill(pid, 0)  # check if alive
+                if not self._is_pid_alive(pid):
+                    pid_file.unlink(missing_ok=True)
+                    continue
                 logger.warning(
                     "Killing zombie runner: %s (pid=%d)",
                     anima_name,
                     pid,
                 )
                 try:
-                    os.kill(pid, _signal.SIGTERM)
+                    if sys.platform == "win32":
+                        subprocess.run(
+                            ["taskkill", "/T", "/F", "/PID", str(pid)],
+                            capture_output=True,
+                            timeout=10,
+                        )
+                    else:
+                        os.kill(pid, _signal.SIGTERM)
                 except OSError:
                     pass
                 pid_file.unlink(missing_ok=True)
