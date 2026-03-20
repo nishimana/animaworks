@@ -153,8 +153,9 @@ class CommandRunner:
                     stderr=subprocess.PIPE,
                     text=True,
                     cwd=str(self.cwd),
-                    executable="/bin/bash",
-                    start_new_session=True,
+                    **({"executable": "/bin/bash", "start_new_session": True}
+                       if sys.platform != "win32"
+                       else {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}),
                 )
             else:
                 argv = shlex.split(self.command)
@@ -164,7 +165,11 @@ class CommandRunner:
                     stderr=subprocess.PIPE,
                     text=True,
                     cwd=str(self.cwd),
-                    start_new_session=True,
+                    **({
+                        "creationflags": subprocess.CREATE_NEW_PROCESS_GROUP
+                    } if sys.platform == "win32" else {
+                        "start_new_session": True
+                    }),
                 )
         except Exception as e:
             self._write_error_file(str(e))
@@ -272,14 +277,20 @@ class CommandRunner:
         except subprocess.TimeoutExpired:
             timed_out = True
             try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                if sys.platform == "win32":
+                    proc.terminate()
+                else:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
             except (OSError, ProcessLookupError):
                 pass
             try:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    if sys.platform == "win32":
+                        proc.kill()
+                    else:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
                 except (OSError, ProcessLookupError):
                     pass
                 try:

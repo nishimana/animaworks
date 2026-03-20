@@ -91,7 +91,7 @@ class MemoryManager:
 
         if old_task.exists() and not new_state.exists():
             try:
-                os.rename(old_task, new_state)
+                os.replace(old_task, new_state)
                 logger.info("Migrated %s -> %s", old_task.name, new_state.name)
             except OSError:
                 logger.warning("Failed to migrate %s to %s", old_task, new_state, exc_info=True)

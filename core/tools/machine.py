@@ -415,14 +415,20 @@ def _stream_to_file(
     except subprocess.TimeoutExpired:
         timed_out = True
         try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            if sys.platform == "win32":
+                proc.terminate()
+            else:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
         except (OSError, ProcessLookupError):
             pass
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                if sys.platform == "win32":
+                    proc.kill()
+                else:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
             except (OSError, ProcessLookupError):
                 pass
             try:
@@ -486,7 +492,11 @@ def _execute(
             text=True,
             cwd=working_directory,
             env=env,
-            start_new_session=True,
+            **({
+                "creationflags": subprocess.CREATE_NEW_PROCESS_GROUP
+            } if sys.platform == "win32" else {
+                "start_new_session": True
+            }),
         )
 
         # Write instruction to stdin and close

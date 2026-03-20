@@ -289,10 +289,13 @@ async def compact_sdk_session(
     try:
         from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
 
+        from core.execution._sdk_options import _find_system_claude_cli
+
         options = ClaudeAgentOptions(
             system_prompt=f"{anima_dir.name} session compaction",
             max_turns=1,
             resume=session_id,
+            cli_path=_find_system_claude_cli(),
         )
 
         found_session_id = False

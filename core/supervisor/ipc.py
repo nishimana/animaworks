@@ -11,12 +11,15 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import sys
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from core.exceptions import IPCConnectionError
+
+_IS_WINDOWS = sys.platform == "win32"
 
 logger = logging.getLogger(__name__)
 
@@ -135,17 +138,29 @@ class IPCServer:
         self.server: asyncio.Server | None = None
 
     async def start(self) -> None:
-        """Start the Unix socket server."""
-        # Remove stale socket file if exists
+        """Start the IPC server (Unix socket or TCP on Windows)."""
+        # Remove stale socket/port file if exists
         if self.socket_path.exists():
             self.socket_path.unlink()
 
-        self.server = await asyncio.start_unix_server(
-            self._handle_connection,
-            path=str(self.socket_path),
-            limit=IPC_BUFFER_LIMIT,
-        )
-        logger.info("IPC server started on %s", self.socket_path)
+        if _IS_WINDOWS:
+            self.server = await asyncio.start_server(
+                self._handle_connection,
+                host="127.0.0.1",
+                port=0,
+                limit=IPC_BUFFER_LIMIT,
+            )
+            port = self.server.sockets[0].getsockname()[1]
+            self.socket_path.parent.mkdir(parents=True, exist_ok=True)
+            self.socket_path.write_text(str(port))
+            logger.info("IPC server started on 127.0.0.1:%d (port file: %s)", port, self.socket_path)
+        else:
+            self.server = await asyncio.start_unix_server(
+                self._handle_connection,
+                path=str(self.socket_path),
+                limit=IPC_BUFFER_LIMIT,
+            )
+            logger.info("IPC server started on %s", self.socket_path)
 
     @staticmethod
     async def _chunked_write(
@@ -251,6 +266,21 @@ class IPCClient:
     def __init__(self, socket_path: Path):
         self.socket_path = socket_path
 
+    async def _open_connection(self) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        """Open a connection via Unix socket or TCP (Windows)."""
+        if _IS_WINDOWS:
+            port = int(self.socket_path.read_text().strip())
+            return await asyncio.open_connection(
+                host="127.0.0.1",
+                port=port,
+                limit=IPC_BUFFER_LIMIT,
+            )
+        else:
+            return await asyncio.open_unix_connection(
+                path=str(self.socket_path),
+                limit=IPC_BUFFER_LIMIT,
+            )
+
     @staticmethod
     def _resolve_ipc_timeout() -> float:
         """Resolve IPC stream timeout from config, with fallback default."""
@@ -274,10 +304,7 @@ class IPCClient:
         opened inside :meth:`send_request` and :meth:`send_request_stream`.
         """
         async with asyncio.timeout(timeout):
-            reader, writer = await asyncio.open_unix_connection(
-                path=str(self.socket_path),
-                limit=IPC_BUFFER_LIMIT,
-            )
+            reader, writer = await self._open_connection()
             writer.close()
             await writer.wait_closed()
             logger.debug("IPC client connectivity verified: %s", self.socket_path)
@@ -304,10 +331,7 @@ class IPCClient:
 
         async with asyncio.timeout(timeout):
             try:
-                reader, writer = await asyncio.open_unix_connection(
-                    path=str(self.socket_path),
-                    limit=IPC_BUFFER_LIMIT,
-                )
+                reader, writer = await self._open_connection()
             except (ConnectionRefusedError, FileNotFoundError, OSError) as e:
                 raise IPCConnectionError(f"Not connected: {e}") from e
 
@@ -388,10 +412,7 @@ class IPCClient:
             request.id,
         )
         try:
-            stream_reader, stream_writer = await asyncio.open_unix_connection(
-                path=str(self.socket_path),
-                limit=IPC_BUFFER_LIMIT,
-            )
+            stream_reader, stream_writer = await self._open_connection()
         except (ConnectionRefusedError, FileNotFoundError, OSError) as e:
             raise IPCConnectionError(f"Not connected: {e}") from e
 

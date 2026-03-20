@@ -14,6 +14,7 @@ import os
 import signal as _signal
 import subprocess
 import sys
+import tempfile
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -129,7 +130,7 @@ class ProcessHandle:
             "--shared-dir",
             str(self.shared_dir),
             "--log-dir",
-            str(self.log_dir) if self.log_dir else "/tmp",
+            str(self.log_dir) if self.log_dir else tempfile.gettempdir(),
         ]
 
         logger.info("Starting process: %s", self.anima_name)
@@ -150,7 +151,7 @@ class ProcessHandle:
                             backup = stderr_dir / "stderr.log.1"
                             if backup.exists():
                                 backup.unlink()
-                            stderr_path.rename(backup)
+                            stderr_path.replace(backup)
                             logger.info(
                                 "Rotated stderr.log for %s (>5MB)",
                                 self.anima_name,
@@ -165,13 +166,16 @@ class ProcessHandle:
             child_env = os.environ.copy()
             child_env.update(self._child_env_urls)
 
-            self.process = subprocess.Popen(
-                cmd,
+            popen_kwargs: dict = dict(
                 stdout=subprocess.DEVNULL,
                 stderr=self._stderr_file if self._stderr_file else subprocess.DEVNULL,
-                start_new_session=True,
                 env=child_env,
             )
+            if sys.platform == "win32":
+                popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            else:
+                popen_kwargs["start_new_session"] = True
+            self.process = subprocess.Popen(cmd, **popen_kwargs)
             logger.info("Process started: %s (PID %s)", self.anima_name, self.process.pid)
 
             # Wait for socket to be created (IPC server starts before
@@ -479,7 +483,10 @@ class ProcessHandle:
             logger.warning("Process did not exit gracefully, sending SIGTERM: %s", self.anima_name)
             try:
                 try:
-                    os.killpg(os.getpgid(self.process.pid), _signal.SIGTERM)
+                    if sys.platform == "win32":
+                        self.process.terminate()
+                    else:
+                        os.killpg(os.getpgid(self.process.pid), _signal.SIGTERM)
                 except OSError:
                     self.process.terminate()
                 async with asyncio.timeout(timeout / 2):
@@ -505,7 +512,10 @@ class ProcessHandle:
 
         logger.warning("Killing process: %s (PID %s)", self.anima_name, self.process.pid)
         try:
-            os.killpg(os.getpgid(self.process.pid), _signal.SIGKILL)
+            if sys.platform == "win32":
+                self.process.kill()
+            else:
+                os.killpg(os.getpgid(self.process.pid), _signal.SIGKILL)
         except OSError:
             self.process.kill()
         await asyncio.get_running_loop().run_in_executor(None, self.process.wait)
@@ -524,7 +534,10 @@ class ProcessHandle:
                     self.process.pid,
                 )
                 try:
-                    os.killpg(os.getpgid(self.process.pid), _signal.SIGTERM)
+                    if sys.platform == "win32":
+                        self.process.terminate()
+                    else:
+                        os.killpg(os.getpgid(self.process.pid), _signal.SIGTERM)
                 except OSError:
                     self.process.terminate()
                 try:

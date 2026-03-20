@@ -72,6 +72,15 @@ def _read_pid() -> int | None:
 
 def _is_process_alive(pid: int) -> bool:
     """Check whether a process with the given PID is currently running."""
+    if sys.platform == "win32":
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        SYNCHRONIZE = 0x00100000
+        handle = kernel32.OpenProcess(SYNCHRONIZE, False, pid)
+        if handle:
+            kernel32.CloseHandle(handle)
+            return True
+        return False
     try:
         os.kill(pid, 0)
         return True
@@ -90,6 +99,8 @@ def _find_server_pid_by_process() -> int | None:
 
     Returns the PID if found, or None.
     """
+    if sys.platform == "win32":
+        return None
     my_uid = os.getuid()
     proc = Path("/proc")
     if not proc.exists():
@@ -198,10 +209,13 @@ def _stop_server(timeout: int = 10, *, force: bool = False) -> bool:
     # Force mode: escalate to SIGKILL
     print(f"Server (pid={pid}) did not stop within {timeout}s. Sending SIGKILL...")
     try:
-        try:
-            os.killpg(os.getpgid(pid), signal.SIGKILL)
-        except (OSError, ProcessLookupError):
-            os.kill(pid, signal.SIGKILL)
+        if sys.platform == "win32":
+            os.kill(pid, signal.SIGTERM)
+        else:
+            try:
+                os.killpg(os.getpgid(pid), signal.SIGKILL)
+            except (OSError, ProcessLookupError):
+                os.kill(pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
     except PermissionError:
@@ -242,6 +256,8 @@ def _kill_orphan_runners() -> int:
 
     Returns the number of processes killed.
     """
+    if sys.platform == "win32":
+        return 0
     from core.paths import get_data_dir
 
     data_prefix = str(get_data_dir())
@@ -331,13 +347,16 @@ def _spawn_daemon(args: argparse.Namespace) -> None:
     log_path = _get_daemon_log_path()
     log_file = open(log_path, "a", encoding="utf-8")  # noqa: SIM115
 
-    proc = subprocess.Popen(
-        cmd,
+    popen_kwargs: dict = dict(
         stdout=log_file,
         stderr=subprocess.STDOUT,
-        start_new_session=True,
         cwd=Path(__file__).resolve().parent.parent.parent,
     )
+    if sys.platform == "win32":
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        popen_kwargs["start_new_session"] = True
+    proc = subprocess.Popen(cmd, **popen_kwargs)
     log_file.close()
 
     check_host = "127.0.0.1" if args.host == "0.0.0.0" else args.host
@@ -539,6 +558,8 @@ def _alive(pid):
         return True
 
 def _find_server_process():
+    if sys.platform == "win32":
+        return None
     my_uid = os.getuid()
     my_pid = os.getpid()
     proc = Path("/proc")
@@ -573,10 +594,13 @@ if old_pid is not None:
         time.sleep(0.3)
     if _alive(old_pid):
         try:
-            os.killpg(os.getpgid(old_pid), signal.SIGKILL)
+            if sys.platform == "win32":
+                os.kill(old_pid, signal.SIGTERM)
+            else:
+                os.killpg(os.getpgid(old_pid), signal.SIGKILL)
         except (OSError, ProcessLookupError):
             try:
-                os.kill(old_pid, signal.SIGKILL)
+                os.kill(old_pid, signal.SIGKILL if sys.platform != "win32" else signal.SIGTERM)
             except (OSError, ProcessLookupError):
                 pass
         time.sleep(1)
@@ -595,13 +619,16 @@ subprocess.Popen(cmd, cwd={project_root!r})
     log_path = _get_daemon_log_path()
     log_file = open(log_path, "a", encoding="utf-8")  # noqa: SIM115
 
-    proc = subprocess.Popen(
-        [sys.executable, "-c", helper_code],
+    restart_popen_kwargs: dict = dict(
         stdout=log_file,
         stderr=subprocess.STDOUT,
-        start_new_session=True,
         cwd=project_root,
     )
+    if sys.platform == "win32":
+        restart_popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        restart_popen_kwargs["start_new_session"] = True
+    proc = subprocess.Popen([sys.executable, "-c", helper_code], **restart_popen_kwargs)
     log_file.close()
     return proc.pid
 

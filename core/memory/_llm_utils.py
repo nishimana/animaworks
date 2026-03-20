@@ -240,11 +240,14 @@ async def _try_agent_sdk(
     sdk_model = _strip_provider_prefix(model)
     env = _build_sdk_env()
 
+    from core.execution._sdk_options import _find_system_claude_cli
+
     options = ClaudeAgentOptions(
         model=sdk_model,
         system_prompt=system_prompt or "",
         allowed_tools=[],
         max_turns=1,
+        cli_path=_find_system_claude_cli(),
     )
 
     chunks: list[str] = []

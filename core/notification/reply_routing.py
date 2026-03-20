@@ -19,13 +19,18 @@ be persisted in the mapping.  Slack Incoming Webhooks do **not** return a
 and thread replies to them will not be routed back.
 """
 
-import fcntl
 import json
 import logging
 import re
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
 
 from core.paths import get_data_dir
 
@@ -34,6 +39,31 @@ logger = logging.getLogger("animaworks.notification.reply_routing")
 _MAX_AGE_DAYS = 7
 _MAX_REPLY_LENGTH = 4000
 _THREAD_CTX_SUMMARY_LIMIT = 150
+
+
+def _lock_exclusive(fd):
+    if sys.platform == "win32":
+        msvcrt.locking(fd.fileno(), msvcrt.LK_NBLCK, 1)
+    else:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+
+
+def _lock_shared(fd):
+    if sys.platform == "win32":
+        msvcrt.locking(fd.fileno(), msvcrt.LK_NBLCK, 1)
+    else:
+        fcntl.flock(fd, fcntl.LOCK_SH)
+
+
+def _unlock(fd):
+    if sys.platform == "win32":
+        try:
+            msvcrt.locking(fd.fileno(), msvcrt.LK_UNLCK, 1)
+        except OSError:
+            pass
+    else:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
 
 # Slack mrkdwn patterns
 _RE_USER_MENTION = re.compile(r"<@[A-Za-z0-9]+>")
@@ -70,7 +100,7 @@ def save_notification_mapping(
 
     try:
         with path.open("a+") as fd:
-            fcntl.flock(fd, fcntl.LOCK_EX)
+            _lock_exclusive(fd)
             try:
                 fd.seek(0)
                 raw = fd.read()
@@ -91,7 +121,7 @@ def save_notification_mapping(
                 fd.write(json.dumps(data, ensure_ascii=False, indent=2))
                 fd.flush()
             finally:
-                fcntl.flock(fd, fcntl.LOCK_UN)
+                _unlock(fd)
     except OSError:
         logger.exception("Failed to save notification mapping for ts=%s", ts)
 
@@ -107,11 +137,11 @@ def lookup_notification_mapping(thread_ts: str) -> dict[str, str] | None:
         return None
     try:
         with path.open("r") as fd:
-            fcntl.flock(fd, fcntl.LOCK_SH)
+            _lock_shared(fd)
             try:
                 data = json.load(fd)
             finally:
-                fcntl.flock(fd, fcntl.LOCK_UN)
+                _unlock(fd)
     except (json.JSONDecodeError, OSError):
         return None
     entry = data.get(thread_ts)
@@ -131,7 +161,7 @@ def prune_old_entries(max_age_days: int = _MAX_AGE_DAYS) -> None:
         return
     try:
         with path.open("a+") as fd:
-            fcntl.flock(fd, fcntl.LOCK_EX)
+            _lock_exclusive(fd)
             try:
                 fd.seek(0)
                 raw = fd.read()
@@ -144,7 +174,7 @@ def prune_old_entries(max_age_days: int = _MAX_AGE_DAYS) -> None:
                     fd.write(json.dumps(data, ensure_ascii=False, indent=2))
                     fd.flush()
             finally:
-                fcntl.flock(fd, fcntl.LOCK_UN)
+                _unlock(fd)
     except OSError:
         logger.exception("Failed to prune notification mapping")
 

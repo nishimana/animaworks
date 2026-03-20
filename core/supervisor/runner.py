@@ -16,13 +16,17 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import fcntl
 import json
 import logging
 import os
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
+
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
 from typing import Any
 
 from core.anima import DigitalAnima
@@ -87,7 +91,10 @@ class AnimaRunner:
 
         self._lock_file = open(lock_path, "w")  # noqa: SIM115
         try:
-            fcntl.flock(self._lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if sys.platform == "win32":
+                msvcrt.locking(self._lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                fcntl.flock(self._lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             existing_pid = pid_path.read_text().strip() if pid_path.exists() else "unknown"
             logger.error(
@@ -626,7 +633,10 @@ class AnimaRunner:
                 pid_path = self.shared_dir.parent / "run" / "animas" / f"{self.anima_name}.pid"
                 if pid_path.exists():
                     pid_path.unlink(missing_ok=True)
-                fcntl.flock(self._lock_file, fcntl.LOCK_UN)
+                if sys.platform == "win32":
+                    msvcrt.locking(self._lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(self._lock_file, fcntl.LOCK_UN)
                 self._lock_file.close()
             except OSError:
                 logger.debug("Lock file cleanup error", exc_info=True)
@@ -707,7 +717,10 @@ def _install_signal_diagnostics(anima_name: str) -> None:
         )
         sys.exit(128 + signum)
 
-    for sig in (_sig.SIGTERM, _sig.SIGINT, _sig.SIGHUP):
+    sigs = [_sig.SIGTERM, _sig.SIGINT]
+    if hasattr(_sig, "SIGHUP"):
+        sigs.append(_sig.SIGHUP)
+    for sig in sigs:
         _sig.signal(sig, _handler)
 
 

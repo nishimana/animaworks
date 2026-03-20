@@ -17,6 +17,7 @@ The methods here access ``BaseExecutor`` attributes (``_model_config``,
 
 import logging
 import os
+import shutil
 import sys
 import tempfile
 from collections.abc import Callable
@@ -41,6 +42,16 @@ from core.execution._sdk_session import (
 )
 
 logger = logging.getLogger("animaworks.execution.agent_sdk")
+
+
+def _find_system_claude_cli() -> str | None:
+    """Find the system-installed Claude Code CLI path.
+
+    On Windows the bundled claude.exe path inside site-packages can trigger
+    WinError 206 (filename too long) when combined with long command-line
+    arguments.  Using the system-installed CLI avoids this.
+    """
+    return shutil.which("claude")
 
 
 class SDKOptionsMixin:
@@ -247,6 +258,8 @@ class SDKOptionsMixin:
         for server_name in self._extra_mcp_servers:
             _allowed_tools.append(f"mcp__{server_name}__*")
 
+        _cli_path = _find_system_claude_cli()
+
         kwargs: dict[str, Any] = dict(
             system_prompt=prompt_kwarg,
             allowed_tools=_allowed_tools,
@@ -259,6 +272,7 @@ class SDKOptionsMixin:
             resume=resume,
             setting_sources=[],
             extra_args=extra_args,
+            cli_path=_cli_path,
             mcp_servers={
                 "aw": {
                     "command": sys.executable,
