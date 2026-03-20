@@ -79,16 +79,10 @@ STRINGS: dict[str, dict[str, str]] = {
             "{task_count}件のタスク定義がありますが、有効なスケジュールが0件です。"
             "cron.mdのフォーマットを確認してください。"
         ),
-        "en": (
-            "{task_count} task(s) defined but 0 valid schedules. "
-            "Please check cron.md format."
-        ),
+        "en": ("{task_count} task(s) defined but 0 valid schedules. Please check cron.md format."),
     },
     "scheduler.cron_health_indented_schedule": {
-        "ja": (
-            "cron.mdにインデント付きの schedule: 行が検出されました。"
-            "パーサーは行頭の schedule: のみ認識します。"
-        ),
+        "ja": ("cron.mdにインデント付きの schedule: 行が検出されました。パーサーは行頭の schedule: のみ認識します。"),
         "en": (
             "Indented 'schedule:' lines detected in cron.md. "
             "The parser only recognizes 'schedule:' at the start of a line."
@@ -96,13 +90,9 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "scheduler.cron_health_unrecognized_schedule": {
         "ja": (
-            "cron.mdに schedule: を含む行がありますが、パーサーに認識されていません。"
-            "フォーマットを確認してください。"
+            "cron.mdに schedule: を含む行がありますが、パーサーに認識されていません。フォーマットを確認してください。"
         ),
-        "en": (
-            "Lines containing 'schedule:' found in cron.md but not recognized "
-            "by the parser. Please check format."
-        ),
+        "en": ("Lines containing 'schedule:' found in cron.md but not recognized by the parser. Please check format."),
     },
     "scheduler.cron_health_no_execution": {
         "ja": (

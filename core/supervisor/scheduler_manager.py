@@ -376,9 +376,7 @@ class SchedulerManager:
         messages: list[str] = []
 
         if tasks and registered == 0:
-            messages.append(
-                t("scheduler.cron_health_no_valid_schedule", task_count=len(tasks))
-            )
+            messages.append(t("scheduler.cron_health_no_valid_schedule", task_count=len(tasks)))
 
         if _INDENTED_SCHEDULE_RE.search(raw_config):
             messages.append(t("scheduler.cron_health_indented_schedule"))
@@ -414,8 +412,7 @@ class SchedulerManager:
             cron_jobs = [
                 j
                 for j in self.scheduler.get_jobs()
-                if j.id.startswith(cron_job_prefix)
-                and not j.id.endswith("_health")
+                if j.id.startswith(cron_job_prefix) and not j.id.endswith("_health")
             ]
             if not cron_jobs:
                 return
