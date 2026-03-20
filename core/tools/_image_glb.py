@@ -369,7 +369,7 @@ def optimize_glb(glb_path: Path) -> bool:
                 return True
             else:
                 # optimize succeeded but draco failed; keep optimized version
-                tmp_path.rename(glb_path)
+                tmp_path.replace(glb_path)
                 return True
         return False
     finally:
