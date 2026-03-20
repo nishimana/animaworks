@@ -335,7 +335,22 @@ class CycleMixin:
                 session_id=self._tool_handler.session_id,
                 tool_call_count=len(result.tool_call_records),
             )
-            shortterm.clear()
+            if result.session_rotation_pending:
+                from dataclasses import asdict as _d_asdict
+
+                shortterm.save(
+                    SessionState(
+                        timestamp=now_iso(),
+                        trigger=trigger,
+                        original_prompt=prompt,
+                        accumulated_response=result.text[-2000:] if result.text else "",
+                        tool_uses=[_d_asdict(r) for r in result.tool_call_records],
+                        turn_count=0,
+                    )
+                )
+                logger.info("Mode D rotation pending — saved shortterm for next turn")
+            else:
+                shortterm.clear()
             duration_ms = int((time.monotonic() - start) * 1000)
             logger.info(
                 "run_cycle END (d) trigger=%s duration_ms=%d response_len=%d",
@@ -362,6 +377,53 @@ class CycleMixin:
                 context_threshold=tracker.threshold,
                 tool_call_records=_tool_records_to_dicts(result),
                 usage=_d_usage,
+            )
+
+        # ── Mode G: Gemini CLI ─────────────────────────────
+        if mode == "g":
+            result = await self._executor.execute(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                tracker=tracker,
+                trigger=trigger,
+                images=images,
+                max_turns_override=max_turns_override,
+                thread_id=thread_id,
+            )
+            if result.replied_to_from_transcript:
+                self._tool_handler.merge_replied_to(result.replied_to_from_transcript)
+            _save_prompt_log_end(
+                self.anima_dir,
+                session_id=self._tool_handler.session_id,
+                tool_call_count=len(result.tool_call_records),
+            )
+            shortterm.clear()
+            duration_ms = int((time.monotonic() - start) * 1000)
+            logger.info(
+                "run_cycle END (g) trigger=%s duration_ms=%d response_len=%d",
+                trigger,
+                duration_ms,
+                len(result.text),
+            )
+            _g_usage = result.usage.to_dict() if result.usage else None
+            _log_session_token_usage(
+                self.anima_dir,
+                model=self.model_config.model,
+                mode="g",
+                trigger=trigger,
+                usage=_g_usage,
+                duration_ms=duration_ms,
+            )
+            return CycleResult(
+                trigger=trigger,
+                action="responded",
+                summary=result.text,
+                duration_ms=duration_ms,
+                context_usage_ratio=tracker.usage_ratio,
+                context_window=tracker.context_window,
+                context_threshold=tracker.threshold,
+                tool_call_records=_tool_records_to_dicts(result),
+                usage=_g_usage,
             )
 
         # ── Mode A: LiteLLM tool_use loop ─────────────────
