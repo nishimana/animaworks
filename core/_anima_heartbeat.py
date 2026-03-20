@@ -353,8 +353,7 @@ class HeartbeatMixin:
         """
         hb_config = self.memory.read_heartbeat_config()
         checklist = hb_config or load_prompt("heartbeat_default_checklist")
-        task_delegation_rules = load_prompt("task_delegation_rules")
-        parts = [load_prompt("heartbeat", checklist=checklist, task_delegation_rules=task_delegation_rules)]
+        parts = [load_prompt("heartbeat", checklist=checklist)]
 
         state = self.memory.read_current_state()
         state_len = len(state)

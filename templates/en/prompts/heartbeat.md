@@ -26,7 +26,7 @@ Use one of the following to create a concrete action:
 **Important: Do not perform actual work (code changes, file edits, research, etc.) in this phase.**
 **Task execution is handled automatically in a separate session.**
 
-{task_delegation_rules}
+**Task submission guidelines**: When using `submit_tasks` / `delegate_task`, follow the writing principles and forbidden patterns in `read_memory_file(path="common_knowledge/operations/task-delegation-guide.md")` (MUST).
 
 ## Reflect
 After completing the above observation and planning, state any insights or observations in the following format if you have them.

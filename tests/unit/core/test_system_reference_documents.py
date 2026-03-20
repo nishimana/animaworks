@@ -840,6 +840,7 @@ _EXPECTED_FILES = [
     "operations/heartbeat-cron-guide.md",
     "operations/report-formats.md",
     "operations/task-board-guide.md",
+    "operations/task-delegation-guide.md",
     "operations/task-management.md",
     "operations/tool-usage-overview.md",
     "operations/workspace-guide.md",
