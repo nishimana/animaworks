@@ -381,7 +381,7 @@ class AnimaRunner:
         event = {"event": event_type, "data": data}
         tmp = events_dir / f".{filename}"
         tmp.write_text(json.dumps(event, default=str, ensure_ascii=False), encoding="utf-8")
-        tmp.rename(events_dir / filename)  # Atomic rename
+        tmp.replace(events_dir / filename)  # Atomic rename
 
     # ── IPC Handlers ──────────────────────────────────────────────
 

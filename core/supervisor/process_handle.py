@@ -547,7 +547,10 @@ class ProcessHandle:
                     self.process.wait(timeout=2)
                 except subprocess.TimeoutExpired:
                     try:
-                        os.killpg(os.getpgid(self.process.pid), _signal.SIGKILL)
+                        if sys.platform == "win32":
+                            self.process.kill()
+                        else:
+                            os.killpg(os.getpgid(self.process.pid), _signal.SIGKILL)
                     except OSError:
                         self.process.kill()
                     self.process.wait()
