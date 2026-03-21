@@ -17,6 +17,10 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from core.platform.codex import is_codex_cli_available, is_codex_login_available
+from core.platform.cursor import is_cursor_agent_authenticated, is_cursor_agent_available
+from core.platform.gemini import is_gemini_authenticated, is_gemini_cli_available
+
 logger = logging.getLogger("animaworks.routes.setup")
 
 # ── Available providers ────────────────────────────────────
@@ -32,12 +36,25 @@ AVAILABLE_PROVIDERS = [
         "name": "OpenAI",
         "models": ["openai/gpt-4.1", "openai/gpt-4.1-mini"],
         "env_key": "OPENAI_API_KEY",
+        "supports_codex_login": True,
     },
     {
         "id": "google",
         "name": "Google",
         "models": ["google/gemini-2.5-flash", "google/gemini-2.5-pro"],
         "env_key": "GOOGLE_API_KEY",
+    },
+    {
+        "id": "cursor_agent",
+        "name": "Cursor Agent",
+        "models": ["cursor/claude-sonnet-4-6"],
+        "env_key": None,
+    },
+    {
+        "id": "gemini_cli",
+        "name": "Gemini CLI",
+        "models": ["gemini/2.5-pro", "gemini/2.5-flash"],
+        "env_key": None,
     },
     {
         "id": "ollama",
@@ -73,6 +90,7 @@ AVAILABLE_LOCALES = [
 
 class ValidateKeyRequest(BaseModel):
     provider: str
+    auth_mode: str = "api_key"
     api_key: str = ""
     ollama_url: str = ""
 
@@ -111,9 +129,17 @@ def create_setup_router() -> APIRouter:
 
         config = load_config()
         claude_available = shutil.which("claude") is not None
+        codex_available = is_codex_cli_available()
+        codex_logged_in = is_codex_login_available()
 
         return {
             "claude_code_available": claude_available,
+            "codex_cli_available": codex_available,
+            "codex_login_available": codex_logged_in,
+            "cursor_agent_available": is_cursor_agent_available(),
+            "cursor_agent_authenticated": is_cursor_agent_authenticated(),
+            "gemini_cli_available": is_gemini_cli_available(),
+            "gemini_authenticated": is_gemini_authenticated(),
             "locale": config.locale,
             "providers": AVAILABLE_PROVIDERS,
             "available_locales": AVAILABLE_LOCALES,
@@ -142,11 +168,17 @@ def create_setup_router() -> APIRouter:
         if provider == "anthropic":
             return await _validate_anthropic_key(api_key)
         elif provider == "openai":
+            if body.auth_mode == "codex_login":
+                return _validate_codex_login()
             return await _validate_openai_key(api_key)
         elif provider == "google":
             return await _validate_google_key(api_key)
         elif provider == "ollama":
             return {"valid": True, "message": "Ollama does not require an API key"}
+        elif provider == "cursor_agent":
+            return _validate_cursor_agent()
+        elif provider == "gemini_cli":
+            return _validate_gemini_cli()
         else:
             return {"valid": False, "message": f"Unknown provider: {provider}"}
 
@@ -175,6 +207,7 @@ def create_setup_router() -> APIRouter:
         # Update credentials
         for cred_name, cred_data in body.credentials.items():
             config.credentials[cred_name] = CredentialConfig(
+                type=cred_data.get("type", "api_key"),
                 api_key=cred_data.get("api_key", ""),
                 base_url=cred_data.get("base_url"),
             )
@@ -385,6 +418,33 @@ async def _validate_openai_key(api_key: str) -> dict[str, Any]:
         return {"valid": False, "message": f"Unexpected status: {resp.status_code}"}
     except Exception as exc:
         return {"valid": False, "message": f"Connection error: {exc}"}
+
+
+def _validate_codex_login() -> dict[str, Any]:
+    """Validate that Codex CLI is installed and already logged in."""
+    if not is_codex_cli_available():
+        return {"valid": False, "message": "Codex CLI is not installed"}
+    if not is_codex_login_available():
+        return {"valid": False, "message": "Run `codex login` first"}
+    return {"valid": True, "message": "Codex login is available"}
+
+
+def _validate_cursor_agent() -> dict[str, Any]:
+    """Validate that Cursor Agent CLI is installed and authenticated."""
+    if not is_cursor_agent_available():
+        return {"valid": False, "message": "Cursor Agent CLI is not installed"}
+    if not is_cursor_agent_authenticated():
+        return {"valid": False, "message": "Run `agent login` first"}
+    return {"valid": True, "message": "Cursor Agent CLI is available and authenticated"}
+
+
+def _validate_gemini_cli() -> dict[str, Any]:
+    """Validate that Gemini CLI is installed and authenticated."""
+    if not is_gemini_cli_available():
+        return {"valid": False, "message": "Gemini CLI is not installed"}
+    if not is_gemini_authenticated():
+        return {"valid": False, "message": "Run `gemini auth login` or set GEMINI_API_KEY"}
+    return {"valid": True, "message": "Gemini CLI is available and authenticated"}
 
 
 async def _validate_google_key(api_key: str) -> dict[str, Any]:

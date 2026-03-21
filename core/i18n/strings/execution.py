@@ -74,8 +74,28 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "cursor-agentが未認証です。`agent login` を実行してCursorアカウントにログインしてください。",
         "en": "cursor-agent is not authenticated. Run `agent login` to sign in to your Cursor account.",
     },
+    "cursor_agent.session_resume_failed": {
+        "ja": "cursor-agentセッションの復元に失敗しました（chatId={chat_id}）。新規セッションで再試行します。",
+        "en": "Failed to resume cursor-agent session (chatId={chat_id}). Retrying with a fresh session.",
+    },
+    "cursor_agent.session_rotated": {
+        "ja": "cursor-agentセッションをローテーションしました（ターン{turn_count}、最大{max_turns}）。新規セッションを開始します。",
+        "en": "Rotated cursor-agent session (turn {turn_count}, max {max_turns}). Starting fresh session.",
+    },
     "cursor_agent.timeout": {
         "ja": "[cursor-agent タイムアウト: {timeout}秒以内に完了しませんでした]",
         "en": "[cursor-agent timeout: did not complete within {timeout} seconds]",
+    },
+    "gemini_cli.not_installed": {
+        "ja": "Gemini CLIが見つかりません。`npm install -g @google/gemini-cli` でインストールし、`gemini auth login` でログインしてください。",
+        "en": "Gemini CLI not found. Install with `npm install -g @google/gemini-cli` and run `gemini auth login`.",
+    },
+    "gemini_cli.not_authenticated": {
+        "ja": "Gemini CLIが未認証です。`gemini auth login` を実行してGoogleアカウントにログインしてください。",
+        "en": "Gemini CLI is not authenticated. Run `gemini auth login` to sign in to your Google account.",
+    },
+    "gemini_cli.timeout": {
+        "ja": "[Gemini CLI タイムアウト: {timeout}秒以内に完了しませんでした]",
+        "en": "[Gemini CLI timeout: did not complete within {timeout} seconds]",
     },
 }

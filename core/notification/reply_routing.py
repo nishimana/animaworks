@@ -19,7 +19,6 @@ be persisted in the mapping.  Slack Incoming Webhooks do **not** return a
 and thread replies to them will not be routed back.
 """
 
-import fcntl
 import json
 import logging
 import re
@@ -28,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from core.paths import get_data_dir
+from core.platform.locks import file_lock
 
 logger = logging.getLogger("animaworks.notification.reply_routing")
 
@@ -69,29 +69,25 @@ def save_notification_mapping(
     path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        with path.open("a+") as fd:
-            fcntl.flock(fd, fcntl.LOCK_EX)
-            try:
-                fd.seek(0)
-                raw = fd.read()
-                data: dict[str, Any] = json.loads(raw) if raw.strip() else {}
+        with path.open("a+") as fd, file_lock(fd, exclusive=True):
+            fd.seek(0)
+            raw = fd.read()
+            data: dict[str, Any] = json.loads(raw) if raw.strip() else {}
 
-                entry: dict[str, Any] = {
-                    "anima": anima_name,
-                    "channel": channel,
-                    "created_at": datetime.now(UTC).isoformat(),
-                }
-                if notification_text:
-                    entry["notification_text"] = notification_text[:2000]
-                data[ts] = entry
-                _prune_old_entries_inplace(data)
+            entry: dict[str, Any] = {
+                "anima": anima_name,
+                "channel": channel,
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+            if notification_text:
+                entry["notification_text"] = notification_text[:2000]
+            data[ts] = entry
+            _prune_old_entries_inplace(data)
 
-                fd.seek(0)
-                fd.truncate()
-                fd.write(json.dumps(data, ensure_ascii=False, indent=2))
-                fd.flush()
-            finally:
-                fcntl.flock(fd, fcntl.LOCK_UN)
+            fd.seek(0)
+            fd.truncate()
+            fd.write(json.dumps(data, ensure_ascii=False, indent=2))
+            fd.flush()
     except OSError:
         logger.exception("Failed to save notification mapping for ts=%s", ts)
 
@@ -106,12 +102,8 @@ def lookup_notification_mapping(thread_ts: str) -> dict[str, str] | None:
     if not path.exists():
         return None
     try:
-        with path.open("r") as fd:
-            fcntl.flock(fd, fcntl.LOCK_SH)
-            try:
-                data = json.load(fd)
-            finally:
-                fcntl.flock(fd, fcntl.LOCK_UN)
+        with path.open("r") as fd, file_lock(fd, exclusive=False):
+            data = json.load(fd)
     except (json.JSONDecodeError, OSError):
         return None
     entry = data.get(thread_ts)
@@ -130,21 +122,17 @@ def prune_old_entries(max_age_days: int = _MAX_AGE_DAYS) -> None:
     if not path.exists():
         return
     try:
-        with path.open("a+") as fd:
-            fcntl.flock(fd, fcntl.LOCK_EX)
-            try:
+        with path.open("a+") as fd, file_lock(fd, exclusive=True):
+            fd.seek(0)
+            raw = fd.read()
+            data: dict[str, Any] = json.loads(raw) if raw.strip() else {}
+            before = len(data)
+            _prune_old_entries_inplace(data, max_age_days)
+            if len(data) < before:
                 fd.seek(0)
-                raw = fd.read()
-                data: dict[str, Any] = json.loads(raw) if raw.strip() else {}
-                before = len(data)
-                _prune_old_entries_inplace(data, max_age_days)
-                if len(data) < before:
-                    fd.seek(0)
-                    fd.truncate()
-                    fd.write(json.dumps(data, ensure_ascii=False, indent=2))
-                    fd.flush()
-            finally:
-                fcntl.flock(fd, fcntl.LOCK_UN)
+                fd.truncate()
+                fd.write(json.dumps(data, ensure_ascii=False, indent=2))
+                fd.flush()
     except OSError:
         logger.exception("Failed to prune notification mapping")
 

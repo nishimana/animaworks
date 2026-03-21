@@ -158,6 +158,8 @@ class TestGetEnvironment:
         with (
             patch("core.config.load_config", return_value=mock_config),
             patch("shutil.which", return_value="/usr/bin/claude"),
+            patch("server.routes.setup.is_codex_cli_available", return_value=True),
+            patch("server.routes.setup.is_codex_login_available", return_value=True),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.get("/api/setup/environment")
@@ -165,6 +167,8 @@ class TestGetEnvironment:
         assert resp.status_code == 200
         data = resp.json()
         assert data["claude_code_available"] is True
+        assert data["codex_cli_available"] is True
+        assert data["codex_login_available"] is True
         assert data["locale"] == "ja"
         assert data["providers"] == AVAILABLE_PROVIDERS
         assert data["available_locales"] == AVAILABLE_LOCALES
@@ -179,13 +183,45 @@ class TestGetEnvironment:
         with (
             patch("core.config.load_config", return_value=mock_config),
             patch("shutil.which", return_value=None),
+            patch("server.routes.setup.is_codex_cli_available", return_value=False),
+            patch("server.routes.setup.is_codex_login_available", return_value=False),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.get("/api/setup/environment")
 
         data = resp.json()
         assert data["claude_code_available"] is False
+        assert data["codex_cli_available"] is False
+        assert data["codex_login_available"] is False
         assert data["locale"] == "en"
+
+    async def test_environment_includes_cursor_and_gemini_fields(self):
+        """GET /environment returns cursor_agent and gemini_cli availability."""
+        mock_config = MagicMock()
+        mock_config.locale = "en"
+
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+
+        with (
+            patch("shutil.which", return_value=None),
+            patch("core.config.load_config", return_value=mock_config),
+            patch("server.routes.setup.is_codex_cli_available", return_value=False),
+            patch("server.routes.setup.is_codex_login_available", return_value=False),
+            patch("server.routes.setup.is_cursor_agent_available", return_value=True),
+            patch("server.routes.setup.is_cursor_agent_authenticated", return_value=False),
+            patch("server.routes.setup.is_gemini_cli_available", return_value=True),
+            patch("server.routes.setup.is_gemini_authenticated", return_value=True),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get("/api/setup/environment")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["cursor_agent_available"] is True
+        assert data["cursor_agent_authenticated"] is False
+        assert data["gemini_cli_available"] is True
+        assert data["gemini_authenticated"] is True
 
 
 # ── GET /api/setup/detect-locale ─────────────────────────
@@ -292,6 +328,20 @@ class TestValidateKey:
         data = resp.json()
         assert data["valid"] is True
 
+    async def test_openai_codex_login_validation(self):
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+
+        with patch("server.routes.setup._validate_codex_login", return_value={"valid": True, "message": "ok"}):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/api/setup/validate-key",
+                    json={"provider": "openai", "auth_mode": "codex_login"},
+                )
+
+        data = resp.json()
+        assert data["valid"] is True
+
     async def test_ollama_no_key_needed(self):
         app = _make_test_app()
         transport = ASGITransport(app=app)
@@ -319,6 +369,109 @@ class TestValidateKey:
         data = resp.json()
         assert data["valid"] is False
         assert "Unknown provider" in data["message"]
+
+    async def test_validate_cursor_agent_success(self):
+        """validate-key returns valid when cursor-agent CLI is available and authenticated."""
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+
+        with (
+            patch("server.routes.setup.is_cursor_agent_available", return_value=True),
+            patch("server.routes.setup.is_cursor_agent_authenticated", return_value=True),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/api/setup/validate-key",
+                    json={"provider": "cursor_agent"},
+                )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["valid"] is True
+
+    async def test_validate_cursor_agent_not_installed(self):
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+
+        with patch("server.routes.setup.is_cursor_agent_available", return_value=False):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/api/setup/validate-key",
+                    json={"provider": "cursor_agent"},
+                )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["valid"] is False
+
+    async def test_validate_cursor_agent_not_authenticated(self):
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+
+        with (
+            patch("server.routes.setup.is_cursor_agent_available", return_value=True),
+            patch("server.routes.setup.is_cursor_agent_authenticated", return_value=False),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/api/setup/validate-key",
+                    json={"provider": "cursor_agent"},
+                )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["valid"] is False
+
+    async def test_validate_gemini_cli_success(self):
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+
+        with (
+            patch("server.routes.setup.is_gemini_cli_available", return_value=True),
+            patch("server.routes.setup.is_gemini_authenticated", return_value=True),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/api/setup/validate-key",
+                    json={"provider": "gemini_cli"},
+                )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["valid"] is True
+
+    async def test_validate_gemini_cli_not_installed(self):
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+
+        with patch("server.routes.setup.is_gemini_cli_available", return_value=False):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/api/setup/validate-key",
+                    json={"provider": "gemini_cli"},
+                )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["valid"] is False
+
+    async def test_validate_gemini_cli_not_authenticated(self):
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+
+        with (
+            patch("server.routes.setup.is_gemini_cli_available", return_value=True),
+            patch("server.routes.setup.is_gemini_authenticated", return_value=False),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/api/setup/validate-key",
+                    json={"provider": "gemini_cli"},
+                )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["valid"] is False
 
 
 # ── POST /api/setup/complete ─────────────────────────────
@@ -380,6 +533,35 @@ class TestCompleteSetup:
 
         assert resp.status_code == 200
         assert "anthropic" in mock_config.credentials
+
+    async def test_complete_with_codex_login_type(self):
+        mock_config = MagicMock()
+        mock_config.locale = "ja"
+        mock_config.credentials = {}
+        mock_config.animas = {}
+
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+
+        with (
+            patch("core.config.load_config", return_value=mock_config),
+            patch("core.config.save_config"),
+            patch("core.config.invalidate_cache"),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/api/setup/complete",
+                    json={
+                        "locale": "ja",
+                        "credentials": {
+                            "openai": {"type": "codex_login"},
+                        },
+                    },
+                )
+
+        assert resp.status_code == 200
+        assert mock_config.credentials["openai"].type == "codex_login"
+        assert mock_config.credentials["openai"].api_key == ""
 
     async def test_complete_with_blank_anima(self, tmp_path: Path):
         mock_config = MagicMock()
