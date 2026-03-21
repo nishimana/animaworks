@@ -105,6 +105,26 @@ def get_consolidation_llm_kwargs() -> dict[str, Any]:
     if cred and cred.base_url:
         kwargs["api_base"] = cred.base_url
 
+    # プロバイダ固有パラメータの解決 (core/execution/base.py のロジックと同等)
+    extra = cred.keys if cred and hasattr(cred, "keys") and cred.keys else {}
+
+    if model.startswith("azure/"):
+        api_version = extra.get("api_version") or os.environ.get("AZURE_API_VERSION")
+        if api_version:
+            kwargs["api_version"] = api_version
+
+    elif model.startswith("vertex_ai/"):
+        for key in ("vertex_project", "vertex_location", "vertex_credentials"):
+            val = extra.get(key) or os.environ.get(key.upper())
+            if val:
+                kwargs[key] = val
+
+    elif model.startswith("bedrock/"):
+        for key in ("aws_access_key_id", "aws_secret_access_key", "aws_region_name"):
+            val = extra.get(key) or os.environ.get(key.upper())
+            if val:
+                kwargs[key] = val
+
     return kwargs
 
 
@@ -312,6 +332,15 @@ async def one_shot_completion(
             return result
     except Exception as e:
         logger.warning("LiteLLM one-shot failed (%s), trying Agent SDK fallback", e)
+        # 認証エラーの場合、設定ガイダンスを追加
+        err_str = str(e).lower()
+        if "authenticat" in err_str or "authoriz" in err_str or "401" in err_str or "403" in err_str or "api key" in err_str:
+            logger.warning(
+                "Consolidation LLM authentication failed for model '%s'. "
+                "Check credentials in config.json, or set consolidation.llm_model "
+                "to a local model (e.g. 'ollama/gemma3:8b').",
+                resolved_model,
+            )
 
     # 2. Try Agent SDK (Anthropic models only)
     if _is_anthropic_model(resolved_model):

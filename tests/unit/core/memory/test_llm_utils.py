@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import inspect
+import logging
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -298,4 +300,480 @@ class TestStripProviderPrefix:
         assert (
             llm_utils._strip_provider_prefix("vertex_ai/claude-sonnet-4-6")
             == "claude-sonnet-4-6"
+        )
+
+
+# ── Helpers for provider-specific parameter tests ────────────────────────────
+
+
+def _make_cred_with_keys(
+    api_key: str = "",
+    keys: dict[str, str] | None = None,
+    base_url: str | None = None,
+) -> MagicMock:
+    """Create a CredentialConfig-like mock with api_key, keys, and base_url."""
+    cred = MagicMock()
+    cred.api_key = api_key
+    cred.keys = keys or {}
+    cred.base_url = base_url
+    return cred
+
+
+# ── Azure provider parameter resolution ──────────────────────────────────────
+
+
+class TestAzureProviderParams:
+    """Tests for Azure provider-specific parameter resolution in get_consolidation_llm_kwargs()."""
+
+    def test_api_version_from_config_keys(self) -> None:
+        """api_version is resolved from credentials.azure.keys.api_version."""
+        cred = _make_cred_with_keys(
+            api_key="azure-key",
+            keys={"api_version": "2024-12-01-preview"},
+        )
+        cfg = _make_config(
+            llm_model="azure/gpt-4.1-mini",
+            credentials={"azure": cred},
+        )
+        with patch("core.config.load_config", return_value=cfg):
+            result = llm_utils.get_consolidation_llm_kwargs()
+        assert result["api_version"] == "2024-12-01-preview"
+        assert result["model"] == "azure/gpt-4.1-mini"
+        assert result["api_key"] == "azure-key"
+
+    def test_api_version_from_env_fallback(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """api_version falls back to AZURE_API_VERSION env var when not in config."""
+        cred = _make_cred_with_keys(api_key="azure-key", keys={})
+        cfg = _make_config(
+            llm_model="azure/gpt-4.1-mini",
+            credentials={"azure": cred},
+        )
+        monkeypatch.setenv("AZURE_API_VERSION", "2025-01-01")
+        with patch("core.config.load_config", return_value=cfg):
+            result = llm_utils.get_consolidation_llm_kwargs()
+        assert result["api_version"] == "2025-01-01"
+
+    def test_config_keys_take_priority_over_env(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Config keys.api_version takes priority over AZURE_API_VERSION env var."""
+        cred = _make_cred_with_keys(
+            api_key="azure-key",
+            keys={"api_version": "from-config"},
+        )
+        cfg = _make_config(
+            llm_model="azure/gpt-4.1-mini",
+            credentials={"azure": cred},
+        )
+        monkeypatch.setenv("AZURE_API_VERSION", "from-env")
+        with patch("core.config.load_config", return_value=cfg):
+            result = llm_utils.get_consolidation_llm_kwargs()
+        assert result["api_version"] == "from-config"
+
+    def test_no_api_version_when_absent(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """api_version is not included when neither config nor env provides it."""
+        cred = _make_cred_with_keys(api_key="azure-key", keys={})
+        cfg = _make_config(
+            llm_model="azure/gpt-4.1-mini",
+            credentials={"azure": cred},
+        )
+        monkeypatch.delenv("AZURE_API_VERSION", raising=False)
+        with patch("core.config.load_config", return_value=cfg):
+            result = llm_utils.get_consolidation_llm_kwargs()
+        assert "api_version" not in result
+
+
+# ── Vertex AI provider parameter resolution ──────────────────────────────────
+
+
+class TestVertexAIProviderParams:
+    """Tests for Vertex AI provider-specific parameter resolution in get_consolidation_llm_kwargs()."""
+
+    def test_vertex_params_from_config_keys(self) -> None:
+        """vertex_project, vertex_location, vertex_credentials are resolved from config keys."""
+        cred = _make_cred_with_keys(
+            keys={
+                "vertex_project": "my-project",
+                "vertex_location": "us-central1",
+                "vertex_credentials": "/path/to/sa.json",
+            },
+        )
+        cfg = _make_config(
+            llm_model="vertex_ai/claude-sonnet-4-6",
+            credentials={"vertex_ai": cred},
+        )
+        with patch("core.config.load_config", return_value=cfg):
+            result = llm_utils.get_consolidation_llm_kwargs()
+        assert result["vertex_project"] == "my-project"
+        assert result["vertex_location"] == "us-central1"
+        assert result["vertex_credentials"] == "/path/to/sa.json"
+
+    def test_vertex_params_from_env_fallback(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Vertex AI params fall back to environment variables when not in config."""
+        cred = _make_cred_with_keys(keys={})
+        cfg = _make_config(
+            llm_model="vertex_ai/claude-sonnet-4-6",
+            credentials={"vertex_ai": cred},
+        )
+        monkeypatch.setenv("VERTEX_PROJECT", "env-project")
+        monkeypatch.setenv("VERTEX_LOCATION", "europe-west1")
+        with patch("core.config.load_config", return_value=cfg):
+            result = llm_utils.get_consolidation_llm_kwargs()
+        assert result["vertex_project"] == "env-project"
+        assert result["vertex_location"] == "europe-west1"
+        assert "vertex_credentials" not in result
+
+    def test_vertex_config_keys_take_priority_over_env(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Config keys take priority over environment variables for Vertex AI params."""
+        cred = _make_cred_with_keys(
+            keys={"vertex_project": "from-config"},
+        )
+        cfg = _make_config(
+            llm_model="vertex_ai/claude-sonnet-4-6",
+            credentials={"vertex_ai": cred},
+        )
+        monkeypatch.setenv("VERTEX_PROJECT", "from-env")
+        with patch("core.config.load_config", return_value=cfg):
+            result = llm_utils.get_consolidation_llm_kwargs()
+        assert result["vertex_project"] == "from-config"
+
+    def test_no_vertex_params_when_absent(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Vertex AI params are not included when neither config nor env provides them."""
+        cred = _make_cred_with_keys(keys={})
+        cfg = _make_config(
+            llm_model="vertex_ai/claude-sonnet-4-6",
+            credentials={"vertex_ai": cred},
+        )
+        monkeypatch.delenv("VERTEX_PROJECT", raising=False)
+        monkeypatch.delenv("VERTEX_LOCATION", raising=False)
+        monkeypatch.delenv("VERTEX_CREDENTIALS", raising=False)
+        with patch("core.config.load_config", return_value=cfg):
+            result = llm_utils.get_consolidation_llm_kwargs()
+        assert "vertex_project" not in result
+        assert "vertex_location" not in result
+        assert "vertex_credentials" not in result
+
+
+# ── Bedrock provider parameter resolution ─────────────────────────────────────
+
+
+class TestBedrockProviderParams:
+    """Tests for Bedrock provider-specific parameter resolution in get_consolidation_llm_kwargs()."""
+
+    def test_bedrock_params_from_config_keys(self) -> None:
+        """aws_access_key_id, aws_secret_access_key, aws_region_name are resolved from config keys."""
+        cred = _make_cred_with_keys(
+            keys={
+                "aws_access_key_id": "AKIAIOSFODNN7EXAMPLE",
+                "aws_secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+                "aws_region_name": "us-east-1",
+            },
+        )
+        cfg = _make_config(
+            llm_model="bedrock/claude-sonnet-4-6",
+            credentials={"bedrock": cred},
+        )
+        with patch("core.config.load_config", return_value=cfg):
+            result = llm_utils.get_consolidation_llm_kwargs()
+        assert result["aws_access_key_id"] == "AKIAIOSFODNN7EXAMPLE"
+        assert result["aws_secret_access_key"] == "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+        assert result["aws_region_name"] == "us-east-1"
+
+    def test_bedrock_params_from_env_fallback(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Bedrock params fall back to environment variables when not in config."""
+        cred = _make_cred_with_keys(keys={})
+        cfg = _make_config(
+            llm_model="bedrock/claude-sonnet-4-6",
+            credentials={"bedrock": cred},
+        )
+        monkeypatch.setenv("AWS_ACCESS_KEY_ID", "env-access-key")
+        monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "env-secret-key")
+        monkeypatch.setenv("AWS_REGION_NAME", "ap-northeast-1")
+        with patch("core.config.load_config", return_value=cfg):
+            result = llm_utils.get_consolidation_llm_kwargs()
+        assert result["aws_access_key_id"] == "env-access-key"
+        assert result["aws_secret_access_key"] == "env-secret-key"
+        assert result["aws_region_name"] == "ap-northeast-1"
+
+    def test_bedrock_config_keys_take_priority_over_env(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Config keys take priority over environment variables for Bedrock params."""
+        cred = _make_cred_with_keys(
+            keys={
+                "aws_access_key_id": "from-config",
+                "aws_secret_access_key": "config-secret",
+                "aws_region_name": "us-west-2",
+            },
+        )
+        cfg = _make_config(
+            llm_model="bedrock/claude-sonnet-4-6",
+            credentials={"bedrock": cred},
+        )
+        monkeypatch.setenv("AWS_ACCESS_KEY_ID", "from-env")
+        monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "env-secret")
+        monkeypatch.setenv("AWS_REGION_NAME", "eu-west-1")
+        with patch("core.config.load_config", return_value=cfg):
+            result = llm_utils.get_consolidation_llm_kwargs()
+        assert result["aws_access_key_id"] == "from-config"
+        assert result["aws_secret_access_key"] == "config-secret"
+        assert result["aws_region_name"] == "us-west-2"
+
+    def test_no_bedrock_params_when_absent(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Bedrock params are not included when neither config nor env provides them."""
+        cred = _make_cred_with_keys(keys={})
+        cfg = _make_config(
+            llm_model="bedrock/claude-sonnet-4-6",
+            credentials={"bedrock": cred},
+        )
+        monkeypatch.delenv("AWS_ACCESS_KEY_ID", raising=False)
+        monkeypatch.delenv("AWS_SECRET_ACCESS_KEY", raising=False)
+        monkeypatch.delenv("AWS_REGION_NAME", raising=False)
+        with patch("core.config.load_config", return_value=cfg):
+            result = llm_utils.get_consolidation_llm_kwargs()
+        assert "aws_access_key_id" not in result
+        assert "aws_secret_access_key" not in result
+        assert "aws_region_name" not in result
+
+
+# ── Local LLM (ollama) configuration ─────────────────────────────────────────
+
+
+class TestOllamaProviderParams:
+    """Tests for local LLM (ollama) configuration in get_consolidation_llm_kwargs()."""
+
+    def test_api_base_from_credentials_base_url(self) -> None:
+        """api_base is resolved from credentials.ollama.base_url."""
+        cred = _make_cred_with_keys(
+            api_key="",
+            base_url="http://localhost:11434",
+        )
+        cfg = _make_config(
+            llm_model="ollama/gemma3:8b",
+            credentials={"ollama": cred},
+        )
+        with patch("core.config.load_config", return_value=cfg):
+            result = llm_utils.get_consolidation_llm_kwargs()
+        assert result["api_base"] == "http://localhost:11434"
+        assert result["model"] == "ollama/gemma3:8b"
+
+    def test_no_api_key_for_ollama(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """api_key is not included for ollama provider (no API key needed)."""
+        cred = _make_cred_with_keys(
+            api_key="",
+            base_url="http://localhost:11434",
+        )
+        cfg = _make_config(
+            llm_model="ollama/gemma3:8b",
+            credentials={"ollama": cred},
+        )
+        # Ensure no env-based fallback either
+        monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
+        with patch("core.config.load_config", return_value=cfg):
+            result = llm_utils.get_consolidation_llm_kwargs()
+        assert "api_key" not in result
+
+    def test_ollama_with_custom_port(self) -> None:
+        """api_base works with a custom port for ollama."""
+        cred = _make_cred_with_keys(
+            api_key="",
+            base_url="http://192.168.1.100:8080",
+        )
+        cfg = _make_config(
+            llm_model="ollama/llama3:latest",
+            credentials={"ollama": cred},
+        )
+        with patch("core.config.load_config", return_value=cfg):
+            result = llm_utils.get_consolidation_llm_kwargs()
+        assert result["api_base"] == "http://192.168.1.100:8080"
+        assert "api_key" not in result
+
+    def test_ollama_no_credentials_section(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """ollama model works even without a credentials section (model-only)."""
+        cfg = _make_config(
+            llm_model="ollama/gemma3:8b",
+            credentials={},
+        )
+        with patch("core.config.load_config", return_value=cfg):
+            result = llm_utils.get_consolidation_llm_kwargs()
+        assert result["model"] == "ollama/gemma3:8b"
+        assert "api_key" not in result
+        assert "api_base" not in result
+
+
+# ── Authentication error guidance log ─────────────────────────────────────────
+
+
+class TestAuthErrorGuidanceLog:
+    """Tests for authentication error guidance log in one_shot_completion()."""
+
+    @pytest.mark.asyncio
+    @patch("core.memory._llm_utils.get_consolidation_llm_kwargs")
+    @patch("core.memory._llm_utils._try_agent_sdk")
+    @patch("core.memory._llm_utils._try_litellm")
+    async def test_auth_error_logs_guidance(
+        self,
+        mock_try_litellm: MagicMock,
+        mock_try_agent_sdk: MagicMock,
+        mock_get_kwargs: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """AuthenticationError triggers guidance log with model name and config advice."""
+        mock_get_kwargs.return_value = {"model": "anthropic/claude-sonnet-4-6"}
+        mock_try_litellm.side_effect = Exception("AuthenticationError: invalid API key")
+        mock_try_agent_sdk.return_value = None
+
+        with caplog.at_level(logging.WARNING, logger="core.memory._llm_utils"):
+            await llm_utils.one_shot_completion("Hello")
+
+        # Check that the guidance message is in the log
+        guidance_messages = [
+            r.message for r in caplog.records
+            if "authentication failed" in r.message.lower()
+            and "anthropic/claude-sonnet-4-6" in r.message
+        ]
+        assert len(guidance_messages) >= 1, (
+            f"Expected guidance log with model name, got: {[r.message for r in caplog.records]}"
+        )
+        guidance = guidance_messages[0]
+        assert "config.json" in guidance.lower() or "credentials" in guidance.lower()
+        assert "ollama" in guidance.lower() or "local model" in guidance.lower()
+
+    @pytest.mark.asyncio
+    @patch("core.memory._llm_utils.get_consolidation_llm_kwargs")
+    @patch("core.memory._llm_utils._try_agent_sdk")
+    @patch("core.memory._llm_utils._try_litellm")
+    async def test_401_error_logs_guidance(
+        self,
+        mock_try_litellm: MagicMock,
+        mock_try_agent_sdk: MagicMock,
+        mock_get_kwargs: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """HTTP 401 error triggers guidance log."""
+        mock_get_kwargs.return_value = {"model": "anthropic/claude-sonnet-4-6"}
+        mock_try_litellm.side_effect = Exception("HTTP 401 Unauthorized")
+        mock_try_agent_sdk.return_value = None
+
+        with caplog.at_level(logging.WARNING, logger="core.memory._llm_utils"):
+            await llm_utils.one_shot_completion("Hello")
+
+        guidance_messages = [
+            r.message for r in caplog.records
+            if "authentication failed" in r.message.lower()
+        ]
+        assert len(guidance_messages) >= 1
+
+    @pytest.mark.asyncio
+    @patch("core.memory._llm_utils.get_consolidation_llm_kwargs")
+    @patch("core.memory._llm_utils._try_agent_sdk")
+    @patch("core.memory._llm_utils._try_litellm")
+    async def test_403_error_logs_guidance(
+        self,
+        mock_try_litellm: MagicMock,
+        mock_try_agent_sdk: MagicMock,
+        mock_get_kwargs: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """HTTP 403 error triggers guidance log."""
+        mock_get_kwargs.return_value = {"model": "openai/gpt-4.1"}
+        mock_try_litellm.side_effect = Exception("HTTP 403 Forbidden")
+
+        with caplog.at_level(logging.WARNING, logger="core.memory._llm_utils"):
+            await llm_utils.one_shot_completion("Hello", model="openai/gpt-4.1")
+
+        guidance_messages = [
+            r.message for r in caplog.records
+            if "authentication failed" in r.message.lower()
+        ]
+        assert len(guidance_messages) >= 1
+
+    @pytest.mark.asyncio
+    @patch("core.memory._llm_utils.get_consolidation_llm_kwargs")
+    @patch("core.memory._llm_utils._try_agent_sdk")
+    @patch("core.memory._llm_utils._try_litellm")
+    async def test_api_key_error_logs_guidance(
+        self,
+        mock_try_litellm: MagicMock,
+        mock_try_agent_sdk: MagicMock,
+        mock_get_kwargs: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """'api key' error message triggers guidance log."""
+        mock_get_kwargs.return_value = {"model": "anthropic/claude-sonnet-4-6"}
+        mock_try_litellm.side_effect = Exception("No API key provided")
+        mock_try_agent_sdk.return_value = None
+
+        with caplog.at_level(logging.WARNING, logger="core.memory._llm_utils"):
+            await llm_utils.one_shot_completion("Hello")
+
+        guidance_messages = [
+            r.message for r in caplog.records
+            if "authentication failed" in r.message.lower()
+        ]
+        assert len(guidance_messages) >= 1
+
+    @pytest.mark.asyncio
+    @patch("core.memory._llm_utils.get_consolidation_llm_kwargs")
+    @patch("core.memory._llm_utils._try_agent_sdk")
+    @patch("core.memory._llm_utils._try_litellm")
+    async def test_non_auth_error_no_guidance(
+        self,
+        mock_try_litellm: MagicMock,
+        mock_try_agent_sdk: MagicMock,
+        mock_get_kwargs: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Non-authentication errors (e.g. timeout) do NOT trigger guidance log."""
+        mock_get_kwargs.return_value = {"model": "anthropic/claude-sonnet-4-6"}
+        mock_try_litellm.side_effect = Exception("Connection timeout after 30s")
+        mock_try_agent_sdk.return_value = None
+
+        with caplog.at_level(logging.WARNING, logger="core.memory._llm_utils"):
+            await llm_utils.one_shot_completion("Hello")
+
+        guidance_messages = [
+            r.message for r in caplog.records
+            if "authentication failed" in r.message.lower()
+        ]
+        assert len(guidance_messages) == 0
+
+
+# ── Dead code removal verification ────────────────────────────────────────────
+
+
+class TestDeadCodeRemoval:
+    """Verify that dead code _apply_provider_kwargs has been removed from conversation_compression.py."""
+
+    def test_apply_provider_kwargs_not_in_conversation_compression(self) -> None:
+        """conversation_compression module must not contain _apply_provider_kwargs."""
+        import core.memory.conversation_compression as cc
+
+        assert not hasattr(cc, "_apply_provider_kwargs"), (
+            "_apply_provider_kwargs should be removed from conversation_compression.py "
+            "(dead code removal per design doc)"
+        )
+
+    def test_apply_provider_kwargs_not_in_source(self) -> None:
+        """_apply_provider_kwargs must not appear in conversation_compression.py source code."""
+        import core.memory.conversation_compression as cc
+
+        source = inspect.getsource(cc)
+        assert "_apply_provider_kwargs" not in source, (
+            "_apply_provider_kwargs definition or reference found in conversation_compression.py source; "
+            "it should have been removed as dead code"
         )
