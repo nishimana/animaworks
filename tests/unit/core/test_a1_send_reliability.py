@@ -32,7 +32,7 @@ class TestBuildEnvPathAndProjectDir:
         env = executor._build_env()
 
         assert "PATH" in env
-        path_entries = env["PATH"].split(":")
+        path_entries = env["PATH"].split(os.pathsep)
         assert str(anima_dir) == path_entries[0], (
             "anima_dir must be the first entry in PATH"
         )
@@ -42,12 +42,12 @@ class TestBuildEnvPathAndProjectDir:
         anima_dir = tmp_path / "animas" / "bob"
         anima_dir.mkdir(parents=True)
 
-        original_path = "/usr/local/bin:/usr/bin:/bin"
+        original_path = os.pathsep.join(["/usr/local/bin", "/usr/bin", "/bin"])
         with patch.dict(os.environ, {"PATH": original_path}):
             executor = self._make_executor(anima_dir)
             env = executor._build_env()
 
-        assert env["PATH"] == f"{anima_dir}:{original_path}"
+        assert env["PATH"] == f"{anima_dir}{os.pathsep}{original_path}"
 
     def test_project_dir_set(self, tmp_path: Path) -> None:
         """ANIMAWORKS_PROJECT_DIR should be set to the project root."""
@@ -82,7 +82,8 @@ class TestBuildEnvPathAndProjectDir:
             executor = self._make_executor(anima_dir)
             env = executor._build_env()
 
-        assert env["PATH"] == f"{anima_dir}:/usr/bin:/bin"
+        fallback = os.pathsep.join(["/usr/bin", "/bin"])
+        assert env["PATH"] == f"{anima_dir}{os.pathsep}{fallback}"
 
 
 # ── _build_mcp_env() ─────────────────────────────────────
@@ -134,7 +135,7 @@ class TestBuildMcpEnv:
         anima_dir = tmp_path / "animas" / "dave"
         anima_dir.mkdir(parents=True)
 
-        original_path = "/usr/local/bin:/usr/bin:/bin"
+        original_path = os.pathsep.join(["/usr/local/bin", "/usr/bin", "/bin"])
         with patch.dict(os.environ, {"PATH": original_path}):
             executor = self._make_executor(anima_dir)
             env = executor._build_mcp_env()
@@ -151,4 +152,4 @@ class TestBuildMcpEnv:
             executor = self._make_executor(anima_dir)
             env = executor._build_mcp_env()
 
-        assert env["PATH"] == "/usr/bin:/bin"
+        assert env["PATH"] == os.pathsep.join(["/usr/bin", "/bin"])

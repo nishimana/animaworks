@@ -221,10 +221,12 @@ class ProcessSupervisor(HealthMixin, ReconcileMixin, SchedulerMixin):
     def _kill_zombie_runners(self, anima_names: list[str]) -> None:
         """Detect and kill zombie runner processes from a previous server crash.
 
-        Reads pidfiles under ``run/animas/{name}.pid`` and sends SIGTERM
-        to any processes that are still alive.  This ensures a clean slate
+        Reads pidfiles under ``run/animas/{name}.pid`` and terminates
+        any processes that are still alive.  This ensures a clean slate
         before spawning new runner processes.
         """
+        from core.platform.process import is_process_alive, terminate_pid
+
         pid_dir = self.run_dir / "animas"
         if not pid_dir.exists():
             return
@@ -233,21 +235,16 @@ class ProcessSupervisor(HealthMixin, ReconcileMixin, SchedulerMixin):
             anima_name = pid_file.stem
             try:
                 pid = int(pid_file.read_text().strip())
-                os.kill(pid, 0)  # check if alive
-                logger.warning(
-                    "Killing zombie runner: %s (pid=%d)",
-                    anima_name,
-                    pid,
-                )
-                try:
-                    os.kill(pid, _signal.SIGTERM)
-                except OSError:
-                    pass
+                if is_process_alive(pid):
+                    logger.warning(
+                        "Killing zombie runner: %s (pid=%d)",
+                        anima_name,
+                        pid,
+                    )
+                    terminate_pid(pid)
                 pid_file.unlink(missing_ok=True)
-            except (ValueError, ProcessLookupError):
+            except (ValueError, OSError):
                 pid_file.unlink(missing_ok=True)
-            except OSError:
-                pass
 
         # Also clean up stale lock files
         for lock_file in pid_dir.glob("*.lock"):
@@ -587,7 +584,15 @@ class ProcessSupervisor(HealthMixin, ReconcileMixin, SchedulerMixin):
         processes that have exited but not yet been waited on.  This runs
         every 60 seconds and acts purely as a fallback — normal code paths
         should call ``wait()`` explicitly.
+
+        On Windows, ``os.waitpid(-1, WNOHANG)`` is not available, and
+        zombie processes do not occur, so this loop is skipped.
         """
+        import sys
+
+        if sys.platform == "win32":
+            return
+
         from core.i18n import t as _t
 
         while not self._shutdown:

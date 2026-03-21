@@ -369,7 +369,7 @@ def optimize_glb(glb_path: Path) -> bool:
                 return True
             else:
                 # optimize succeeded but draco failed; keep optimized version
-                tmp_path.rename(glb_path)
+                tmp_path.replace(glb_path)
                 return True
         return False
     finally:
@@ -390,7 +390,7 @@ def simplify_glb(glb_path: Path, target_ratio: float = 0.27, error_threshold: fl
             ["simplify", str(glb_path), str(tmp_path), "--ratio", str(target_ratio), "--error", str(error_threshold)],
             glb_path,
         ):
-            tmp_path.rename(glb_path)
+            tmp_path.replace(glb_path)
             logger.info("Simplified %s (now %d bytes)", glb_path, glb_path.stat().st_size)
             return True
         return False
@@ -429,7 +429,7 @@ def compress_textures(glb_path: Path, resolution: int = 1024) -> bool:
             )
             return True
         # resize succeeded but webp failed — keep resized version
-        tmp_path.rename(glb_path)
+        tmp_path.replace(glb_path)
         return True
     finally:
         tmp_path.unlink(missing_ok=True)

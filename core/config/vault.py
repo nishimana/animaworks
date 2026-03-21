@@ -272,7 +272,7 @@ class VaultManager:
             tmp = self._vault_path.with_suffix(".tmp")
             tmp.write_text(text, encoding="utf-8")
             os.chmod(tmp, 0o600)
-            tmp.rename(self._vault_path)
+            tmp.replace(self._vault_path)
 
     def store(self, section: str, key: str, value: str) -> None:
         """Store a single encrypted value in vault.json."""
@@ -320,7 +320,7 @@ class VaultManager:
         tmp = self._vault_path.with_suffix(".tmp")
         tmp.write_text(text, encoding="utf-8")
         os.chmod(tmp, 0o600)
-        tmp.rename(self._vault_path)
+        tmp.replace(self._vault_path)
 
     # ── Migration ────────────────────────────────────────────────
 
@@ -364,7 +364,7 @@ class VaultManager:
         # Rename original to .bak
         bak_path = shared_path.with_suffix(".json.bak")
         try:
-            shared_path.rename(bak_path)
+            shared_path.replace(bak_path)
             logger.info(
                 "Migrated %d entries from shared/credentials.json → vault.json (backup: %s)",
                 count,

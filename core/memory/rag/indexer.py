@@ -678,7 +678,7 @@ class MemoryIndexer:
         (e.g. ``knowledge/file.md``), so ``memory_type`` is intentionally
         **not** embedded in the ID to avoid path duplication.
         """
-        rel_path = file_path.relative_to(self.anima_dir)
+        rel_path = file_path.relative_to(self.anima_dir).as_posix()
         return f"{self.collection_prefix}/{rel_path}#{index}"
 
     @staticmethod

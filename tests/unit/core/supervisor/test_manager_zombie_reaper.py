@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -26,6 +27,7 @@ def supervisor(tmp_path: Path) -> ProcessSupervisor:
     )
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="os.waitpid(-1, WNOHANG) not available on Windows")
 class TestZombieReaperLoop:
     """Tests for _zombie_reaper_loop() in ProcessSupervisor."""
 

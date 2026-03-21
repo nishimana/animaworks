@@ -61,9 +61,9 @@ class TestBuildMcpEnv:
     def test_returns_path_from_os_environ(self, tmp_path: Path) -> None:
         """PATH is taken from os.environ."""
         executor = _make_executor(tmp_path / "animas" / "test-anima")
-        with patch.dict(os.environ, {"PATH": "/custom/bin:/other/bin"}):
+        with patch.dict(os.environ, {"PATH": os.pathsep.join(["/custom/bin", "/other/bin"])}):
             env = executor._build_mcp_env()
-        assert env["PATH"] == "/custom/bin:/other/bin"
+        assert env["PATH"] == os.pathsep.join(["/custom/bin", "/other/bin"])
 
     def test_path_fallback_when_missing(self, tmp_path: Path) -> None:
         """When PATH is missing from os.environ, falls back to /usr/bin:/bin."""
@@ -72,7 +72,7 @@ class TestBuildMcpEnv:
         env_copy.pop("PATH", None)
         with patch.dict(os.environ, env_copy, clear=True):
             env = executor._build_mcp_env()
-        assert env["PATH"] == "/usr/bin:/bin"
+        assert env["PATH"] == os.pathsep.join(["/usr/bin", "/bin"])
 
 
 # ── TestMcpServerConfig ─────────────────────────────────────
