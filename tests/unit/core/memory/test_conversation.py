@@ -25,6 +25,15 @@ from core.memory.conversation import (
 from core.schemas import ModelConfig
 
 
+@pytest.fixture(autouse=True)
+def _clear_compression_cooldowns():
+    """Clear compression cooldown state between tests."""
+    import core.memory.conversation_compression as mod
+    mod._compression_cooldowns.clear()
+    yield
+    mod._compression_cooldowns.clear()
+
+
 @pytest.fixture
 def anima_dir(tmp_path: Path) -> Path:
     d = tmp_path / "animas" / "alice"
@@ -430,19 +439,18 @@ class TestCompressIfNeeded:
             assert state.compressed_summary == "Compressed summary"
             assert state.compressed_turn_count > 0
 
-    async def test_compression_failure_keeps_turns(self, conv):
+    async def test_compression_failure_truncates_turns(self, conv):
         # Add enough turns to trigger compression (same reasoning as above).
         for _i in range(45):
             conv.append_turn("human", "x" * 8000)
             conv.append_turn("assistant", "y" * 8000)
 
-        original_count = len(conv.load().turns)
         with patch("core.memory.conversation_compression._call_compression_llm", new_callable=AsyncMock) as mock_llm:
             mock_llm.side_effect = RuntimeError("API error")
             result = await conv.compress_if_needed()
             assert result is True  # compression was attempted
-            # Turns should be preserved on failure
-            assert len(conv.load().turns) == original_count
+            # Fallback: old turns are truncated (to_keep = last 15 turns)
+            assert len(conv.load().turns) == 15
 
 
 class TestFormatTurnsForCompression:

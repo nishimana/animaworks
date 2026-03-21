@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -24,6 +25,10 @@ from core.memory.conversation_models import (
 from core.paths import load_prompt
 
 logger = logging.getLogger("animaworks.conversation_memory")
+
+# 圧縮失敗後のクールダウン管理（プロセス内インメモリ）
+_compression_cooldowns: dict[str, float] = {}
+_COMPRESSION_COOLDOWN_SECONDS: int = 300  # 5分
 
 
 def _apply_provider_kwargs(model: str, model_config: Any, kwargs: dict[str, Any]) -> None:
@@ -101,6 +106,13 @@ def needs_compression(
     load_context_window_overrides_fn: Callable[[], dict[str, int] | None],
 ) -> bool:
     """Check whether conversation history exceeds the compression threshold."""
+    # クールダウンチェック: 圧縮失敗後の一定期間は再試行を抑制
+    if state.anima_name in _compression_cooldowns:
+        if time.monotonic() - _compression_cooldowns[state.anima_name] < _COMPRESSION_COOLDOWN_SECONDS:
+            return False
+        else:
+            del _compression_cooldowns[state.anima_name]
+
     if len(state.turns) < 4:
         return False
 
@@ -151,6 +163,18 @@ async def _compress(
     if len(state.turns) < 4:
         return
 
+    # 空ターンの除去（圧縮の前処理）
+    original_count = len(state.turns)
+    state.turns = [turn for turn in state.turns if turn.content.strip()]
+    removed_empty = original_count - len(state.turns)
+    if removed_empty > 0:
+        logger.info("Removed %d empty turns for %s", removed_empty, anima_name)
+        save_fn()
+
+    # 空ターン除去後の再チェック
+    if len(state.turns) < 4:
+        return
+
     # Keep a fixed number of recent turns (matches _MAX_DISPLAY_TURNS)
     keep_count = min(_MAX_DISPLAY_TURNS, len(state.turns) - 1)
     to_compress = state.turns[:-keep_count]
@@ -162,7 +186,21 @@ async def _compress(
     try:
         summary = await _call_compression_llm(old_summary, turn_text)
     except Exception:
-        logger.exception("Conversation compression failed; keeping raw turns")
+        logger.warning(
+            "Conversation compression LLM failed for %s; falling back to simple truncation (%d turns removed)",
+            state.anima_name,
+            len(to_compress),
+            exc_info=True,
+        )
+        # フォールバック: LLM 要約なしで古いターンを切り捨て
+        # 既存の compressed_summary は保持する
+        _compression_cooldowns[state.anima_name] = time.monotonic()
+        removed_count = len(to_compress)
+        state.turns = to_keep
+        state.compressed_turn_count += removed_count
+        if state.last_finalized_turn_index > 0:
+            state.last_finalized_turn_index = max(0, state.last_finalized_turn_index - removed_count)
+        save_fn()
         return
 
     removed_count = len(to_compress)
